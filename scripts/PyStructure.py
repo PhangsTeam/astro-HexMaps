@@ -265,6 +265,14 @@ class PyStructure:
         :param fname: file name of fits file used for writeto
         :param adjust_header: Dictionary with header keys and the corresponding value
         """
+        if 'astro_table' in self.struct_type:
+            beam_as =self.struct.meta['beam_as'].value
+            ra_deg, dec_deg = self.struct["ra_deg"].value,self.struct["dec_deg"].value 
+            vaxis = self.struct['SPEC_VAXIS'][0]
+        else:
+            beam_as = self.struct['beam_as']
+            ra_deg, dec_deg = self.struct["ra_deg"],self.struct["dec_deg"]
+            vaxis = self.struct['SPEC_VAXIS']
         if isinstance(data_array, str):
             if verbose:
                 print(f'{"[INFO]":<10}', 'Interpreting input as existing PyStructure key.')
@@ -272,11 +280,11 @@ class PyStructure:
         dims_data = np.shape(data_array)
         #make sure data data array has the same shape as either a 2D or 3D cube
         if len(dims_data)==1:
-            if dims_data[0]!=len(self.struct['ra_deg']):
+            if dims_data[0]!=len(ra_deg):
                 print(f'{"[ERROR]":<10}', 'Input data_array does not match dimensions of 2D map or 3D cube.')
                 return np.nan
         elif len(dims_data)==2:
-            if dims_data[0]!=len(self.struct['ra_deg']) or dims_data[1]!=len(self.struct['SPEC_VAXIS']):
+            if dims_data[0]!=len(ra_deg) or dims_data[1]!=len(vaxis):
                 print(f'{"[ERROR]":<10}', 'Input data_array does not match dimensions of 2D map or 3D cube.')
                 return np.nan
         elif len(dims_data)==3:
@@ -285,8 +293,8 @@ class PyStructure:
 
         #step 1: regrid hexagonal to cartesian grid
         if len(dims_data)==1:
-            gridspacing = self.struct['beam_as']/3
-            datamap, newx, newy = array_to_map(self.struct["ra_deg"],self.struct["dec_deg"],data_array,gridspacing=gridspacing)
+            gridspacing = beam_as/3
+            datamap, newx, newy = array_to_map(ra_deg,dec_deg,data_array,gridspacing=gridspacing)
 
         datamap = np.fliplr(datamap)
         #step 2: prepare the header
@@ -330,8 +338,8 @@ class PyStructure:
         # Append the WCS header to the PrimaryHDU
         hdul[0].header.extend(wcs.to_header(), update=True)
 
-        hdul[0].header['BMAJ']=self.struct['beam_as']/3600
-        hdul[0].header['BMIN']=self.struct['beam_as']/3600
+        hdul[0].header['BMAJ']=beam_as/3600
+        hdul[0].header['BMIN']=beam_as/3600
         hdul[0].header['BPA']=0
 
         #step 3: save the
