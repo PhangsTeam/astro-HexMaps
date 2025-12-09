@@ -756,10 +756,6 @@ def create_database(just_source=None, quiet=False, conf=False):
                     [mom_thresh,conseq_channels,mom2_method],
                     )
   
-    # Open the PyStructure and Save as FITS File
-    if 'save_band_maps' not in globals():
-        save_band_maps = False
-
     if save_mom_maps | save_band_maps:
 
         # warning
