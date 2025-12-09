@@ -360,7 +360,7 @@ class PyStructure:
 
         return None
     
-    def export_2D_database(self, fname=None, savetofile=True, returntable=False):
+    def get_2D_database(self, fname=None, savetofile=False):
         '''
         Exports 2-dimensional version of the pystructure database. 
         '''
@@ -381,8 +381,4 @@ class PyStructure:
                 fname = f'{source}_data_struct_2D.ecsv'
             self.struct.write(fname, format='ascii.ecsv', overwrite=True)
 
-        # return table
-        if returntable:
-            return self
-        else:
-            return None
+        return None
