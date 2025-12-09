@@ -359,3 +359,30 @@ class PyStructure:
         f.close()
 
         return None
+    
+    def export_2D_database(self, fname=None, savetofile=True, returntable=False):
+        '''
+        Exports 2-dimensional version of the pystructure database. 
+        '''
+
+        # remove all spectra
+        cols_to_remove = [name for name in self.struct.colnames if name.startswith('SPEC_')]
+        self.struct.remove_columns(cols_to_remove)
+
+        # remove spectral information from meta data
+        meta_to_remove = [name for name in self.struct.meta if name.startswith('SPEC_')]
+        for key in meta_to_remove:
+            del self.struct.meta[key]
+
+        # write to file
+        if savetofile:
+            if fname is None:
+                source = self.struct.meta['Source']
+                fname = f'{source}_data_struct_2D.ecsv'
+            self.struct.write(fname, format='ascii.ecsv', overwrite=True)
+
+        # return table
+        if returntable:
+            return self
+        else:
+            return None
