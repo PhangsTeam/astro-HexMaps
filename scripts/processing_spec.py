@@ -120,7 +120,7 @@ def process_spectra(source_list,
         #--------------------------------------------------------------
         
         if use_input_mask:
-            print(f'{"[INFO]":<10}', 'Use input mask.')
+            # print(f'{"[INFO]":<10}', 'Use input mask.')
             # check that input mask is provided
             if len(input_mask) == 0:
                 print(f'{"[ERROR]":<10}', f'No mask provided!')
@@ -148,7 +148,7 @@ def process_spectra(source_list,
                 n_mask = 0
                 print(f'{"[INFO]":<10}', f'Using first line as prior: {line_names[0]}.')
             elif ref_line_method in ["all"]:
-                n_mask = n_lines-1
+                n_mask = n_lines
                 print(f'{"[INFO]":<10}', f'All lines used as prior: {line_names}.')
             elif isinstance(ref_line_method, int):
                 n_mask = np.min([n_lines,ref_line_method])
