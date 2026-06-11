@@ -273,8 +273,10 @@ def create_database(just_source=None, quiet=False, conf=False):
         print(f'{"[INFO]":<10}', f'Loading {n_cubes} cube(s): {cube_names}.')
 
     # Add the input velocity-integration mask to the structure
-    # mask_columns = ["mask_name", "mask_desc", "mask_unit", "mask_ext", "mask_dir"]
-    mask_columns = ["mask_name", "mask_desc", "mask_ext", "mask_dir"]
+    if use_fixed_vel_mask:
+        mask_columns = ["mask_name", "mask_desc", "mask_start", "mask_end", "mask_unit"]
+    else:
+        mask_columns = ["mask_name", "mask_desc", "mask_ext", "mask_dir"]
     input_mask = pd.read_csv(mask_file, names = mask_columns, sep=r'[,\s]{2,20}', comment="#")
     if len(input_mask) == 0:
         if quiet == False:
@@ -283,6 +285,8 @@ def create_database(just_source=None, quiet=False, conf=False):
         if quiet == False:
             if use_input_mask:
                 print(f'{"[INFO]":<10}', f'Input mask loaded into structure; will be used for products.')
+            elif use_fixed_vel_mask:
+                print(f'{"[INFO]":<10}', f'Fixed velocity window mask loaded into structure; will be used for products.')
             else:
                 print(f'{"[INFO]":<10}', f'Input mask loaded into structure; will NOT be used for products.')
 
@@ -698,24 +702,47 @@ def create_database(just_source=None, quiet=False, conf=False):
         #---------------------------------------------------------------------
 
         if len(input_mask) > 0:
-            # assign mask file
-            this_mask_file = input_mask["mask_dir"][0] + this_source + input_mask["mask_ext"][0]
 
-            # print commands
-            if not path.exists(this_mask_file):
-                print(f'{"[ERROR]":<10}', f'Mask not found for {this_source}.')
-                continue
-            print(f'{"[INFO]":<10}', f'Sampling mask for {this_source}.')
-        
-            # sample mask
-            this_spec, this_hdr = sample_mask(in_data = this_mask_file,
-                                            ra_samp = samp_ra,
-                                            dec_samp = samp_dec,
-                                            target_hdr = ov_hdr)
+            if use_fixed_vel_mask:
+                # get velocity window from config file
+                mask_unit = input_mask["mask_unit"][0]
+                mask_start = input_mask["mask_start"][0] * au.Unit(mask_unit)
+                mask_end = input_mask["mask_end"][0] * au.Unit(mask_unit)
+
+                # print commands
+                print(f'{"[INFO]":<10}', f'Building fixed velocity mask for {this_source}: {mask_start} to {mask_end}.')
+
+                # get velocity axis
+                v0 = this_data.meta["SPEC_VCHAN0"]  # reference velocity
+                deltav = this_data.meta["SPEC_DELTAV"]  # velocity channel width
+                crpix = this_data.meta["SPEC_CRPIX"]  # reference pixel/channel
+                vaxis = v0 + (np.arange(n_chan)-(crpix-1))*deltav  # velocity axis
+                vaxis = vaxis.to(au.Unit(mask_unit))  # convert to unit of mask
+
+                # sample fixed velocity window to database grid
+                this_spec = np.zeros((n_pts, n_chan))
+                mask_vel = (vaxis >= mask_start) & (vaxis <= mask_end)  # create boolean mask for velocity channels within the specified window
+                this_spec[:, mask_vel] = 1  # set values inside fixed velocity window to 1 (True)
+
+            else:
+                # assign mask file
+                this_mask_file = input_mask["mask_dir"][0] + this_source + input_mask["mask_ext"][0]
+
+                # print commands
+                if not path.exists(this_mask_file):
+                    print(f'{"[ERROR]":<10}', f'Mask not found for {this_source}.')
+                    continue
+                print(f'{"[INFO]":<10}', f'Sampling mask for {this_source}.')
+            
+                # sample mask
+                this_spec, this_hdr = sample_mask(in_data = this_mask_file,
+                                                  ra_samp = samp_ra,
+                                                  dec_samp = samp_dec,
+                                                  target_hdr = ov_hdr)
 
             # add to database
             this_tag_name = 'SPEC_'+input_mask["mask_name"][0].upper()
-            this_data[this_tag_name] = Column(this_spec ,unit= au.dimensionless_unscaled, description='User-provided velocity-integration mask (used for integrated products)')
+            this_data[this_tag_name] = Column(this_spec, unit= au.dimensionless_unscaled, description=input_mask["mask_desc"][0])
             
 
             sz_this_spec = np.shape(this_spec)
@@ -736,11 +763,18 @@ def create_database(just_source=None, quiet=False, conf=False):
     #---------------------------------------------------------------------
     if not quiet:
         print('-------------------------------')
-        if use_input_mask:
+        if use_fixed_vel_mask:
+            print(f'{"[INFO]":<10}', f'Start processing spectra for {this_source}; using fixed velocity window.')
+        elif use_input_mask:
             print(f'{"[INFO]":<10}', f'Start processing spectra for {this_source}; using input mask.')
         else:
             print(f'{"[INFO]":<10}', f'Start processing spectra for {this_source}.')
      
+    if use_fixed_vel_mask | use_input_mask:
+        use_mask = True
+    else:
+        use_mask = False
+
     process_spectra(source_list,
                     cubes,
                     fnames,
@@ -750,7 +784,7 @@ def create_database(just_source=None, quiet=False, conf=False):
                     SN_processing,
                     strict_mask,
                     input_mask, 
-                    use_input_mask, 
+                    use_mask, 
                     hfs_data,
                     use_hfs_lines,
                     [mom_thresh,conseq_channels,mom2_method],
