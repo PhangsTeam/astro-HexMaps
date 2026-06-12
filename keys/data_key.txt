@@ -38,9 +38,9 @@ sources = ngc5194
 overlay_file = _12co21.fits
 
 # ---- maps ----
-spire250,  SPIRE 250 um,      MJy/sr,  _spire250_gauss27.fits,  data/
+spire250,  SPIRE 250 um,      MJy/sr,  _spire250_gauss21.fits,  data/
 # Add more bands below, one per line:
-# w4,      WISE Band 4,       MJy/sr,  _w4_gauss27.fits,         data/
+# w4,      WISE Band 4,       MJy/sr,  _w4_gauss21.fits,         data/
 
 # ---- cubes ----
 12co21,    12CO(2-1),          K,       _12co21.fits,            data/

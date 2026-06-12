@@ -3,7 +3,7 @@
 # =============================================================================
 # Tab-separated table of source geometric parameters.
 # All sources that may ever be used should be listed here.
-# The sources actually processed are defined in imaging_key.txt [sources].
+# The sources actually processed are defined in data_key.txt [sources].
 #
 # Columns (tab-separated, no header row):
 #   source       - source name (must match the FITS filename prefix)

@@ -11,6 +11,7 @@ into separate key files by concern:
 """
 
 import os
+import re
 import configparser
 import pandas as pd
 from pathlib import Path
@@ -255,9 +256,9 @@ class KeyHandler:
                 stripped = raw_line.strip()
                 low = stripped.lower()
                 # Stop feeding ini lines once we hit a tabular section header
-                if stripped.startswith("#") and any(
-                    kw in low for kw in ("---- map", "---- cube", "---- mask")
-                ):
+                # Stop only on the exact section-divider lines, not on
+                # comment prose that merely mentions those words.
+                if re.match(r'^#\s*----\s*(map|cube|mask)', stripped, re.IGNORECASE):
                     break
                 ini_lines.append(raw_line)
 

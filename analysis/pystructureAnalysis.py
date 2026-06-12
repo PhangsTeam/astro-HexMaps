@@ -1,0 +1,347 @@
+"""
+pystructureAnalysis: helper class for loading and analysing PyStructure .ecsv files.
+
+Usage
+-----
+    from pystructureAnalysis import pystructureAnalysis
+
+    ps = pystructureAnalysis("Output/ngc5194_data_struct_27as_2025_01_01.ecsv")
+    ps.quickplot_map("12CO21")
+    ps.quickplot_spectrum("12CO21")
+    ps.quickplot_shuffled_spectrum("12CO21")
+"""
+
+__author__ = "J. den Brok & L. Neumann"
+
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+import astropy.units as au
+from astropy.coordinates import SkyCoord, FK5
+from astropy.table import Table
+
+
+class pystructureAnalysis:
+    """
+    Load and analyse a PyStructure .ecsv database.
+
+    Parameters
+    ----------
+    path : str
+        Path to the .ecsv file produced by the pipeline.
+
+    Attributes
+    ----------
+    struct : astropy.table.Table
+    lines  : list of str — spectral line names found in the database
+    rgal   : np.ndarray  — deprojected galactocentric radius [kpc]
+    theta  : np.ndarray  — polar angle [rad]
+    """
+
+    def __init__(self, path: str):
+        self.struct = Table.read(path)
+        self.lines  = self._find_lines()
+        self.rgal   = np.array(self.struct["rgal_kpc"])
+        self.theta  = np.array(self.struct["theta_rad"]) + np.pi
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _find_lines(self) -> list:
+        """Return line names from shuffled-spectrum columns."""
+        lines = []
+        for key in self.struct.keys():
+            if key.startswith("SPEC_SHUFF"):
+                lines.append(key[len("SPEC_SHUFF"):])
+        return lines
+
+    def _get_vaxis(self, shuffled: bool = False) -> au.Quantity:
+        """Return the velocity axis for the first line."""
+        if shuffled:
+            return self.struct["SPEC_VAXISSHUFF"][0]
+        else:
+            return self.struct["SPEC_VAXIS"][0]
+
+    def _centre_pixel(self) -> int:
+        """Return the index of the sampling point closest to the source centre."""
+        return int(np.argmin(self.rgal))
+
+    # ------------------------------------------------------------------
+    # Coordinate helpers
+    # ------------------------------------------------------------------
+
+    def get_coordinates(self, center: str = None):
+        """
+        Return RA/Dec arrays, or offset coordinates relative to *center*.
+
+        Parameters
+        ----------
+        center : str, optional
+            Sky coordinate string, e.g. ``"13:29:52.7 47:11:43"``.
+            If given, returns (delta_RA, delta_Dec) in arcseconds.
+            If None, returns absolute (RA, Dec) in degrees.
+        """
+        ra  = np.array(self.struct["ra_deg"])
+        dec = np.array(self.struct["dec_deg"])
+
+        if center is None:
+            return ra, dec
+
+        ref = SkyCoord(center, frame=FK5, unit=(au.hourangle, au.deg))
+        pts = SkyCoord(ra=ra * au.deg, dec=dec * au.deg, frame=FK5)
+        aframe = ref.skyoffset_frame()
+        delta_ra  = pts.transform_to(aframe).lon.arcsec
+        delta_dec = pts.transform_to(aframe).lat.arcsec
+        return delta_ra, delta_dec
+
+    # ------------------------------------------------------------------
+    # Quick-look plots
+    # ------------------------------------------------------------------
+
+    def quickplot_map(self, line: str, quantity: str = "MOM0",
+                      s: int = 50, cmap: str = "RdYlBu_r",
+                      stretch: str = "lin", center: str = None,
+                      ax=None):
+        """
+        Scatter-plot a 2D moment map on the hexagonal grid.
+
+        Parameters
+        ----------
+        line     : str   — line name, e.g. ``"12CO21"``
+        quantity : str   — column prefix: ``"MOM0"``, ``"MOM1"``, ``"MOM2"``,
+                           ``"TPEAK"``, ``"RMS"``, or ``"MAP"`` for a 2D map
+        s        : int   — marker size
+        cmap     : str   — matplotlib colormap name
+        stretch  : str   — ``"lin"``, ``"log"``, or ``"symlog"``
+        center   : str   — if given, plot offset coords (arcsec)
+        ax       : Axes  — existing axes to draw into (creates new figure if None)
+        """
+        col = f"{quantity}_{line.upper()}"
+        if col not in self.struct.colnames:
+            raise KeyError(f"Column '{col}' not found. Available: {self.struct.colnames}")
+
+        values = np.array(self.struct[col])
+        unit   = str(self.struct[col].unit) if hasattr(self.struct[col], "unit") else ""
+
+        if center is not None:
+            x, y = self.get_coordinates(center)
+            xlabel, ylabel = r"$\Delta$R.A. [arcsec]", r"$\Delta$Dec. [arcsec]"
+        else:
+            x = np.array(self.struct["ra_deg"])
+            y = np.array(self.struct["dec_deg"])
+            xlabel, ylabel = "R.A. [deg]", "Dec. [deg]"
+
+        finite = values[np.isfinite(values)]
+        if len(finite) == 0:
+            print(f"[WARNING] All values are NaN for {col}.")
+            return
+
+        if stretch == "lin":
+            norm = mcolors.Normalize(vmin=np.nanmin(values), vmax=np.nanmax(values))
+        elif stretch == "log":
+            norm = mcolors.LogNorm(vmin=finite[finite > 0].min(), vmax=np.nanmax(values))
+        elif stretch == "symlog":
+            norm = mcolors.SymLogNorm(linthresh=np.nanmax(np.abs(values)) * 0.1,
+                                      vmin=np.nanmin(values), vmax=np.nanmax(values))
+        else:
+            raise ValueError(f"Unknown stretch '{stretch}'. Use 'lin', 'log', or 'symlog'.")
+
+        own_fig = ax is None
+        if own_fig:
+            fig, ax = plt.subplots(figsize=(6, 6))
+        else:
+            fig = ax.get_figure()
+
+        im = ax.scatter(x, y, c=values, s=s, marker="h", cmap=cmap, norm=norm)
+        ax.invert_xaxis()
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.set_title(f"{line}  {quantity}")
+
+        cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        cbar.set_label(f"{quantity} [{unit}]" if unit else quantity)
+
+        if own_fig:
+            plt.tight_layout()
+            plt.show()
+
+    def quickplot_spectrum(self, line: str, idx: int = None,
+                           show_mask: bool = True, ax=None):
+        """
+        Plot a single spectrum from the native velocity grid.
+
+        Parameters
+        ----------
+        line      : str  — line name, e.g. ``"12CO21"``
+        idx       : int  — sampling-point index (default: point closest to centre)
+        show_mask : bool — shade the integration mask region
+        ax        : Axes — existing axes to draw into
+        """
+        col = f"SPEC_{line.upper()}"
+        if col not in self.struct.colnames:
+            raise KeyError(f"Column '{col}' not found.")
+
+        if idx is None:
+            idx = self._centre_pixel()
+
+        vaxis = self._get_vaxis(shuffled=False)
+        spec  = np.array(self.struct[col][idx])
+        unit  = str(self.struct[col].unit) if hasattr(self.struct[col], "unit") else ""
+        vunit = str(vaxis.unit) if hasattr(vaxis, "unit") else "km/s"
+        vvals = vaxis.value if hasattr(vaxis, "value") else np.array(vaxis)
+
+        own_fig = ax is None
+        if own_fig:
+            fig, ax = plt.subplots(figsize=(7, 4))
+
+        ax.step(vvals, spec, where="mid", color="steelblue", linewidth=1.5, label=line)
+
+        if show_mask and "SPEC_MASK" in self.struct.colnames:
+            mask = np.array(self.struct["SPEC_MASK"][idx])
+            ylo, yhi = ax.get_ylim()
+            ax.fill_between(vvals, ylo, yhi, where=(mask == 1),
+                            color="lightblue", alpha=0.4, label="mask")
+            ax.set_ylim(ylo, yhi)
+
+        ax.axhline(0, color="k", linewidth=0.6, linestyle="--")
+        ax.set_xlabel(f"Velocity [{vunit}]")
+        ax.set_ylabel(f"T$_{{\\rm b}}$ [{unit}]" if unit else "Brightness temperature")
+        ax.set_title(f"{line}  —  pixel {idx}  (r$_{{\\rm gal}}$ = {self.rgal[idx]:.2f} kpc)")
+        ax.legend(fontsize=9)
+
+        if own_fig:
+            plt.tight_layout()
+            plt.show()
+
+    def quickplot_shuffled_spectrum(self, line: str, idx: int = None, ax=None):
+        """
+        Plot the velocity-shifted (shuffled) spectrum for a single pixel.
+
+        Parameters
+        ----------
+        line : str  — line name, e.g. ``"12CO21"``
+        idx  : int  — sampling-point index (default: point closest to centre)
+        ax   : Axes — existing axes to draw into
+        """
+        col = f"SPEC_SHUFF{line.upper()}"
+        if col not in self.struct.colnames:
+            raise KeyError(f"Column '{col}' not found.")
+
+        if idx is None:
+            idx = self._centre_pixel()
+
+        vaxis = self._get_vaxis(shuffled=True)
+        spec  = np.array(self.struct[col][idx])
+        unit  = str(self.struct[col].unit) if hasattr(self.struct[col], "unit") else ""
+        vvals = vaxis.value if hasattr(vaxis, "value") else np.array(vaxis)
+
+        own_fig = ax is None
+        if own_fig:
+            fig, ax = plt.subplots(figsize=(7, 4))
+
+        ax.step(vvals, spec, where="mid", color="darkorange", linewidth=1.5)
+        ax.axhline(0, color="k", linewidth=0.6, linestyle="--")
+        ax.axvline(0, color="grey", linewidth=0.8, linestyle=":")
+        ax.set_xlabel("Velocity offset [km/s]")
+        ax.set_ylabel(f"T$_{{\\rm b}}$ [{unit}]" if unit else "Brightness temperature")
+        ax.set_title(f"{line} (shuffled)  —  pixel {idx}")
+
+        if own_fig:
+            plt.tight_layout()
+            plt.show()
+
+    def quickplot_radial_profile(self, line: str, quantity: str = "MOM0",
+                                 nbins: int = 10, ax=None):
+        """
+        Plot a radial profile (binned median) of a moment map.
+
+        Parameters
+        ----------
+        line     : str — line name
+        quantity : str — column prefix (``"MOM0"``, ``"TPEAK"``, etc.)
+        nbins    : int — number of radial bins
+        ax       : Axes
+        """
+        col = f"{quantity}_{line.upper()}"
+        if col not in self.struct.colnames:
+            raise KeyError(f"Column '{col}' not found.")
+
+        values = np.array(self.struct[col])
+        unit   = str(self.struct[col].unit) if hasattr(self.struct[col], "unit") else ""
+
+        r_max  = np.nanmax(self.rgal)
+        edges  = np.linspace(0, r_max, nbins + 1)
+        r_cen  = 0.5 * (edges[:-1] + edges[1:])
+        medians = np.array([
+            np.nanmedian(values[(self.rgal >= edges[i]) & (self.rgal < edges[i + 1])])
+            for i in range(nbins)
+        ])
+
+        own_fig = ax is None
+        if own_fig:
+            fig, ax = plt.subplots(figsize=(6, 4))
+
+        ax.plot(r_cen, medians, marker="o", color="steelblue", linewidth=1.5)
+        ax.set_xlabel("Galactocentric radius [kpc]")
+        ax.set_ylabel(f"Median {quantity} [{unit}]" if unit else f"Median {quantity}")
+        ax.set_title(f"{line}  —  radial profile")
+
+        if own_fig:
+            plt.tight_layout()
+            plt.show()
+
+    # ------------------------------------------------------------------
+    # Data access helpers
+    # ------------------------------------------------------------------
+
+    def get_mom0(self, line: str) -> np.ndarray:
+        """Return the moment-0 array for *line*."""
+        return np.array(self.struct[f"MOM0_{line.upper()}"])
+
+    def get_ratio(self, line1: str, line2: str, sn: float = 5.0) -> dict:
+        """
+        Compute the line ratio line1 / line2 with upper/lower limits.
+
+        Returns a dict with keys: ``ratio``, ``uc``, ``ulimit``, ``llimit``.
+        """
+        i1  = np.array(self.struct[f"MOM0_{line1.upper()}"])
+        e1  = np.array(self.struct[f"EMOM0_{line1.upper()}"])
+        i2  = np.array(self.struct[f"MOM0_{line2.upper()}"])
+        e2  = np.array(self.struct[f"EMOM0_{line2.upper()}"])
+
+        ratio = np.full_like(i1, np.nan)
+        uc    = np.full_like(i1, np.nan)
+        ulim  = np.full_like(i1, np.nan)
+        llim  = np.full_like(i1, np.nan)
+
+        det   = (i1 / e1 > sn) & (i2 / e2 > sn)
+        ratio[det] = i1[det] / i2[det]
+        uc[det]    = ratio[det] * np.sqrt((e1[det] / i1[det])**2 + (e2[det] / i2[det])**2)
+
+        ul = (~det) & (i2 / e2 > sn)
+        ulim[ul] = (2 / 3) * sn * e1[ul] / i2[ul]
+
+        ll = (i1 / e1 > sn) & (~det)
+        llim[ll] = i1[ll] / e2[ll] / ((2 / 3) * sn)
+
+        return {"ratio": ratio, "uc": uc, "ulimit": ulim, "llimit": llim}
+
+    def get_2D_database(self, fname: str = None, save: bool = False):
+        """
+        Return (and optionally save) a version of the table with all SPEC_ columns removed.
+        """
+        tbl = self.struct.copy()
+        tbl.remove_columns([c for c in tbl.colnames if c.startswith("SPEC_")])
+        for key in [k for k in tbl.meta if k.startswith("SPEC_")]:
+            del tbl.meta[key]
+        if save:
+            if fname is None:
+                fname = f'{tbl.meta.get("Source", "source")}_data_struct_2D.ecsv'
+            tbl.write(fname, format="ascii.ecsv", overwrite=True)
+            print(f"[INFO] 2D table saved to {fname}")
+        return tbl
+
+    def __repr__(self):
+        return (f"pystructureAnalysis(source='{self.struct.meta.get('Source', '?')}', "
+                f"n_pts={len(self.struct)}, lines={self.lines})")
