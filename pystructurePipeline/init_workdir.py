@@ -17,8 +17,13 @@ import os
 from pathlib import Path
 
 
-# The templates are bundled inside the installed package
-_TEMPLATES_DIR = Path(__file__).parent / "templates"
+# Templates are bundled inside the installed package at templates/.
+# When running from a development clone where templates/ has not been committed,
+# fall back to the repo-root keys/ directory (one level above the package).
+_PACKAGE_DIR   = Path(__file__).parent
+_TEMPLATES_DIR = _PACKAGE_DIR / "templates"
+if not _TEMPLATES_DIR.exists():
+    _TEMPLATES_DIR = _PACKAGE_DIR.parent
 
 
 def init_workdir(workdir: str = ".", overwrite: bool = False) -> None:
@@ -58,7 +63,11 @@ def init_workdir(workdir: str = ".", overwrite: bool = False) -> None:
         copied.append(str(dst.relative_to(workdir)))
 
     # --- Run script ---
+    # run_pystructure.py lives at templates/run_pystructure.py when bundled,
+    # or at the repo root when falling back to a dev clone.
     run_script_src = _TEMPLATES_DIR / "run_pystructure.py"
+    if not run_script_src.exists():
+        run_script_src = _PACKAGE_DIR.parent / "run_pystructure.py"
     run_script_dst = workdir / "run_pystructure.py"
     if run_script_dst.exists() and not overwrite:
         raise FileExistsError(
