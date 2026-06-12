@@ -10,13 +10,13 @@
 data_dir    = data/
 
 # Directory for output .ecsv PyStructure files
-out_dir     = Output/
+out_dir     = output/
 
 # Galaxy geometry table (tab-separated, see target_definitions.txt)
 geom_file   = keys/target_definitions.txt
 
-# Band/cube definitions and source list
-imaging_key = keys/imaging_key.txt
+# Maps/cubes definitions and source list
+data_key = keys/data_key.txt
 
 # Resolution, masking, spectral, and output settings
 config_key  = keys/config_key.txt

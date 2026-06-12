@@ -1,5 +1,5 @@
 # =============================================================================
-# PyStructure imaging_key.txt
+# PyStructure data_key.txt
 # =============================================================================
 # Defines which sources to process, the overlay image, and the input bands
 # and cubes.

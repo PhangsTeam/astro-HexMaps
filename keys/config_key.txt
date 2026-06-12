@@ -28,7 +28,7 @@ CDELT_SHUFF      = 4000.0
 
 [masking]
 # Reference line for mask construction:
-#   first        - use the first cube in the imaging_key cube list
+#   first        - use the first cube in the data_key cube list
 #   <LINE_NAME>  - use that specific line
 #   all          - use all cubes
 #   n            - use first n cubes
@@ -41,10 +41,10 @@ SN_processing    = 2, 4
 # If true, apply a strict spatial consistency check on the mask
 strict_mask      = false
 
-# Use an external mask FITS file defined in imaging_key [mask]
+# Use an external mask FITS file defined in data_key [mask]
 use_input_mask   = false
 
-# Use a fixed velocity window defined in imaging_key [mask]
+# Use a fixed velocity window defined in data_key [mask]
 use_fixed_vel_mask = false
 
 # Use hyperfine structure correction (requires hfs_file in master_key)

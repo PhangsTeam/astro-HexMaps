@@ -6,7 +6,7 @@ into separate key files by concern:
 
   master_key.txt         - paths, global settings, run metadata
   target_definitions.txt - list of sources (replaces geom_file reference)
-  imaging_key.txt        - map and cube definitions
+  data_key.txt        - map and cube definitions
   config_key.txt         - resolution, masking, output settings
 """
 
@@ -72,7 +72,7 @@ class KeyHandler:
         self._load_master_key()
         self._load_config_key()
         self._load_target_definitions()
-        self._load_imaging_key()
+        self._load_data_key()
         self._load_hfs_key()
 
     def get_sources(self) -> list:
@@ -113,7 +113,7 @@ class KeyHandler:
             data_dir    = data/
             out_dir     = Output/
             geom_file   = keys/target_definitions.txt
-            imaging_key = keys/imaging_key.txt
+            data_key = keys/data_key.txt
             config_key  = keys/config_key.txt
 
             [meta]
@@ -136,7 +136,7 @@ class KeyHandler:
         self.meta["data_dir"]    = str(base / paths.get("data_dir",    "data/"))
         self.meta["out_dir"]     = str(base / paths.get("out_dir",     "Output/"))
         self.meta["geom_file"]   = str(base / paths.get("geom_file",   "keys/target_definitions.txt"))
-        self.meta["imaging_key"] = str(base / paths.get("imaging_key", "keys/imaging_key.txt"))
+        self.meta["data_key"] = str(base / paths.get("data_key", "keys/data_key.txt"))
         self.meta["config_key"]  = str(base / paths.get("config_key",  "keys/config_key.txt"))
         self.meta["hfs_file"]    = str(base / paths.get("hfs_file",    "")) if paths.get("hfs_file") else None
 
@@ -202,7 +202,7 @@ class KeyHandler:
         Columns: source  ra_ctr  dec_ctr  dist_mpc  e_dist_mpc
                  incl_deg  e_incl_deg  posang_deg  e_posang_deg  r25  e_r25
 
-        The sources to process may be a subset defined in imaging_key.txt
+        The sources to process may be a subset defined in data_key.txt
         [sources]. If not specified there, all rows are used.
         """
         geom_path = Path(self.meta["geom_file"])
@@ -213,9 +213,9 @@ class KeyHandler:
             geom_path, sep="\t", names=TARGET_COLUMNS, comment="#"
         )
 
-    def _load_imaging_key(self):
+    def _load_data_key(self):
         """
-        Load imaging_key.txt.
+        Load data_key.txt.
 
         Expected ini-style header section [sources] and [overlay], then
         freeform tabular sections for bands, cubes, and masks separated by
@@ -236,9 +236,9 @@ class KeyHandler:
         # ---- mask ----
         (optional)
         """
-        imaging_path = Path(self.meta["imaging_key"])
+        imaging_path = Path(self.meta["data_key"])
         if not imaging_path.exists():
-            raise FileNotFoundError(f"imaging_key not found: {imaging_path}")
+            raise FileNotFoundError(f"data_key not found: {imaging_path}")
 
         map_rows = []
         cube_rows = []
@@ -352,13 +352,13 @@ class KeyHandler:
         issues = []
 
         if self.maps is None or len(self.maps) == 0:
-            issues.append("No bands defined in imaging_key.")
+            issues.append("No bands defined in data_key.")
         if self.cubes is None or len(self.cubes) == 0:
-            issues.append("No cubes defined in imaging_key.")
+            issues.append("No cubes defined in data_key.")
         if not self.sources:
             issues.append("No sources defined.")
         if not self.meta.get("overlay_file"):
-            issues.append("No overlay_file defined in imaging_key.")
+            issues.append("No overlay_file defined in data_key.")
 
         for issue in issues:
             print(f"[WARNING] KeyHandler: {issue}")

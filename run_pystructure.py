@@ -12,7 +12,7 @@ Or use the installed CLI directly:
     pystructure --key_dir keys/ --stages regrid spectra --targets ngc5194
 """
 
-import pystructure as pys
+import pystructurePipeline as pys
 
 # ---------------------------------------------------------------------------
 # USER SETTINGS — edit these
@@ -30,7 +30,7 @@ KEY_DIR = "keys/"
 STAGES = None  # e.g. ["sampling", "regrid"]
 
 # Sources to process. Must match entries in keys/target_definitions.txt.
-# Set to None to process all sources defined in keys/imaging_key.txt.
+# Set to None to process all sources defined in keys/data_key.txt.
 TARGETS = None  # e.g. ["ngc5194", "ngc5457"]
 
 # ---------------------------------------------------------------------------
