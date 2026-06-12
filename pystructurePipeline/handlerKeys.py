@@ -132,7 +132,7 @@ class KeyHandler:
 
         # Store paths — resolve relative to key_dir parent so the package
         # works regardless of the working directory.
-        base = self.key_dir.parent
+        base = self.key_dir.resolve().parent
         self.meta["data_dir"]    = str(base / paths.get("data_dir",    "data/"))
         self.meta["out_dir"]     = str(base / paths.get("out_dir",     "Output/"))
         self.meta["geom_file"]   = str(base / paths.get("geom_file",   "keys/target_definitions.txt"))
@@ -142,6 +142,7 @@ class KeyHandler:
 
         self.meta["user"]     = meta.get("user",     "Unknown user")
         self.meta["comments"] = meta.get("comments", "")
+        self.meta["_base"]    = str(base)  # absolute repo root for resolving relative paths
 
     def _load_config_key(self):
         """
@@ -313,6 +314,18 @@ class KeyHandler:
 
         self.maps = pd.DataFrame(map_rows, columns=MAP_COLUMNS)
         self.cubes = pd.DataFrame(cube_rows, columns=CUBE_COLUMNS)
+
+        # Resolve relative map_dir and line_dir to absolute paths so the
+        # pipeline works regardless of the current working directory.
+        _base = Path(self.meta.get("_base", "."))
+        if len(self.maps) > 0:
+            self.maps["map_dir"] = self.maps["map_dir"].apply(
+                lambda d: str((_base / d.strip()).resolve()) if d.strip() else d
+            )
+        if len(self.cubes) > 0:
+            self.cubes["line_dir"] = self.cubes["line_dir"].apply(
+                lambda d: str((_base / d.strip()).resolve()) if d.strip() else d
+            )
 
         if self.meta.get("use_fixed_vel_mask"):
             cols = MASK_COLUMNS_VEL

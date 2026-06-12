@@ -22,14 +22,14 @@ class TestKeyHandler:
             f"data_dir    = {tmpdir}/data/\n"
             f"out_dir     = {tmpdir}/Output/\n"
             f"geom_file   = {tmpdir}/target_definitions.txt\n"
-            f"imaging_key = {tmpdir}/imaging_key.txt\n"
+            f"data_key    = {tmpdir}/data_key.txt\n"
             f"config_key  = {tmpdir}/config_key.txt\n"
             "[meta]\nuser = Test\ncomments = test\n"
         )
         (tmpdir / "target_definitions.txt").write_text(
             "ngc5194\t202.4696\t47.1952\t8.58\t0.10\t22.0\t3.0\t173.0\t3.0\t3.54\t0.05\n"
         )
-        (tmpdir / "imaging_key.txt").write_text(
+        (tmpdir / "data_key.txt").write_text(
             "[sources]\nsources = ngc5194\n"
             "[overlay]\noverlay_file = _12co21.fits\n"
             "# ---- maps ----\n"
@@ -80,7 +80,7 @@ class TestKeyHandler:
 
     def test_multi_source_list(self, tmp_path):
         self._write_minimal_keys(tmp_path)
-        (tmp_path / "imaging_key.txt").write_text(
+        (tmp_path / "data_key.txt").write_text(
             "[sources]\nsources = ngc5194, ngc5457\n"
             "[overlay]\noverlay_file = _12co21.fits\n"
             "# ---- maps ----\nspire250, SPIRE250, MJy/sr, _s.fits, data/\n"
