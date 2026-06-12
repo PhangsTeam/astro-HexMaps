@@ -1,0 +1,21 @@
+# column 1: line name (has to match database entry)    
+# column 2: reference frequency
+# column 3: hyperfine transition frequency
+# column 4: unit (astropy.units readable)
+#-------------------------------------------------------------
+# !!!Make sure columns separated by only one tab!!!
+#-------------------------------------------------------------
+hcn10	88.6316023	88.6304156	GHz 
+hcn10	88.6316023	88.6318475	GHz 
+hcn10	88.6316023	88.6339357	GHz 
+n2hp10	93.17370000	93.17188000	GHz 
+n2hp10	93.17370000	93.17613000	GHz 
+cn1212	113.19127870	113.17049150	GHz
+cn1212	113.19127870	113.14415730	GHz 
+cn3212	113.49097020	113.50890740	GHz
+cn3212	113.49097020	113.49964430	GHz
+cn3212	113.49097020	113.48812020	GHz
+cch1212	87.40200400	87.44651200	GHz
+cch1212	87.40200400	87.40716500	GHz
+cch3212	87.31692500	87.32862400	GHz
+cch3212	87.31692500	87.28415600	GHz
