@@ -49,11 +49,14 @@ class pystructureAnalysis:
     # ------------------------------------------------------------------
 
     def _find_lines(self) -> list:
-        """Return line names from shuffled-spectrum columns."""
+        """Return line names from 3D or 2D columns."""
         lines = []
         for key in self.struct.keys():
-            if key.startswith("SPEC_SHUFF"):
-                lines.append(key[len("SPEC_SHUFF"):])
+            if key.startswith("SHUFF"):
+                lines.append(key[len("SHUFF"):])
+            elif key.startswith("MOM0"):
+                lines.append(key.split("_")[1])
+        lines = list(dict.fromkeys(lines))  # only keep unique elements
         return lines
 
     def _get_vaxis(self, shuffled: bool = False) -> au.Quantity:
