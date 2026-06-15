@@ -54,7 +54,7 @@ class TestKeyHandler:
 
     def test_load_basic(self, tmp_path):
         self._write_minimal_keys(tmp_path)
-        from pystructurePipeline.handlerKeys import KeyHandler
+        from pystructurePipeline.handler_keys import KeyHandler
         kh = KeyHandler(str(tmp_path))
         assert kh.sources == ["ngc5194"]
         assert len(kh.maps) == 1
@@ -63,17 +63,17 @@ class TestKeyHandler:
 
     def test_validate_passes(self, tmp_path):
         self._write_minimal_keys(tmp_path)
-        from pystructurePipeline.handlerKeys import KeyHandler
+        from pystructurePipeline.handler_keys import KeyHandler
         assert KeyHandler(str(tmp_path)).validate() is True
 
     def test_missing_key_dir_raises(self):
-        from pystructurePipeline.handlerKeys import KeyHandler
+        from pystructurePipeline.handler_keys import KeyHandler
         with pytest.raises(FileNotFoundError):
             KeyHandler("/nonexistent/path/")
 
     def test_repr(self, tmp_path):
         self._write_minimal_keys(tmp_path)
-        from pystructurePipeline.handlerKeys import KeyHandler
+        from pystructurePipeline.handler_keys import KeyHandler
         kh = KeyHandler(str(tmp_path))
         assert "KeyHandler" in repr(kh)
         assert "ngc5194" in repr(kh)
@@ -91,7 +91,7 @@ class TestKeyHandler:
             "ngc5194\t202.4696\t47.1952\t8.58\t0.10\t22.0\t3.0\t173.0\t3.0\t3.54\t0.05\n"
             "ngc5457\t210.8025\t54.3492\t6.70\t0.32\t18.0\t5.0\t39.0\t5.0\t13.46\t0.50\n"
         )
-        from pystructurePipeline.handlerKeys import KeyHandler
+        from pystructurePipeline.handler_keys import KeyHandler
         kh = KeyHandler(str(tmp_path))
         assert kh.sources == ["ngc5194", "ngc5457"]
 
@@ -112,18 +112,18 @@ class TestSourceHandler:
         }])
 
     def test_get_source_params(self):
-        from pystructurePipeline.handlerSources import SourceHandler
+        from pystructurePipeline.handler_sources import SourceHandler
         th = SourceHandler(self._make_table(), ["ngc5194"])
         assert abs(th.get_source_params("ngc5194")["ra_ctr"] - 202.47) < 1e-6
 
     def test_unknown_source_raises(self):
-        from pystructurePipeline.handlerSources import SourceHandler
+        from pystructurePipeline.handler_sources import SourceHandler
         th = SourceHandler(self._make_table(), ["ngc5194"])
         with pytest.raises(KeyError):
             th.get_source_params("ngc9999")
 
     def test_source_not_in_table_raises(self):
-        from pystructurePipeline.handlerSources import SourceHandler
+        from pystructurePipeline.handler_sources import SourceHandler
         with pytest.raises(ValueError):
             SourceHandler(self._make_table(), ["ngc9999"])
 
@@ -135,23 +135,23 @@ class TestSourceHandler:
 class TestFitsUtils:
 
     def test_get_beam_arcsec_missing_file(self):
-        from pystructurePipeline.utilsFits import get_beam_arcsec
+        from pystructurePipeline.utils_fits import get_beam_arcsec
         with pytest.raises(FileNotFoundError):
             get_beam_arcsec("/nonexistent/file.fits")
 
     def test_read_fits_cube_missing_file(self):
-        from pystructurePipeline.utilsFits import read_fits_cube
+        from pystructurePipeline.utils_fits import read_fits_cube
         with pytest.raises(FileNotFoundError):
             read_fits_cube("/nonexistent/file.fits")
 
     def test_hex_grid_basic(self):
-        from pystructurePipeline.utilsFits import hex_grid
+        from pystructurePipeline.utils_fits import hex_grid
         x, y = hex_grid(0.0, 0.0, 0.01, radec=False, r_limit=0.05)
         assert len(x) > 0
 
     def test_deproject_shape(self):
         import numpy as np
-        from pystructurePipeline.utilsFits import deproject
+        from pystructurePipeline.utils_fits import deproject
         ra  = np.linspace(202.0, 203.0, 10)
         dec = np.linspace(47.0, 48.0, 10)
         r, t = deproject(ra, dec, [173.0, 22.0, 202.47, 47.20], vector=True)
@@ -159,13 +159,13 @@ class TestFitsUtils:
 
     def test_gaussian_PSF_2D_shape(self):
         import numpy as np
-        from pystructurePipeline.utilsFits import gaussian_PSF_2D
+        from pystructurePipeline.utils_fits import gaussian_PSF_2D
         psf = gaussian_PSF_2D(11, [0., 1., 3., 3., 0., 0., 0.], center=True, normalize=True)
         assert psf.shape == (11, 11)
         assert abs(np.sum(psf) - 1.0) < 1e-6
 
     def test_deconvolve_gauss_basic(self):
-        from pystructurePipeline.utilsFits import deconvolve_gauss
+        from pystructurePipeline.utils_fits import deconvolve_gauss
         maj, minn, pa, info = deconvolve_gauss(30.0, 20.0, 30.0, 0.0, 20.0, 0.0)
         assert info[0]   # worked
         assert maj > 0
@@ -178,18 +178,18 @@ class TestFitsUtils:
 class TestTableUtils:
 
     def test_load_missing_file(self):
-        from pystructurePipeline.utilsTable import load_pystructure
+        from pystructurePipeline.utils_table import load_pystructure
         with pytest.raises(FileNotFoundError):
             load_pystructure("/nonexistent/file.ecsv")
 
     def test_find_latest_missing(self, tmp_path):
-        from pystructurePipeline.utilsTable import find_latest_pystructure
+        from pystructurePipeline.utils_table import find_latest_pystructure
         with pytest.raises(FileNotFoundError):
             find_latest_pystructure(str(tmp_path), "ngc5194")
 
     def test_shuffle_roundtrip(self):
         import numpy as np
-        from pystructurePipeline.utilsTable import shuffle
+        from pystructurePipeline.utils_table import shuffle
         vaxis    = np.arange(-100, 101, 1.0)
         spec     = np.exp(-0.5 * (vaxis / 20.0) ** 2)
         shuffled = shuffle(spec, vaxis, zero=0.0, new_vaxis=vaxis)
@@ -199,7 +199,7 @@ class TestTableUtils:
     def test_get_mom_maps_runs(self):
         import numpy as np
         from astropy import units as au
-        from pystructurePipeline.utilsTable import get_mom_maps
+        from pystructurePipeline.utils_table import get_mom_maps
 
         n_pts, n_chan = 5, 50
         vaxis = np.linspace(-100, 100, n_chan) * au.km / au.s
@@ -285,7 +285,7 @@ class TestLogger:
         log = get_logger("Regrid")
         log.info("hello world")
         captured = capsys.readouterr()
-        assert "[pyStructure] [Regrid]  [INFO]  hello world" in captured.out
+        assert "[pyStructure] [Regrid]    [INFO]     hello world" in captured.out
 
     def test_verbose_false_suppresses_print(self, capsys):
         from pystructurePipeline.pystructureLogger import logger, get_logger
@@ -305,7 +305,7 @@ class TestLogger:
         log = get_logger("FITS")
         log.error("file not found")
         content = log_path.read_text()
-        assert "[pyStructure] [FITS]  [ERROR]  file not found" in content
+        assert "[pyStructure] [FITS]      [ERROR]    file not found" in content
         logger.configure(verbose=True, log_file=None)  # restore default
 
     def test_save_writes_all_records(self, tmp_path):
@@ -317,7 +317,7 @@ class TestLogger:
         save_path = tmp_path / "saved.log"
         logger.save(str(save_path))
         content = save_path.read_text()
-        assert "[Sampling]  [INFO]  a" in content
+        assert "[Sampling]  [INFO]     a" in content
         assert "[Sampling]  [WARNING]  b" in content
         logger.configure(verbose=True, log_file=None)  # restore default
 
@@ -341,10 +341,10 @@ class TestPipelineHandlerLogging:
         kh = TestKeyHandler()
         kh._write_minimal_keys(tmp_path)
 
-        from pystructurePipeline.handlerPipeline import PipelineHandler
+        from pystructurePipeline.handler_pipeline import PipelineHandler
         log_path = tmp_path / "run.log"
         handler = PipelineHandler(key_dir=str(tmp_path), verbose=False,
                                   log_file=str(log_path))
         assert log_path.exists()
         content = log_path.read_text()
-        assert "[pyStructure] [Pipeline]  [INFO]  Loading key files..." in content
+        assert "[pyStructure] [Loading]   [INFO]     Loading key files..." in content

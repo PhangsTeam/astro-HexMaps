@@ -12,14 +12,15 @@ Initialise a working directory (copies key templates + run script):
 
 Run the pipeline (from inside a working directory):
     pystructure --key_dir keys/
-    pystructure --key_dir keys/ --stages sampling regrid
+    pystructure --key_dir keys/ --stages regrid products
     pystructure --key_dir keys/ --targets ngc5194
+    pystructure --key_dir keys/ --log_file pystructure_run.log
 """
 
 import argparse
 import sys
 
-ALL_STAGES = ["sampling", "regrid", "spectra", "output"]
+ALL_STAGES = ["regrid", "products", "fits"]
 
 
 def parse_args(argv=None):
@@ -75,6 +76,11 @@ def parse_args(argv=None):
         action="store_true",
         help="Suppress informational output.",
     )
+    parser.add_argument(
+        "--log_file",
+        default=None,
+        help="Write all log messages to this file in addition to stdout.",
+    )
 
     return parser.parse_args(argv)
 
@@ -113,7 +119,8 @@ def main(argv=None):
         sys.exit(1)
 
     stages = args.stages if args.stages else ALL_STAGES
-    handler = PipelineHandler(key_dir=args.key_dir, verbose=not args.quiet)
+    handler = PipelineHandler(key_dir=args.key_dir, verbose=not args.quiet,
+                              log_file=args.log_file)
 
     try:
         handler.run_stages(stages=stages, targets=args.targets)
