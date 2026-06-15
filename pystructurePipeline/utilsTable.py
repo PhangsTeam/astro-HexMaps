@@ -1,12 +1,23 @@
 """
-pystructurePipeline.utils.table_utils
-======================================
-Astropy Table I/O helpers, spectral shuffle, and moment computation.
+utilsTable.py — Astropy Table I/O helpers, spectral shuffle, and moment maps.
 
-Contains (all inline, no legacy imports):
-  - load_pystructure / save_pystructure / find_latest_pystructure
-  - shuffle         — remap a spectrum onto a new velocity axis
-  - get_mom_maps    — compute moment-0/1/2, Tpeak, rms, EW
+All functions are self-contained and usable independently of the pipeline.
+
+Contents
+--------
+I/O helpers
+    load_pystructure         — load a .ecsv database
+    save_pystructure         — save a Table to .ecsv
+    find_latest_pystructure  — find the most recently dated .ecsv for a source
+    get_column_names         — return column names without loading all data
+    get_spec_lines           — return spectral line names
+    get_map_names            — return 2D map names
+
+Spectral shuffle
+    shuffle          — remap spectra onto a new (shifted) velocity axis
+
+Moment computation
+    get_mom_maps     — compute moment-0/1/2, Tpeak, rms, and EW maps
 """
 
 import os
@@ -17,47 +28,98 @@ from pathlib import Path
 from astropy import units as au
 from astropy.table import Table
 
+_LOG_PREFIX = "[pyStructure] [Utils]   "
+
 
 # ============================================================================
 # I/O helpers
 # ============================================================================
 
 def load_pystructure(fname: str) -> Table:
-    """Load a PyStructure .ecsv file."""
+    """
+    Load a PyStructure .ecsv file into an Astropy Table.
+
+    Parameters
+    ----------
+    fname : str or Path — path to the .ecsv file
+
+    Returns
+    -------
+    table : astropy.table.Table
+
+    Raises
+    ------
+    FileNotFoundError if the file does not exist.
+    """
     fname = Path(fname)
     if not fname.exists():
-        raise FileNotFoundError(f"PyStructure file not found: {fname}")
+        raise FileNotFoundError(
+            f"{_LOG_PREFIX} [ERROR]  PyStructure file not found: {fname}"
+        )
     return Table.read(fname)
 
 
 def save_pystructure(table: Table, fname: str, overwrite: bool = True) -> None:
-    """Save a PyStructure Astropy Table to an .ecsv file."""
+    """
+    Save an Astropy Table to a PyStructure .ecsv file.
+
+    Creates the parent directory if it does not exist.
+
+    Parameters
+    ----------
+    table     : astropy.table.Table
+    fname     : str or Path
+    overwrite : bool — if False, raise if *fname* already exists
+    """
     fname = Path(fname)
     os.makedirs(fname.parent, exist_ok=True)
     table.write(str(fname), format="ascii.ecsv", overwrite=overwrite)
 
 
 def find_latest_pystructure(out_dir: str, source: str) -> str:
-    """Return the most recently dated PyStructure file for *source*."""
+    """
+    Find the most recently dated PyStructure .ecsv file for *source*.
+
+    Files are matched by the glob pattern
+    ``{out_dir}/{source}_data_struct_*.ecsv`` and sorted lexicographically
+    (which is equivalent to date-order for the YYYY_MM_DD filename convention).
+
+    Parameters
+    ----------
+    out_dir : str — directory to search
+    source  : str — source name
+
+    Returns
+    -------
+    path : str — path to the most recent matching file
+
+    Raises
+    ------
+    FileNotFoundError if no matching file is found.
+    """
     pattern = os.path.join(out_dir, f"{source}_data_struct_*.ecsv")
     matches = sorted(glob.glob(pattern))
     if not matches:
         raise FileNotFoundError(
-            f"No PyStructure file found for '{source}' in '{out_dir}'"
+            f"{_LOG_PREFIX} [ERROR]  No PyStructure file found for "
+            f"'{source}' in '{out_dir}'"
         )
     return matches[-1]
 
 
 def get_column_names(fname: str) -> list:
+    """Return the column names of a PyStructure file."""
     return Table.read(fname).colnames
 
 
 def get_spec_lines(fname: str) -> list:
+    """Return the spectral line names stored in a PyStructure file (from SPEC_ columns)."""
     return [c[5:] for c in get_column_names(fname) if c.startswith("SPEC_")]
 
 
 def get_map_names(fname: str) -> list:
-    return [c[5:] for c in get_column_names(fname) if c.startswith("MAP_")]
+    """Return the 2D map names stored in a PyStructure file (from MAP_ columns)."""
+    return [c[4:] for c in get_column_names(fname) if c.startswith("MAP_")]
 
 
 # ============================================================================
@@ -70,17 +132,40 @@ def shuffle(spec, vaxis, zero=None, new_vaxis=None,
     """
     Remap a spectrum (or array of spectra) onto a new velocity axis.
 
-    Port of IDL shuffle (cpropstoo, J. den Brok 2019).
+    The "shuffle" operation shifts each spectrum so that a reference velocity
+    (``zero``) maps to v = 0 on the output axis.  This is used to stack spectra
+    from different positions that have different systemic velocities, improving
+    the sensitivity to faint emission.
+
+    Port of IDL shuffle (cpropstoo, A. Leroy) by J. den Brok (2019).
 
     Parameters
     ----------
-    spec     : 1-D, 2-D (n_spec × n_chan), or 3-D array
-    vaxis    : original velocity axis
-    zero     : scalar or array — velocity shift applied per spectrum
-    new_vaxis: target velocity axis; or build from new_crval/crpix/cdelt/naxis
-    interp   : 0 = nearest-neighbour, 1 = linear (default)
-    missing  : fill value for out-of-range channels (default NaN)
+    spec      : np.ndarray — 1-D (single spectrum), 2-D (n_pts × n_chan),
+                             or 3-D (nx × ny × n_chan) array
+    vaxis     : array-like — original velocity axis (same units as zero/new_vaxis)
+    zero      : scalar or array — velocity shift to apply per spectrum.
+                Scalar: same shift for all spectra.
+                Array: one shift per row (2-D input) or one per pixel (3-D).
+    new_vaxis : array-like, optional — explicit output velocity axis.
+                If not given, it is constructed from new_crval, new_crpix,
+                new_cdelt, new_naxis (all defaulting to the input axis).
+    interp    : int — 0 = nearest-neighbour (preserves noise statistics),
+                       1 = linear (default, smoother but correlates noise)
+    missing   : float — fill value for channels outside the valid range
+                        (default: NaN)
+
+    Returns
+    -------
+    output : np.ndarray — shuffled spectrum/array, same leading shape as *spec*
+             but with n_chan = len(new_vaxis) along the last axis.
+
+    Notes
+    -----
+    If new_vaxis is identical to vaxis and zero is 0, the function returns
+    spec unchanged without any resampling.
     """
+    # Build output velocity axis if not provided
     if new_vaxis is None:
         if new_cdelt is None:
             new_cdelt = vaxis[1] - vaxis[0]
@@ -90,6 +175,7 @@ def shuffle(spec, vaxis, zero=None, new_vaxis=None,
             new_naxis = len(vaxis)
         new_vaxis = (np.arange(new_naxis) - (new_crpix - 1.0)) * new_cdelt + new_crval
 
+    # No-op check: same axis and no shift
     if len(new_vaxis) == len(vaxis) and np.sum(new_vaxis != vaxis) == 0:
         return spec
 
@@ -97,18 +183,15 @@ def shuffle(spec, vaxis, zero=None, new_vaxis=None,
     dim_spec = np.shape(spec)
 
     if len(dim_spec) == 2:
-        shape, n_spec = "ARRAY", dim_spec[0]
+        n_spec = dim_spec[0]
     elif len(dim_spec) == 3:
-        shape, n_spec = "CUBE", dim_spec[1] * dim_spec[2]
+        n_spec = dim_spec[1] * dim_spec[2]
     else:
-        shape, n_spec = "SPEC", 1
+        n_spec = 1
 
-    if zero is None:
-        zero = 0.0
-    if missing is None:
-        missing = np.nan
-    if interp is None:
-        interp = 1
+    if zero    is None: zero    = 0.0
+    if missing is None: missing = np.nan
+    if interp  is None: interp  = 1
 
     orig_nchan  = len(vaxis)
     orig_chan   = np.arange(orig_nchan)
@@ -116,6 +199,7 @@ def shuffle(spec, vaxis, zero=None, new_vaxis=None,
     orig_deltav = vaxis[1] - vaxis[0]
     new_deltav  = new_vaxis[1] - new_vaxis[0]
 
+    # Pre-allocate output array
     if len(dim_spec) == 1:
         output = np.full(n_chan, missing, dtype=float)
     elif len(dim_spec) == 2:
@@ -123,7 +207,6 @@ def shuffle(spec, vaxis, zero=None, new_vaxis=None,
     else:
         output = np.full((dim_spec[0], dim_spec[1], n_chan), missing, dtype=float)
 
-    no_overlap_ct = 0
     for ii in range(n_spec):
         if len(dim_spec) == 3:
             yy = ii // dim_spec[0]
@@ -137,29 +220,33 @@ def shuffle(spec, vaxis, zero=None, new_vaxis=None,
             this_spec = copy.copy(spec)
             this_zero = zero
 
+        # Shift the original velocity axis by -this_zero so that emission
+        # at this_zero maps to v=0 on the output axis
         this_vaxis = vaxis - this_zero
 
+        # Ensure both axes are monotonically increasing
         if orig_deltav < 0 and (this_vaxis[1] - this_vaxis[0]) < 0:
             this_vaxis = np.flip(this_vaxis)
             this_spec  = np.flip(this_spec)
         if new_deltav < 0 and (new_vaxis[1] - new_vaxis[0]) < 0:
             new_vaxis  = np.flip(new_vaxis)
 
+        # Map new velocity axis positions to channel indices in the shifted original axis
         channel_mapping = np.interp(new_vaxis, this_vaxis, orig_chan)
         overlap = np.where(
             (channel_mapping > 0.0) & (channel_mapping < orig_nchan - 1)
         )[0]
         if len(overlap) == 0:
-            no_overlap_ct += 1
-            continue
+            continue   # no valid overlap; output channels stay as missing
 
         new_spec = np.full(new_nchan, missing, dtype=float)
         if interp == 0:
+            # Nearest-neighbour: integer channel lookup
             new_spec[overlap] = this_spec[
                 np.array(np.rint(channel_mapping[overlap]), dtype=int)]
         else:
-            new_spec[overlap] = np.interp(
-                new_vaxis[overlap], this_vaxis, this_spec)
+            # Linear interpolation
+            new_spec[overlap] = np.interp(new_vaxis[overlap], this_vaxis, this_spec)
 
         if new_deltav < 0:
             new_spec = np.flip(new_spec)
@@ -180,22 +267,41 @@ def shuffle(spec, vaxis, zero=None, new_vaxis=None,
 
 def get_mom_maps(spec_cube, mask, vaxis, mom_calc=(3, 3, "fwhm")):
     """
-    Compute moment maps from a masked spectral cube.
+    Compute integrated spectral properties from a masked spectral cube.
+
+    For each sampling point, computes a set of quantities that characterise the
+    emission line: integrated intensity (mom0), mean velocity (mom1), velocity
+    dispersion (mom2), peak brightness (Tpeak), noise rms, and equivalent width
+    (EW).  Uncertainties are propagated analytically.
+
+    Moment definitions
+    ------------------
+    mom0 = ∑ T_i × dv  (integrated intensity, summed over masked channels)
+    mom1 = ∑ T_i × v_i / ∑ T_i  (intensity-weighted mean velocity)
+    mom2 = sqrt(∑ T_i × (v_i - mom1)² / ∑ T_i)  [math definition]
+         → × sqrt(8 ln2)  to give FWHM  [mom2_method = "fwhm"]
+    EW   = mom0 / Tpeak / sqrt(2π)  (equivalent width under a Gaussian profile)
+
+    Moments 1 and 2 are computed using a high-S/N submask (pixels above
+    SNthresh × rms with ≥ 3 consecutive channels) to reduce bias from low-S/N
+    wings.
 
     Port of mom_computer.py (J. den Brok / L. Neumann).
 
     Parameters
     ----------
-    spec_cube : astropy Quantity (n_pts × n_chan)
-    mask      : array-like (n_pts × n_chan)
-    vaxis     : astropy Quantity (n_chan,)
-    mom_calc  : [SN_thresh, conseq_channels, mom2_method]
-                mom2_method ∈ {"fwhm", "sqrt", "math"}
+    spec_cube : astropy Quantity (n_pts × n_chan) — brightness temperature cube
+    mask      : array-like (n_pts × n_chan)       — 0/1 integration mask
+    vaxis     : astropy Quantity (n_chan,)          — velocity axis
+    mom_calc  : tuple (SN_thresh, conseq_channels, mom2_method)
+        SN_thresh       : float — S/N threshold for high-S/N submask
+        conseq_channels : int   — min consecutive channels for submask
+        mom2_method     : str   — "fwhm" | "sqrt" | "math"
 
     Returns
     -------
-    dict of astropy Quantities keyed by:
-      rms, tpeak, mom0, mom0_err, mom1, mom1_err, mom2, mom2_err, ew, ew_err
+    dict mapping str → astropy Quantity (n_pts,):
+        rms, tpeak, mom0, mom0_err, mom1, mom1_err, mom2, mom2_err, ew, ew_err
     """
     spec_vals  = spec_cube.value
     v_vals     = vaxis.value
@@ -208,9 +314,10 @@ def get_mom_maps(spec_cube, mask, vaxis, mom_calc=(3, 3, "fwhm")):
     mom2_method     = mom_calc[2]
     fac_mom2        = np.sqrt(8 * np.log(2)) if mom2_method == "fwhm" else 1.0
 
-    n_pts = spec_vals.shape[0]
-    mom2_unit = v_unit if mom2_method == "fwhm" else v_unit ** 2
+    n_pts     = spec_vals.shape[0]
+    mom2_unit = v_unit if mom2_method == "fwhm" else v_unit**2
 
+    # Initialise all output arrays with NaN
     mom_maps = {
         "rms":      np.full(n_pts, np.nan) * spec_unit,
         "tpeak":    np.full(n_pts, np.nan) * spec_unit,
@@ -228,54 +335,58 @@ def get_mom_maps(spec_cube, mask, vaxis, mom_calc=(3, 3, "fwhm")):
         spectrum = spec_vals[m, :]
         mask_m   = np.array(mask[m, :], dtype=float)
 
+        # Skip points with no valid data
         if np.nansum(spectrum != 0) < 1:
             continue
 
-        # RMS
+        # RMS noise: standard deviation of channels outside the mask
         rms = np.nanstd(spectrum[np.logical_and(mask_m == 0, spectrum != 0)])
         mom_maps["rms"][m] = rms * spec_unit
 
-        # Tpeak
+        # Peak brightness within the mask
         tpeak = np.nanmax(spectrum * mask_m)
         mom_maps["tpeak"][m] = tpeak * spec_unit
 
-        # Mom0
+        # Moment 0: integrated intensity
         mom0 = np.nansum(spectrum * mask_m) * dv
-        mom_maps["mom0"][m]     = mom0     * spec_unit * v_unit
+        mom_maps["mom0"][m]     = mom0 * spec_unit * v_unit
+        # Uncertainty: noise per channel × sqrt(N_mask channels) × dv
         mom_maps["mom0_err"][m] = np.sqrt(np.nansum(mask_m)) * rms * dv * spec_unit * v_unit
 
-        # High-S/N mask for moments 1 and 2
+        # High-S/N submask for moments 1 and 2
+        # Requires SNthresh × rms AND ≥ 3 consecutive channels above threshold
         hsmask = (spectrum * mask_m > SNthresh * rms).astype(int)
         hsmask = ((hsmask + np.roll(hsmask, 1) + np.roll(hsmask, -1)) >= 3).astype(int)
         if np.nansum(hsmask) < conseq_channels - 2:
-            continue
+            continue   # insufficient high-S/N channels; skip moments 1 and 2
+        # Dilate the high-S/N mask to include wings
         for _ in range(5):
             hsmask = ((hsmask + np.roll(hsmask, 1) + np.roll(hsmask, -1)) >= 1).astype(int)
 
         den1 = np.nansum(spectrum * hsmask)
 
-        # Mom1
+        # Moment 1: intensity-weighted mean velocity
         mom1 = np.nansum(spectrum * v_vals * hsmask) / den1
         mom_maps["mom1"][m] = mom1 * v_unit
-        numer = rms ** 2 * np.nansum(hsmask * (v_vals - mom1) ** 2)
-        mom_maps["mom1_err"][m] = np.sqrt(numer / den1 ** 2) * v_unit
+        numer = rms**2 * np.nansum(hsmask * (v_vals - mom1)**2)
+        mom_maps["mom1_err"][m] = np.sqrt(numer / den1**2) * v_unit
 
-        # Mom2
-        mom2_math = np.nansum(spectrum * hsmask * (v_vals - mom1) ** 2) / den1
-        numer     = rms ** 2 * np.nansum((hsmask * (v_vals - mom1) ** 2 - mom2_math) ** 2)
-        mom2_err  = np.sqrt(numer / den1 ** 2)
+        # Moment 2: velocity dispersion
+        mom2_math = np.nansum(spectrum * hsmask * (v_vals - mom1)**2) / den1
+        numer     = rms**2 * np.nansum((hsmask * (v_vals - mom1)**2 - mom2_math)**2)
+        mom2_err  = np.sqrt(numer / den1**2)
         if mom2_method == "fwhm":
             mom_maps["mom2"][m]     = fac_mom2 * np.sqrt(mom2_math) * v_unit
             mom_maps["mom2_err"][m] = fac_mom2 * mom2_err / (2 * np.sqrt(mom2_math)) * v_unit
         else:
-            mom_maps["mom2"][m]     = mom2_math * v_unit ** 2
-            mom_maps["mom2_err"][m] = mom2_err  * v_unit ** 2
+            mom_maps["mom2"][m]     = mom2_math * v_unit**2
+            mom_maps["mom2_err"][m] = mom2_err  * v_unit**2
 
-        # EW
+        # Equivalent width
         ew = np.nansum(spectrum * hsmask) * dv / tpeak / np.sqrt(2 * np.pi)
         mom_maps["ew"][m] = ew * v_unit
-        term1 = rms ** 2 * np.nansum(hsmask) * dv ** 2 / (2 * np.pi * tpeak ** 2)
-        term2 = ew ** 2 - ew * dv / np.sqrt(2 * np.pi)
+        term1 = rms**2 * np.nansum(hsmask) * dv**2 / (2 * np.pi * tpeak**2)
+        term2 = ew**2 - ew * dv / np.sqrt(2 * np.pi)
         mom_maps["ew_err"][m] = np.sqrt(term1 + term2) * v_unit
 
     return mom_maps

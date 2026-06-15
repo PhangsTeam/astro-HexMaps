@@ -271,3 +271,80 @@ class TestCLI:
         from pystructurePipeline.cli import main
         with pytest.raises(SystemExit):
             main(["--key_dir", ".", "--stages", "invalid_stage"])
+
+
+# ---------------------------------------------------------------------------
+# Logger
+# ---------------------------------------------------------------------------
+
+class TestLogger:
+
+    def test_get_logger_prints_formatted_message(self, capsys):
+        from pystructurePipeline.pystructureLogger import logger, get_logger
+        logger.configure(verbose=True, log_file=None)
+        log = get_logger("Regrid")
+        log.info("hello world")
+        captured = capsys.readouterr()
+        assert "[pyStructure] [Regrid]  [INFO]  hello world" in captured.out
+
+    def test_verbose_false_suppresses_print(self, capsys):
+        from pystructurePipeline.pystructureLogger import logger, get_logger
+        logger.configure(verbose=False, log_file=None)
+        log = get_logger("Products")
+        log.warning("should not print")
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        # but still recorded
+        assert any(r["message"] == "should not print" for r in logger.get_records())
+        logger.configure(verbose=True, log_file=None)  # restore default
+
+    def test_log_file_written(self, tmp_path):
+        from pystructurePipeline.pystructureLogger import logger, get_logger
+        log_path = tmp_path / "run.log"
+        logger.configure(verbose=False, log_file=str(log_path))
+        log = get_logger("FITS")
+        log.error("file not found")
+        content = log_path.read_text()
+        assert "[pyStructure] [FITS]  [ERROR]  file not found" in content
+        logger.configure(verbose=True, log_file=None)  # restore default
+
+    def test_save_writes_all_records(self, tmp_path):
+        from pystructurePipeline.pystructureLogger import logger, get_logger
+        logger.configure(verbose=False, log_file=None)
+        log = get_logger("Sampling")
+        log.info("a")
+        log.warning("b")
+        save_path = tmp_path / "saved.log"
+        logger.save(str(save_path))
+        content = save_path.read_text()
+        assert "[Sampling]  [INFO]  a" in content
+        assert "[Sampling]  [WARNING]  b" in content
+        logger.configure(verbose=True, log_file=None)  # restore default
+
+    def test_get_records_filtering(self):
+        from pystructurePipeline.pystructureLogger import logger, get_logger
+        logger.configure(verbose=False, log_file=None)
+        log = get_logger("Keys")
+        log.info("info msg")
+        log.error("error msg")
+        errors = logger.get_records(stage="Keys", level="ERROR")
+        assert len(errors) >= 1
+        assert all(r["level"] == "ERROR" for r in errors)
+        logger.configure(verbose=True, log_file=None)  # restore default
+
+
+class TestPipelineHandlerLogging:
+
+    def test_log_file_created_on_init(self, tmp_path):
+        """PipelineHandler(log_file=...) should create the log file immediately."""
+        # Re-use the minimal key set from TestKeyHandler
+        kh = TestKeyHandler()
+        kh._write_minimal_keys(tmp_path)
+
+        from pystructurePipeline.handlerPipeline import PipelineHandler
+        log_path = tmp_path / "run.log"
+        handler = PipelineHandler(key_dir=str(tmp_path), verbose=False,
+                                  log_file=str(log_path))
+        assert log_path.exists()
+        content = log_path.read_text()
+        assert "[pyStructure] [Pipeline]  [INFO]  Loading key files..." in content
