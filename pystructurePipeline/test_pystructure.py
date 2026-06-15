@@ -198,14 +198,14 @@ class TestTableUtils:
 
     def test_get_mom_maps_runs(self):
         import numpy as np
-        from astropy import units as au
+        from astropy import units as u
         from pystructurePipeline.utils_table import get_mom_maps
 
         n_pts, n_chan = 5, 50
-        vaxis = np.linspace(-100, 100, n_chan) * au.km / au.s
-        spec  = np.zeros((n_pts, n_chan)) * au.K
+        vaxis = np.linspace(-100, 100, n_chan) * u.km / u.s
+        spec  = np.zeros((n_pts, n_chan)) * u.K
         # Put a Gaussian signal in one spectrum
-        spec[2, :] = np.exp(-0.5 * (np.linspace(-100, 100, n_chan) / 15.0) ** 2) * au.K
+        spec[2, :] = np.exp(-0.5 * (np.linspace(-100, 100, n_chan) / 15.0) ** 2) * u.K
         mask = (spec.value > 0.1).astype(float)
 
         moms = get_mom_maps(spec, mask, vaxis, mom_calc=[2, 3, "fwhm"])

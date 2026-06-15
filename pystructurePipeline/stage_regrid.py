@@ -44,7 +44,7 @@ from datetime import date
 from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.table import Table, Column
-from astropy import units as au
+from astropy import units as u
 from reproject import reproject_interp
 
 from pystructurePipeline.utils_fits import (
@@ -658,7 +658,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
             perbeam        = perbeam,
         )
         this_data["MAP_" + map_entry["map_name"].upper()] = Column(
-            this_int, unit=au.Unit(str(map_entry["map_unit"])),
+            this_int, unit=u.Unit(str(map_entry["map_unit"])),
             description=map_entry["map_desc"])
 
         # Optional uncertainty map
@@ -671,7 +671,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
                     perbeam=perbeam, unc=True,
                 )
                 this_data["EMAP_" + map_entry["map_name"].upper()] = Column(
-                    uc_int, unit=au.Unit(str(map_entry["map_unit"])),
+                    uc_int, unit=u.Unit(str(map_entry["map_unit"])),
                     description=f'Uncertainty: {map_entry["map_desc"]}')
 
         LOG.info(f"Map {map_entry['map_name']} sampled successfully.")
@@ -699,7 +699,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
             save_fits      = save_fits,
         )
         this_data["SPEC_" + cube["line_name"].upper()] = Column(
-            this_spec, unit=au.Unit(str(cube["line_unit"])),
+            this_spec, unit=u.Unit(str(cube["line_unit"])),
             description=cube["line_desc"])
 
         # Optional 2D integrated-intensity map provided alongside the cube
@@ -710,7 +710,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
                 b2d, _ = sample_at_res(b2d_file, samp_ra, samp_dec,
                                        target_res_as=target_res_as, target_hdr=ov_hdr)
                 this_data["MAP_" + cube["line_name"].upper()] = Column(
-                    b2d, unit=au.Unit(str(cube["line_unit"])),
+                    b2d, unit=u.Unit(str(cube["line_unit"])),
                     description=cube["line_desc"])
 
         # Optional 2D uncertainty map for the cube
@@ -721,7 +721,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
                 uc, _ = sample_at_res(uc_file, samp_ra, samp_dec,
                                       target_res_as=target_res_as, target_hdr=ov_hdr, unc=True)
                 this_data["EMAP_" + cube["line_name"].upper()] = Column(
-                    uc, unit=au.Unit(str(cube["line_unit"])),
+                    uc, unit=u.Unit(str(cube["line_unit"])),
                     description=f'Uncertainty: {cube["line_desc"]}')
 
         LOG.info(f"Cube {cube['line_name']} sampled successfully.")
@@ -735,12 +735,12 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
         if use_fixed:
             # Build a binary mask from a fixed velocity window
             mask_unit  = input_mask["mask_unit"].iloc[0]
-            mask_start = float(input_mask["mask_start"].iloc[0]) * au.Unit(mask_unit)
-            mask_end   = float(input_mask["mask_end"].iloc[0])   * au.Unit(mask_unit)
+            mask_start = float(input_mask["mask_start"].iloc[0]) * u.Unit(mask_unit)
+            mask_end   = float(input_mask["mask_end"].iloc[0])   * u.Unit(mask_unit)
             unit_v     = ov_hdr.get("CUNIT3", "m/s")
             v0, dv, crpix = ov_hdr["CRVAL3"], ov_hdr["CDELT3"], ov_hdr["CRPIX3"]
-            vaxis     = (v0 + (np.arange(n_chan) - (crpix - 1)) * dv) * au.Unit(unit_v)
-            vaxis     = vaxis.to(au.Unit(mask_unit))
+            vaxis     = (v0 + (np.arange(n_chan) - (crpix - 1)) * dv) * u.Unit(unit_v)
+            vaxis     = vaxis.to(u.Unit(mask_unit))
             spec_mask = np.zeros((n_pts, n_chan))
             spec_mask[:, (vaxis >= mask_start) & (vaxis <= mask_end)] = 1.0
             LOG.info(f"Fixed velocity mask applied "
@@ -760,7 +760,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
 
         tag = "SPEC_" + str(input_mask["mask_name"].iloc[0]).upper()
         this_data[tag] = Column(
-            spec_mask, unit=au.dimensionless_unscaled,
+            spec_mask, unit=u.dimensionless_unscaled,
             description=str(input_mask["mask_desc"].iloc[0]),
         )
 
@@ -832,19 +832,19 @@ def _init_table(source, params, meta, samp_ra, samp_dec, ov_hdr,
     })
 
     # Sky coordinates
-    this_data["ra_deg"]  = Column(samp_ra,  unit=au.deg, description="Right ascension (J2000)")
-    this_data["dec_deg"] = Column(samp_dec, unit=au.deg, description="Declination (J2000)")
+    this_data["ra_deg"]  = Column(samp_ra,  unit=u.deg, description="Right ascension (J2000)")
+    this_data["dec_deg"] = Column(samp_dec, unit=u.deg, description="Declination (J2000)")
 
     # Source geometry metadata
-    this_data.meta["dist_mpc"]   = params["dist_mpc"]   * au.Mpc
-    this_data.meta["posang_deg"] = params["posang_deg"] * au.deg
-    this_data.meta["incl_deg"]   = params["incl_deg"]   * au.deg
-    this_data.meta["beam_as"]    = target_res_as         * au.arcsec
+    this_data.meta["dist_mpc"]   = params["dist_mpc"]   * u.Mpc
+    this_data.meta["posang_deg"] = params["posang_deg"] * u.deg
+    this_data.meta["incl_deg"]   = params["incl_deg"]   * u.deg
+    this_data.meta["beam_as"]    = target_res_as         * u.arcsec
 
     # Spectral axis metadata (from the overlay cube header)
     unit_v = ov_hdr.get("CUNIT3", "m/s")
-    this_data.meta["SPEC_VCHAN0"] = ov_hdr["CRVAL3"] * au.Unit(unit_v)
-    this_data.meta["SPEC_DELTAV"] = ov_hdr["CDELT3"] * au.Unit(unit_v)
+    this_data.meta["SPEC_VCHAN0"] = ov_hdr["CRVAL3"] * u.Unit(unit_v)
+    this_data.meta["SPEC_DELTAV"] = ov_hdr["CDELT3"] * u.Unit(unit_v)
     this_data.meta["SPEC_CRPIX"]  = ov_hdr["CRPIX3"]
     this_data.meta["input_maps"]  = ""
     this_data.meta["input_cubes"] = ""
@@ -859,15 +859,15 @@ def _init_table(source, params, meta, samp_ra, samp_dec, ov_hdr,
     r25      = params["r25"]
 
     this_data["rgal_as"]   = Column(rgal_deg * 3600,
-                                    unit=au.arcsec,
+                                    unit=u.arcsec,
                                     description="Deprojected galactocentric radius")
     this_data["rgal_kpc"]  = Column(np.deg2rad(rgal_deg) * dist_mpc * 1e3,
-                                    unit=au.kpc,
+                                    unit=u.kpc,
                                     description="Deprojected galactocentric radius")
     this_data["rgal_r25"]  = Column(rgal_deg / (r25 / 60.0),
                                     description="Deprojected galactocentric radius (r25 units)")
     this_data["theta_rad"] = Column(theta_rad,
-                                    unit=au.rad,
+                                    unit=u.rad,
                                     description="Deprojected polar angle")
     return this_data
 
@@ -888,9 +888,9 @@ def _fill_checker(fname, samp_ra, samp_dec, maps, cubes):
     fill_cubes  : list  — cube names that are already present and can be skipped
     """
     this_data = Table.read(fname)
-    diff = (abs(np.nansum(this_data["ra_deg"]  - samp_ra  * au.deg))
-            + abs(np.nansum(this_data["dec_deg"] - samp_dec * au.deg)))
-    if diff > 1e-12 * au.deg:
+    diff = (abs(np.nansum(this_data["ra_deg"]  - samp_ra  * u.deg))
+            + abs(np.nansum(this_data["dec_deg"] - samp_dec * u.deg)))
+    if diff > 1e-12 * u.deg:
         LOG.error(
             f"Existing file coordinates do not match the "
             "current sampling grid.  Set structure_creation = 'default' to overwrite."

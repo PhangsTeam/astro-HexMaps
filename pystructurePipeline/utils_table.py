@@ -25,7 +25,7 @@ import copy
 import glob
 import numpy as np
 from pathlib import Path
-from astropy import units as au
+from astropy import units as u
 from astropy.table import Table
 
 from pystructurePipeline.pystructureLogger import get_logger
