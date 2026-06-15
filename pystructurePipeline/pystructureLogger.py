@@ -243,7 +243,7 @@ def get_logger(stage: str) -> StageLogger:
 
     Parameters
     ----------
-    stage : str — pipeline stage name, e.g. "Regrid", "Spectra", "Keys"
+    stage : str — pipeline stage name, e.g. "Regrid", "Products", "FITS"
 
     Returns
     -------
