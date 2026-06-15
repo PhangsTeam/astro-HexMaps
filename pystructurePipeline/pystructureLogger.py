@@ -4,7 +4,7 @@ pystructureLogger.py — centralized logging for the PyStructure pipeline.
 All pipeline modules log through a single shared PipelineLogger instance,
 obtained via get_logger(stage). This gives every message a consistent format:
 
-    [pyStructure] [<Stage>] [<LEVEL>] <message>
+    [HH:MM:SS] [<Stage>] [<LEVEL>] <message>
 
 The closing bracket of [<Stage>] and [<LEVEL>] always follows directly after
 the stage/level name (no padding inside the brackets); instead, the space
@@ -14,10 +14,10 @@ column lines up across all log lines, regardless of which stage or level
 produced them:
 
 e.g.
-    [pyStructure] [Regrid]   [INFO]    Map SPIRE250 sampled successfully.
-    [pyStructure] [Products] [ERROR]   12CO21 spectrum is all zeros; skipping.
-    [pyStructure] [Loading]  [INFO]    Loading key files...
-    [pyStructure] [FITS]     [WARNING] spacing_per_beam < 4; expect artefacts.
+    [HH:MM:SS] [Regrid]   [INFO]    Map SPIRE250 sampled successfully.
+    [HH:MM:SS] [Products] [ERROR]   12CO21 spectrum is all zeros; skipping.
+    [HH:MM:SS] [Loading]  [INFO]    Loading key files...
+    [HH:MM:SS] [FITS]     [WARNING] spacing_per_beam < 4; expect artefacts.
 
 In addition to printing, every message is stored as a structured record
 (timestamp, stage, level, message). The full log can optionally be written
@@ -45,8 +45,6 @@ Configuring verbosity / file output (done once, typically by PipelineHandler)::
 
 import os
 import datetime
-
-_PREFIX = "[pyStructure]"
 
 # Column widths for the [<Stage>] and [<LEVEL>] fields, INCLUDING the
 # brackets and a 2-space separator. The closing bracket always follows
@@ -105,7 +103,7 @@ class PipelineLogger:
         if self.log_file:
             os.makedirs(os.path.dirname(os.path.abspath(self.log_file)) or ".", exist_ok=True)
             with open(self.log_file, "w") as f:
-                f.write(f"{_PREFIX} log started at "
+                f.write(f"pyStructure log started at "
                         f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
 
     # ------------------------------------------------------------------
@@ -135,7 +133,6 @@ class PipelineLogger:
 
         if self.verbose:
             print(formatted)
-            
 
         if self.log_file:
             with open(self.log_file, "a") as f:
@@ -163,7 +160,7 @@ class PipelineLogger:
 
         Each line has the format::
 
-            YYYY-MM-DD HH:MM:SS  [pyStructure] [Stage]     [LEVEL]    message
+            [YYYY-MM-DD HH:MM:SS] [Stage] [LEVEL] <message>
 
         Parameters
         ----------
@@ -212,7 +209,7 @@ class StageLogger:
     -------
     >>> LOG = get_logger("Regrid")
     >>> LOG.info("Map SPIRE250 sampled successfully.")
-    [pyStructure] [Regrid]    [INFO]     Map SPIRE250 sampled successfully.
+    [HH:MM:SS] [Regrid] [INFO] Map SPIRE250 sampled successfully.
     """
 
     def __init__(self, parent: PipelineLogger, stage: str):
