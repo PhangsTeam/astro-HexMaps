@@ -10,7 +10,7 @@ This stage is the core data-ingestion step of the pipeline.  It:
    and minimises the number of correlated positions for a given beam spacing.
    The grid is clipped to the footprint of the overlay cube (pixels with at
    least one finite channel), with spacing derived from the target resolution
-   and the spacing_per_beam parameter in config_key.txt.
+   and the spacing_per_beam parameter in config.txt.
 2. Initialises the output Astropy Table with source metadata and
    deprojected galactocentric coordinates.
 3. For each 2D map:   convolves to the target beam → samples at hex points.
@@ -150,7 +150,7 @@ def _spectral_smooth(data, hdr_out, spec_smooth):
     """
     Optionally smooth a data cube along the spectral axis.
 
-    Controlled by config_key.txt settings spec_smooth and spec_smooth_method.
+    Controlled by config.txt settings spec_smooth and spec_smooth_method.
 
     Parameters
     ----------

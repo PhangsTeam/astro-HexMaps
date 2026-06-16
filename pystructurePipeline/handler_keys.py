@@ -1,32 +1,30 @@
 """
-handler_keys.py — KeyHandler: reads and validates all PyStructure key files.
+handler_keys.py — KeyHandler: reads and validates all PyStructure configuration.
 
-The pipeline configuration is intentionally split across four separate key files
-rather than a single monolithic config file. This makes it easy to share source
-geometry tables across projects, swap imaging configurations, and version-control
-each concern independently.
+PyStructure configuration lives in two places:
 
-Key files
----------
-master_key.txt
-    Paths to all other key files, the data and output directories, and
-    free-form metadata (user name, comments). This is the only file the
-    PipelineHandler needs to know about directly.
+config.txt
+    A single file in the working directory containing everything needed to
+    run the pipeline: paths/metadata (formerly master_key.txt), the source
+    list/overlay/maps/cubes/mask tables (formerly data_key.txt), and all
+    numerical/boolean pipeline settings (formerly config_key.txt). This is
+    the file you pass to the CLI via ``pystructure --conf config.txt`` and
+    the one you're expected to edit on every run.
 
-target_definitions.txt
-    Tab-separated table of source geometric parameters: RA/Dec centre,
-    distance, inclination, position angle, and optical radius. One row per
-    source. All sources that may ever be processed should be listed here;
-    the subset to actually run is controlled by data_key.txt [sources].
+keys/ subfolder (next to config.txt)
+    target_definitions.txt
+        Tab-separated table of source geometric parameters: RA/Dec centre,
+        distance, inclination, position angle, and optical radius. One row
+        per source. All sources that may ever be processed should be listed
+        here; the subset to actually run is controlled by config.txt
+        [sources]. Kept separate because this table is normally shared
+        across many projects and changes rarely.
+    hfs_lines.txt (optional)
+        Hyperfine structure line definitions. Also normally shared and
+        rarely changed; only read if [paths] hfs_file is set in config.txt.
 
-data_key.txt
-    Defines which sources to process, the overlay FITS cube (used to define
-    the sampling grid and spectral axis), and the input 2D maps and spectral
-    cubes. Also contains the optional external mask definition.
-
-config_key.txt
-    All numerical and boolean pipeline settings: target resolution, masking
-    thresholds, spectral smoothing, output flags, and structure-creation mode.
+This keeps the file you edit constantly (config.txt) separate from the
+reference tables you set up once and reuse (keys/).
 """
 
 import os
@@ -41,14 +39,14 @@ LOG = get_logger("Loading")
 
 
 # ---------------------------------------------------------------------------
-# Column name definitions for the tabular sections of data_key.txt
+# Column name definitions for the tabular sections of config.txt
 #
 # MAP_COLUMNS:  columns expected in the "---- maps ----" section
 # CUBE_COLUMNS: columns expected in the "---- cubes ----" section
 # MASK_COLUMNS_VEL:  columns for a fixed-velocity-window mask
 # MASK_COLUMNS_FILE: columns for an external FITS mask file
-# TARGET_COLUMNS: columns in target_definitions.txt
-# HFS_COLUMNS:  columns in the optional hyperfine-structure file
+# TARGET_COLUMNS: columns in keys/target_definitions.txt
+# HFS_COLUMNS:  columns in the optional keys/hfs_lines.txt
 # ---------------------------------------------------------------------------
 
 MAP_COLUMNS        = ["map_name", "map_desc", "map_unit", "map_ext", "map_dir", "map_uc"]
@@ -65,7 +63,7 @@ HFS_COLUMNS = ["hfs_name", "hfs_ref_freq", "hfs_freq", "unit"]
 
 class KeyHandler:
     """
-    Reads and validates all PyStructure key files from a key directory.
+    Reads and validates all PyStructure configuration from config.txt.
 
     The handler is the single source of truth for all pipeline configuration.
     Every other pipeline module receives either ``meta`` (a plain dict of
@@ -74,30 +72,33 @@ class KeyHandler:
 
     Parameters
     ----------
-    key_dir : str or Path
-        Directory containing master_key.txt (and, by default, the other key
-        files unless they are located elsewhere as specified in master_key).
+    conf_path : str or Path
+        Path to config.txt. The geometry table (keys/target_definitions.txt)
+        and optional HFS file (keys/hfs_lines.txt) are looked up in a `keys/`
+        subfolder next to this file, unless [paths] hfs_file in config.txt
+        points elsewhere.
 
     Attributes
     ----------
-    meta         : dict   — scalar settings from master_key + config_key
-    sources      : list   — source names to process (from data_key [sources])
+    meta         : dict   — scalar settings from [paths]/[meta]/[resolution]/
+                            [masking]/[spectral]/[output]/[structure]
+    sources      : list   — source names to process (from config.txt [sources])
     source_table : pd.DataFrame — full geometry table from target_definitions
-    maps         : pd.DataFrame — 2D map definitions (from data_key)
-    cubes        : pd.DataFrame — spectral cube definitions (from data_key)
-    input_mask   : pd.DataFrame — mask definition (from data_key, may be empty)
+    maps         : pd.DataFrame — 2D map definitions (from config.txt)
+    cubes        : pd.DataFrame — spectral cube definitions (from config.txt)
+    input_mask   : pd.DataFrame — mask definition (from config.txt, may be empty)
     hfs_data     : pd.DataFrame or None — hyperfine structure data (optional)
 
     Example
     -------
-    >>> kh = KeyHandler("./keys/")
+    >>> kh = KeyHandler("./config.txt")
     >>> print(kh.sources)
     >>> print(kh.maps)
     """
 
-    def __init__(self, key_dir: str):
-        self.key_dir = Path(key_dir)
-        self._validate_key_dir()
+    def __init__(self, conf_path: str):
+        self.conf_path = Path(conf_path)
+        self._validate_conf_path()
 
         # All parsed data; populated in load()
         self.meta         = {}
@@ -116,16 +117,16 @@ class KeyHandler:
 
     def load(self):
         """
-        Load all key files in dependency order.
+        Load the full configuration in dependency order.
 
-        master_key is loaded first because it provides the paths to all
-        other files.  config_key is loaded before data_key so that masking
-        flags (use_fixed_vel_mask etc.) are available when parsing data_key.
+        [resolution]/[masking]/[spectral]/[output]/[structure] are parsed
+        before the [sources]/maps/cubes/mask tables so that masking flags
+        (use_fixed_vel_mask etc.) are available when parsing the mask table.
         """
-        self._load_master_key()
-        self._load_config_key()
+        self._load_paths_and_meta()
+        self._load_settings()
         self._load_target_definitions()
-        self._load_data_key()
+        self._load_sources_and_tables()
         self._load_hfs_key()
 
     def get_sources(self) -> list:
@@ -156,84 +157,97 @@ class KeyHandler:
     # Private loaders
     # ------------------------------------------------------------------
 
-    def _validate_key_dir(self):
-        """Raise FileNotFoundError if key_dir does not exist."""
-        if not self.key_dir.is_dir():
-            LOG.error(
-                f"Key directory not found: {self.key_dir}"
-            )
-            raise FileNotFoundError(
-                f"Key directory not found: {self.key_dir}"
-            )
+    def _validate_conf_path(self):
+        """Raise FileNotFoundError if config.txt does not exist."""
+        if not self.conf_path.is_file():
+            LOG.error(f"Config file not found: {self.conf_path}")
+            raise FileNotFoundError(f"Config file not found: {self.conf_path}")
 
-    def _load_master_key(self):
+    def _ini_lines_before_tables(self, path: Path) -> str:
         """
-        Parse master_key.txt.
+        Return the portion of *path* before the first tabular section divider.
 
-        Reads the [paths] and [meta] sections using configparser.  All path
-        values are resolved to absolute paths relative to the *parent* of
-        key_dir (i.e. the project root), so the pipeline works regardless of
+        Shared by config.txt parsing: everything up to (not including) the
+        first ``# ---- maps/cubes/mask ----`` divider comment is safe to feed
+        to configparser. The stop condition uses a precise regex so that
+        comment prose mentioning "maps"/"cubes"/"mask" elsewhere in the file
+        header does not trigger an early stop.
+        """
+        ini_lines = []
+        with open(path, "r") as f:
+            for raw_line in f:
+                stripped = raw_line.strip()
+                if re.match(r'^#\s*----\s*(map|cube|mask)', stripped, re.IGNORECASE):
+                    break
+                ini_lines.append(raw_line)
+        return "".join(ini_lines)
+
+    def _load_paths_and_meta(self):
+        """
+        Parse the [paths] and [meta] sections of config.txt.
+
+        All path values are resolved to absolute paths relative to the
+        directory containing config.txt, so the pipeline works regardless of
         the current working directory at runtime.
 
-        Stores the resolved absolute base path in ``self.meta["_base"]`` for
-        use by later loaders that need to resolve relative directories found
-        inside data_key.txt.
+        Stores the resolved absolute base directory in ``self.meta["_base"]``
+        for use by later loaders that need to resolve relative directories
+        found in the maps/cubes tables.
 
         Expected format::
 
             [paths]
             data_dir   = data/
             out_dir    = output/
-            geom_file  = keys/target_definitions.txt
-            data_key   = keys/data_key.txt
-            config_key = keys/config_key.txt
+            # hfs_file = keys/hfs_lines.txt   (optional)
 
             [meta]
             user     = Your Name
             comments = Free-form description of this run
         """
-        master_path = self.key_dir / "master_key.txt"
-        if not master_path.exists():
-            LOG.error(
-                f"master_key.txt not found in {self.key_dir}"
-            )
-            raise FileNotFoundError(
-                f"master_key.txt not found in {self.key_dir}"
-            )
-
+        # Only the [paths]/[meta] header is safe to feed to configparser
+        # directly (the file also contains comma-separated tables further
+        # down), so reuse the same "stop at first table divider" logic.
+        ini_text = self._ini_lines_before_tables(self.conf_path)
         cfg = configparser.ConfigParser(inline_comment_prefixes=("#",))
-        cfg.read(master_path)
+        cfg.read_string(ini_text)
 
         paths = dict(cfg["paths"]) if "paths" in cfg else {}
         meta  = dict(cfg["meta"])  if "meta"  in cfg else {}
 
-        # Resolve all paths relative to the project root (key_dir's parent).
-        # Using .resolve() converts key_dir to an absolute path first, so
-        # this is safe even when key_dir itself is given as a relative path.
-        base = self.key_dir.resolve().parent
+        # Resolve all paths relative to the directory containing config.txt.
+        # Using .resolve() converts conf_path to an absolute path first, so
+        # this is safe even when conf_path itself is given as a relative path.
+        base = self.conf_path.resolve().parent
 
-        self.meta["data_dir"]    = str(base / paths.get("data_dir",    "data/"))
-        self.meta["out_dir"]     = str(base / paths.get("out_dir",     "output/"))
-        self.meta["geom_file"]   = str(base / paths.get("geom_file",   "keys/target_definitions.txt"))
-        self.meta["data_key"]    = str(base / paths.get("data_key",    "keys/data_key.txt"))
-        self.meta["config_key"]  = str(base / paths.get("config_key",  "keys/config_key.txt"))
-        self.meta["hfs_file"]    = str(base / paths.get("hfs_file", "")) if paths.get("hfs_file") else None
+        self.meta["data_dir"]  = str(base / paths.get("data_dir", "data/"))
+        self.meta["out_dir"]   = str(base / paths.get("out_dir", "output/"))
+        self.meta["hfs_file"]  = str(base / paths.get("hfs_file", "")) if paths.get("hfs_file") else None
 
-        self.meta["user"]        = meta.get("user",     "Unknown user")
-        self.meta["comments"]    = meta.get("comments", "")
-        # Store the absolute project root so _load_data_key can resolve
-        # relative map_dir / line_dir entries to absolute paths.
-        self.meta["_base"]       = str(base)
+        self.meta["user"]      = meta.get("user",     "Unknown user")
+        self.meta["comments"]  = meta.get("comments", "")
 
-    def _load_config_key(self):
+        # Store the absolute project root so _load_sources_and_tables can
+        # resolve relative map_dir / line_dir entries to absolute paths, and
+        # so _load_target_definitions / _load_hfs_key can find keys/.
+        self.meta["_base"] = str(base)
+
+        # target_definitions.txt and hfs_lines.txt live in a fixed keys/
+        # subfolder next to config.txt (these are not configurable paths —
+        # they're expected to be shared/reused across projects and rarely
+        # change, unlike everything else in config.txt).
+        self.meta["geom_file"] = str(base / "keys" / "target_definitions.txt")
+        if not self.meta["hfs_file"]:
+            default_hfs = base / "keys" / "hfs_lines.txt"
+            self.meta["hfs_file"] = str(default_hfs) if default_hfs.exists() else None
+
+    def _load_settings(self):
         """
-        Parse config_key.txt.
+        Parse the [resolution], [masking], [spectral], [output], and
+        [structure] sections of config.txt.
 
-        Reads five ini-style sections — [resolution], [masking], [spectral],
-        [output], [structure] — and stores all values in ``self.meta``.
-
-        All settings have sensible defaults so a minimal config file with
-        only the settings you want to change is perfectly valid.
+        All values have sensible defaults, so a minimal config.txt with only
+        the settings you want to change is perfectly valid.
 
         Resolution settings
         -------------------
@@ -250,7 +264,7 @@ class KeyHandler:
         ref_line          : str   — which line to use for mask construction
         SN_processing     : list  — [low_SN, high_SN] thresholds
         strict_mask       : bool  — apply spatial connectivity filter
-        use_input_mask    : bool  — use an external FITS mask from data_key
+        use_input_mask    : bool  — use an external FITS mask from the [mask] table
         use_fixed_vel_mask: bool  — use a fixed velocity-window mask
         use_hfs_lines     : bool  — apply HFS correction (requires hfs_file)
         mom_thresh        : float — S/N threshold for moment computation
@@ -274,17 +288,9 @@ class KeyHandler:
         structure_creation : "default" | "fill" | "archive"
         fname_fill         : str — pin a specific output filename for fill mode
         """
-        config_path = Path(self.meta["config_key"])
-        if not config_path.exists():
-            LOG.error(
-                f"config_key not found: {config_path}"
-            )
-            raise FileNotFoundError(
-                f"config_key not found: {config_path}"
-            )
-
+        ini_text = self._ini_lines_before_tables(self.conf_path)
         cfg = configparser.ConfigParser(inline_comment_prefixes=("#",))
-        cfg.read(config_path)
+        cfg.read_string(ini_text)
 
         def _get(section, key, fallback):
             return cfg.get(section, key, fallback=str(fallback))
@@ -324,51 +330,46 @@ class KeyHandler:
 
     def _load_target_definitions(self):
         """
-        Parse target_definitions.txt.
+        Parse keys/target_definitions.txt (fixed location next to config.txt).
 
         The file is a tab-separated table with no header row.  Comment lines
         beginning with '#' are ignored.  Columns must appear in the order
         defined by TARGET_COLUMNS.
 
         The full table is stored in ``self.source_table`` (a DataFrame). The
-        subset of sources to actually process is determined later when
-        data_key.txt is parsed; at this stage we load everything.
+        subset of sources to actually process is determined later when the
+        [sources] section of config.txt is parsed; at this stage we load
+        everything.
         """
         geom_path = Path(self.meta["geom_file"])
         if not geom_path.exists():
-            LOG.error(
-                f"target_definitions not found: {geom_path}"
-            )
-            raise FileNotFoundError(
-                f"target_definitions not found: {geom_path}"
-            )
+            LOG.error(f"target_definitions not found: {geom_path}")
+            raise FileNotFoundError(f"target_definitions not found: {geom_path}")
         self.source_table = pd.read_csv(
             geom_path, sep="\t", names=TARGET_COLUMNS, comment="#"
         )
 
-    def _load_data_key(self):
+    def _load_sources_and_tables(self):
         """
-        Parse data_key.txt.
+        Parse the [sources], [overlay], and maps/cubes/mask tables of config.txt.
 
-        The file has a hybrid format: an ini-style header (parsed by
-        configparser) followed by free-form comma-separated tabular sections
-        for maps, cubes, and an optional mask.
+        config.txt has a hybrid format: an ini-style header (parsed by
+        configparser, shared with _load_paths_and_meta / _load_settings)
+        followed by free-form comma-separated tabular sections for maps,
+        cubes, and an optional mask.
 
         Parsing strategy
         ----------------
         **Pass 1** — configparser reads only the lines before the first
-        tabular section divider.  This safely extracts the [sources] and
-        [overlay] sections without configparser choking on the comma-separated
-        data rows that follow.
-
-        The stop condition uses a precise regex (``^#\\s*----\\s*(map|cube|mask)``)
-        that matches only the section-divider comment lines, not any comment
-        prose in the file header that might mention those keywords.
+        tabular section divider, giving access to [sources] and [overlay]
+        without configparser choking on the comma-separated data rows that
+        follow.
 
         **Pass 2** — a simple line-by-line parser reads the tabular sections.
         Lines are routed to the correct section based on the most recently
-        seen divider comment.  Each comma-separated row is padded or trimmed to
-        match the expected column count for that section.
+        seen divider comment (``# ---- maps ----`` etc). Each comma-separated
+        row is padded or trimmed to match the expected column count for that
+        section.
 
         Path resolution
         ---------------
@@ -396,34 +397,9 @@ class KeyHandler:
             # ---- mask ----
             # (leave empty if no external mask is used)
         """
-        imaging_path = Path(self.meta["data_key"])
-        if not imaging_path.exists():
-            LOG.error(
-                f"data_key not found: {imaging_path}"
-            )
-            raise FileNotFoundError(
-                f"data_key not found: {imaging_path}"
-            )
-
-        map_rows, cube_rows, mask_rows = [], [], []
-        section = None
-
-        # ------------------------------------------------------------------
-        # Pass 1: feed only the ini-style header into configparser
-        # ------------------------------------------------------------------
-        ini_lines = []
-        with open(imaging_path, "r") as f:
-            for raw_line in f:
-                stripped = raw_line.strip()
-                # Stop as soon as we hit an exact section-divider comment.
-                # The regex matches lines like "# ---- maps ----" but NOT
-                # prose like "# MAP TABLE (after '# ---- maps ----')".
-                if re.match(r'^#\s*----\s*(map|cube|mask)', stripped, re.IGNORECASE):
-                    break
-                ini_lines.append(raw_line)
-
+        ini_text = self._ini_lines_before_tables(self.conf_path)
         cfg = configparser.ConfigParser(inline_comment_prefixes=("#",))
-        cfg.read_string("".join(ini_lines))
+        cfg.read_string(ini_text)
 
         # Source list: explicit [sources] section, or fall back to all targets
         if "sources" in cfg:
@@ -441,7 +417,10 @@ class KeyHandler:
         # ------------------------------------------------------------------
         # Pass 2: parse the tabular sections line by line
         # ------------------------------------------------------------------
-        with open(imaging_path, "r") as f:
+        map_rows, cube_rows, mask_rows = [], [], []
+        section = None
+
+        with open(self.conf_path, "r") as f:
             for raw_line in f:
                 line = raw_line.strip()
                 if not line:
@@ -506,11 +485,12 @@ class KeyHandler:
 
     def _load_hfs_key(self):
         """
-        Load the optional hyperfine structure file.
+        Load the optional keys/hfs_lines.txt file.
 
         The file is tab-separated with columns: hfs_name, hfs_ref_freq,
-        hfs_freq, unit.  If the hfs_file path is not set in master_key.txt
-        or the file does not exist, ``self.hfs_data`` is set to None and no
+        hfs_freq, unit.  If no hfs_file is configured (explicitly via
+        [paths] hfs_file, or implicitly via keys/hfs_lines.txt existing) or
+        the file does not exist, ``self.hfs_data`` is set to None and no
         error is raised — HFS correction is simply not applied.
         """
         hfs_path = self.meta.get("hfs_file")
@@ -543,13 +523,13 @@ class KeyHandler:
         """
         issues = []
         if self.maps  is None or len(self.maps)  == 0:
-            issues.append("No maps defined in data_key.")
+            issues.append("No maps defined in config.txt.")
         if self.cubes is None or len(self.cubes) == 0:
-            issues.append("No cubes defined in data_key.")
+            issues.append("No cubes defined in config.txt.")
         if not self.sources:
             issues.append("No sources defined.")
         if not self.meta.get("overlay_file"):
-            issues.append("No overlay_file defined in data_key.")
+            issues.append("No overlay_file defined in config.txt.")
 
         for issue in issues:
             LOG.warning(f"{issue}")
@@ -560,6 +540,6 @@ class KeyHandler:
         n_maps  = len(self.maps)  if self.maps  is not None else 0
         n_cubes = len(self.cubes) if self.cubes is not None else 0
         return (
-            f"KeyHandler(key_dir='{self.key_dir}', "
+            f"KeyHandler(conf_path='{self.conf_path}', "
             f"sources={self.sources}, n_maps={n_maps}, n_cubes={n_cubes})"
         )

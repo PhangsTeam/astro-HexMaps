@@ -39,6 +39,7 @@ from astropy.wcs import WCS
 from astropy.table import Table
 from scipy.interpolate import griddata
 from reproject import reproject_interp
+from typing import Sequence, Union
 
 from pystructurePipeline.utils_fits import twod_head
 
@@ -52,7 +53,10 @@ LOG = get_logger("FITS")
 # Grid helpers
 # ============================================================================
 
-def sample_to_hdr(in_data, ra_samp, dec_samp, in_hdr):
+def sample_to_hdr(in_data: Union[np.ndarray, Sequence[float]],
+                  ra_samp: Union[np.ndarray, Sequence[float]],
+                  dec_samp: Union[np.ndarray, Sequence[float]],
+                  in_hdr: fits.Header) -> np.ndarray:
     """
     Regrid hex-sampled 1-D data onto a 2-D rectangular pixel grid.
 

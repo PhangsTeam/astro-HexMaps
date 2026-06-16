@@ -57,7 +57,7 @@ class SourceHandler:
         Check that every requested source is present in the geometry table.
 
         Raises ValueError listing all missing names so the user can fix
-        target_definitions.txt or data_key.txt in one go.
+        target_definitions.txt or config.txt in one go.
         """
         missing = [s for s in self.sources if s not in self._index]
         if missing:

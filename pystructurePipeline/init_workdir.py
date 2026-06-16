@@ -1,7 +1,7 @@
 """
 pystructure.init_workdir
 ========================
-Copies the bundled key-file templates and a run script into a user-chosen
+Copies the bundled config/key templates and a run script into a user-chosen
 working directory so they can get started without hunting for example files.
 
 Called via the CLI:
@@ -19,7 +19,8 @@ from pathlib import Path
 
 # Templates are bundled inside the installed package at templates/.
 # When running from a development clone where templates/ has not been committed,
-# fall back to the repo-root keys/ directory (one level above the package).
+# fall back to the repo root (one level above the package), which carries the
+# same layout: config.txt at the root, keys/ next to it.
 _PACKAGE_DIR   = Path(__file__).parent
 _TEMPLATES_DIR = _PACKAGE_DIR / "templates"
 if not _TEMPLATES_DIR.exists():
@@ -31,11 +32,10 @@ def init_workdir(workdir: str = ".", overwrite: bool = False) -> None:
     Initialise a PyStructure working directory.
 
     Copies the following into *workdir*:
-      keys/master_key.txt
-      keys/target_definitions.txt
-      keys/imaging_key.txt
-      keys/config_key.txt
-      run_pystructure.py          ← ready-to-edit run script
+      config.txt                    ← the file you edit on every run
+      keys/target_definitions.txt   ← source geometry (edit once, reuse)
+      keys/hfs_lines.txt            ← hyperfine structure lines (optional, edit once)
+      run_pystructure.py            ← ready-to-edit run script
 
     Parameters
     ----------
@@ -52,7 +52,17 @@ def init_workdir(workdir: str = ".", overwrite: bool = False) -> None:
 
     copied = []
 
-    # --- Key files ---
+    # --- Unified config file ---
+    conf_src = _TEMPLATES_DIR / "config.txt"
+    conf_dst = workdir / "config.txt"
+    if conf_dst.exists() and not overwrite:
+        raise FileExistsError(
+            f"{conf_dst} already exists. Use overwrite=True to replace it."
+        )
+    shutil.copy2(conf_src, conf_dst)
+    copied.append("config.txt")
+
+    # --- keys/ subfolder: target_definitions.txt + hfs_lines.txt ---
     for key_file in keys_src.iterdir():
         dst = keys_dst / key_file.name
         if dst.exists() and not overwrite:
@@ -81,8 +91,7 @@ def init_workdir(workdir: str = ".", overwrite: bool = False) -> None:
     for f in copied:
         print(f"[INFO]       {f}")
     print(f"[INFO]     Next steps:")
-    print(f"[INFO]       1. Edit keys/master_key.txt  — set your data_dir and out_dir")
-    print(f"[INFO]       2. Edit keys/target_definitions.txt  — add your sources")
-    print(f"[INFO]       3. Edit keys/imaging_key.txt  — list your bands and cubes")
-    print(f"[INFO]       4. Edit keys/config_key.txt  — adjust resolution and masking")
-    print(f"[INFO]       5. Run:  python run_pystructure.py  (or:  pystructure --key_dir keys/)")
+    print(f"[INFO]       1. Edit config.txt  — paths, sources, maps/cubes, resolution, masking")
+    print(f"[INFO]       2. Edit keys/target_definitions.txt  — add your sources (rarely changes)")
+    print(f"[INFO]       3. (optional) Edit keys/hfs_lines.txt  — hyperfine structure lines")
+    print(f"[INFO]       4. Run:  python run_pystructure.py  (or:  pystructure --conf config.txt)")

@@ -9,7 +9,7 @@ and edit the settings below.  Then execute from your working directory:
 
 Or use the installed CLI directly:
 
-    pystructure --key_dir keys/ --stages regrid products --targets ngc5194
+    pystructure --conf config.txt --stages regrid products --targets ngc5194
 """
 
 import pystructurePipeline as pys
@@ -18,8 +18,8 @@ import pystructurePipeline as pys
 # USER SETTINGS — edit these
 # ---------------------------------------------------------------------------
 
-# Path to the directory containing your key files
-KEY_DIR = "keys/"
+# Path to your configuration file
+CONF_PATH = "config.txt"
 
 # Stages to run. Choose any subset (in order) of:
 #   "regrid"    – generate the hexagonal sampling grid, convolve and sample
@@ -30,14 +30,14 @@ KEY_DIR = "keys/"
 STAGES = None  # e.g. ["regrid", "products"]
 
 # Sources to process. Must match entries in keys/target_definitions.txt.
-# Set to None to process all sources defined in keys/data_key.txt.
+# Set to None to process all sources defined in config.txt [sources].
 TARGETS = None  # e.g. ["ngc5194", "ngc5457"]
 
 # ---------------------------------------------------------------------------
 # RUN — no need to edit below this line
 # ---------------------------------------------------------------------------
 
-handler = pys.PipelineHandler(key_dir=KEY_DIR)
+handler = pys.PipelineHandler(conf_path=CONF_PATH)
 
 if STAGES is None:
     handler.run_all(targets=TARGETS)

@@ -27,16 +27,16 @@ Usage
 Programmatic (from Python)::
 
     from pystructurePipeline import PipelineHandler
-    handler = PipelineHandler(key_dir="keys/")
+    handler = PipelineHandler(conf_path="config.txt")
     handler.run_all()                              # all stages, all sources
     handler.run_stages(["regrid", "products"])     # subset of stages
     handler.run_stages(["regrid"], targets=["ngc5194"])  # subset of sources
 
 Command-line (after pip install)::
 
-    pystructure --key_dir keys/
-    pystructure --key_dir keys/ --stages regrid
-    pystructure --key_dir keys/ --targets ngc5194 ngc5457
+    pystructure --conf config.txt
+    pystructure --conf config.txt --stages regrid
+    pystructure --conf config.txt --targets ngc5194 ngc5457
 """
 
 import os
@@ -64,9 +64,12 @@ class PipelineHandler:
 
     Parameters
     ----------
-    key_dir : str or Path
-        Directory containing master_key.txt (and typically the other key
-        files, unless they are located elsewhere as configured in master_key).
+    conf_path : str or Path
+        Path to config.txt — the single configuration file containing paths,
+        metadata, the source/overlay/maps/cubes/mask tables, and all pipeline
+        settings. The source geometry table (keys/target_definitions.txt) and
+        optional hyperfine-structure file (keys/hfs_lines.txt) are looked up
+        in a `keys/` subfolder next to config.txt.
     verbose : bool, optional
         If True (default), print progress messages to stdout.
     log_file : str, optional
@@ -81,8 +84,8 @@ class PipelineHandler:
     run_success    : dict          — maps source name → bool after a run
     """
 
-    def __init__(self, key_dir: str, verbose: bool = True, log_file: str = None):
-        self.key_dir = Path(key_dir)
+    def __init__(self, conf_path: str, verbose: bool = True, log_file: str = None):
+        self.conf_path = Path(conf_path)
         self.verbose = verbose
         self.log_file = log_file
         self.run_success = {}
@@ -92,8 +95,8 @@ class PipelineHandler:
         # file as it is logged (in addition to printing).
         logger.configure(verbose=verbose, log_file=log_file)
 
-        LOG_LOADING.info("Loading key files...")
-        self.key_handler = KeyHandler(key_dir)
+        LOG_LOADING.info("Loading configuration...")
+        self.key_handler = KeyHandler(conf_path)
         self.key_handler.validate()
 
         self.source_handler = SourceHandler(
@@ -119,7 +122,7 @@ class PipelineHandler:
         ----------
         targets : list of str, optional
             Restrict to these source names.  Defaults to all sources in
-            the key files.
+            config.txt.
         """
         self.run_stages(ALL_STAGES, targets=targets)
 
@@ -139,7 +142,7 @@ class PipelineHandler:
             "regrid", "products", "fits".
         targets : list of str, optional
             Restrict processing to these source names.  Defaults to all
-            sources defined in the key files.
+            sources defined in config.txt.
 
         Raises
         ------
@@ -315,6 +318,6 @@ class PipelineHandler:
 
     def __repr__(self):
         return (
-            f"PipelineHandler(key_dir='{self.key_dir}', "
+            f"PipelineHandler(conf_path='{self.conf_path}', "
             f"sources={self.source_handler.all_sources()})"
         )

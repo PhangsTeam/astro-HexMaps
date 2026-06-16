@@ -11,10 +11,10 @@ Initialise a working directory (copies key templates + run script):
     pystructure --init --workdir ./my_project
 
 Run the pipeline (from inside a working directory):
-    pystructure --key_dir keys/
-    pystructure --key_dir keys/ --stages regrid products
-    pystructure --key_dir keys/ --targets ngc5194
-    pystructure --key_dir keys/ --log_file pystructure_run.log
+    pystructure --conf config.txt
+    pystructure --conf config.txt --stages regrid products
+    pystructure --conf config.txt --targets ngc5194
+    pystructure --conf config.txt --log_file pystructure_run.log
 """
 
 import argparse
@@ -52,9 +52,9 @@ def parse_args(argv=None):
 
     # --- Run mode ---
     parser.add_argument(
-        "--key_dir",
+        "--conf",
         default=None,
-        help="Path to the directory containing your key files.",
+        help="Path to your config.txt configuration file.",
     )
     parser.add_argument(
         "--stages",
@@ -69,7 +69,7 @@ def parse_args(argv=None):
         "--targets",
         nargs="+",
         default=None,
-        help="Source name(s) to process. Default: all sources in imaging_key.",
+        help="Source name(s) to process. Default: all sources in config.txt.",
     )
     parser.add_argument(
         "--quiet",
@@ -104,10 +104,10 @@ def main(argv=None):
     # ------------------------------------------------------------------
     # Run mode
     # ------------------------------------------------------------------
-    if args.key_dir is None:
+    if args.conf is None:
         print(
-            "[ERROR]    --key_dir is required when not using --init.\n"
-            "           Example: pystructure --key_dir keys/\n"
+            "[ERROR]    --conf is required when not using --init.\n"
+            "           Example: pystructure --conf config.txt\n"
             "           To set up a new project: pystructure --init"
         )
         sys.exit(1)
@@ -119,7 +119,7 @@ def main(argv=None):
         sys.exit(1)
 
     stages = args.stages if args.stages else ALL_STAGES
-    handler = PipelineHandler(key_dir=args.key_dir, verbose=not args.quiet,
+    handler = PipelineHandler(conf_path=args.conf, verbose=not args.quiet,
                               log_file=args.log_file)
 
     try:

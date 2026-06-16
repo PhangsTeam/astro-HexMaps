@@ -36,7 +36,7 @@ that you control.
 ### 1 — Set up a working directory
 
 ```bash
-# Creates keys/ and run_pystructure.py in the current folder
+# Creates config.txt, keys/, and run_pystructure.py in the current folder
 pystructure --init
 
 # Or choose a destination
@@ -44,18 +44,24 @@ pystructure --init --workdir ~/projects/my_galaxy_survey
 cd ~/projects/my_galaxy_survey
 ```
 
-This copies the editable key files and a ready-to-run script into your
-working directory. The installed package is never modified.
+This copies a config file, a `keys/` subfolder, and a ready-to-run script
+into your working directory. The installed package is never modified.
 
-### 2 — Edit the key files
+### 2 — Edit your configuration
 
-| File | What to edit |
-|------|-------------|
-| `keys/master_key.txt` | `data_dir`, `out_dir`, your name |
-| `keys/target_definitions.txt` | RA, Dec, distance, inclination for each source |
-| `keys/data_key.txt` | Source list, overlay cube, map and cube file definitions |
-| `keys/config_key.txt` | Target resolution, masking thresholds, output flags |
-| `keys/hfs_lines.txt` *(optional)* | Hyperfine structure line definitions |
+Configuration is split into two parts, based on how often each one changes:
+
+| File | What to edit | How often |
+|------|-------------|-----------|
+| `config.txt` | `data_dir`/`out_dir`, your name, source list, overlay cube, map/cube file definitions, target resolution, masking thresholds, output flags | every run |
+| `keys/target_definitions.txt` | RA, Dec, distance, inclination for each source | rarely — set up once, reuse across projects |
+| `keys/hfs_lines.txt` *(optional)* | Hyperfine structure line definitions | rarely |
+
+`config.txt` is the single file you'll typically touch: it combines what
+used to be three separate files (`master_key.txt`, `data_key.txt`,
+`config_key.txt`) into one. `keys/target_definitions.txt` and
+`keys/hfs_lines.txt` live in a fixed `keys/` subfolder next to `config.txt`
+and are usually shared across many projects, so they're kept separate.
 
 ### 3 — Run
 
@@ -64,16 +70,16 @@ working directory. The installed package is never modified.
 python run_pystructure.py
 
 # Or use the CLI directly
-pystructure --key_dir keys/
+pystructure --conf config.txt
 
 # Specific stages only
-pystructure --key_dir keys/ --stages regrid products
+pystructure --conf config.txt --stages regrid products
 
 # Single source
-pystructure --key_dir keys/ --targets ngc5194
+pystructure --conf config.txt --targets ngc5194
 
 # Write a log file in addition to stdout
-pystructure --key_dir keys/ --log_file pystructure_run.log
+pystructure --conf config.txt --log_file pystructure_run.log
 ```
 
 ### 4 — Use from Python
@@ -81,12 +87,24 @@ pystructure --key_dir keys/ --log_file pystructure_run.log
 ```python
 import pystructurePipeline as pys
 
-handler = pys.PipelineHandler(key_dir="keys/")
+handler = pys.PipelineHandler(conf_path="config.txt")
 handler.run_all()
 
 # Or selectively
 handler.run_stages(["regrid", "products"], targets=["ngc5194"])
 ```
+
+> **Migrating from an older version?** `master_key.txt`, `data_key.txt`, and
+> `config_key.txt` have been merged into a single `config.txt`. Concatenate
+> the `[paths]`/`[meta]` section of your old `master_key.txt`, the
+> `[sources]`/`[overlay]`/maps/cubes/mask content of `data_key.txt`, and the
+> `[resolution]`/`[masking]`/`[spectral]`/`[output]`/`[structure]` sections of
+> `config_key.txt` into one `config.txt` file (any order is fine, as long as
+> the `# ---- maps ----` / `# ---- cubes ----` / `# ---- mask ----` tables
+> come after all the `[section]` blocks). `target_definitions.txt` and
+> `hfs_lines.txt` are unchanged — just keep them in a `keys/` subfolder next
+> to your new `config.txt`. `--key_dir keys/` becomes `--conf config.txt`,
+> and `PipelineHandler(key_dir=...)` becomes `PipelineHandler(conf_path=...)`.
 
 ---
 
@@ -107,11 +125,9 @@ PyStructure/                      <- git repo - install this with pip
 |   |-- init_workdir.py               copies key-file templates (--init)
 |   |-- cli.py                        `pystructure` console-script entry point
 |   `-- test_pystructure.py
-|-- keys/                          <- example / template key files
-|   |-- master_key.txt
+|-- config.txt                     <- example / template config file
+|-- keys/                          <- example / template reference tables
 |   |-- target_definitions.txt
-|   |-- data_key.txt
-|   |-- config_key.txt
 |   `-- hfs_lines.txt
 |-- analysis/                      <- post-processing & plotting helpers
 |   |-- pystructureAnalysis.py        load .ecsv, quicklook maps/spectra
@@ -122,11 +138,9 @@ PyStructure/                      <- git repo - install this with pip
 `-- README.md
 
 ~/my_project/                      <- your working directory (anywhere on disk)
+|-- config.txt                      <- edit this every run
 |-- keys/
-|   |-- master_key.txt              <- edit these
-|   |-- target_definitions.txt
-|   |-- data_key.txt
-|   |-- config_key.txt
+|   |-- target_definitions.txt      <- edit once, reuse across projects
 |   `-- hfs_lines.txt
 |-- data/                           <- your FITS files
 |-- output/                         <- pipeline writes .ecsv tables here

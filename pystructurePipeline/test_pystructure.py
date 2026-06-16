@@ -16,29 +16,26 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 class TestKeyHandler:
 
-    def _write_minimal_keys(self, tmpdir: Path):
-        (tmpdir / "master_key.txt").write_text(
+    def _write_minimal_config(self, tmpdir: Path) -> Path:
+        """
+        Write a minimal config.txt + keys/target_definitions.txt into *tmpdir*
+        and return the path to config.txt.
+        """
+        keys_dir = tmpdir / "keys"
+        keys_dir.mkdir(exist_ok=True)
+
+        (keys_dir / "target_definitions.txt").write_text(
+            "ngc5194\t202.4696\t47.1952\t8.58\t0.10\t22.0\t3.0\t173.0\t3.0\t3.54\t0.05\n"
+        )
+
+        conf_path = tmpdir / "config.txt"
+        conf_path.write_text(
             "[paths]\n"
             f"data_dir    = {tmpdir}/data/\n"
             f"out_dir     = {tmpdir}/Output/\n"
-            f"geom_file   = {tmpdir}/target_definitions.txt\n"
-            f"data_key    = {tmpdir}/data_key.txt\n"
-            f"config_key  = {tmpdir}/config_key.txt\n"
             "[meta]\nuser = Test\ncomments = test\n"
-        )
-        (tmpdir / "target_definitions.txt").write_text(
-            "ngc5194\t202.4696\t47.1952\t8.58\t0.10\t22.0\t3.0\t173.0\t3.0\t3.54\t0.05\n"
-        )
-        (tmpdir / "data_key.txt").write_text(
             "[sources]\nsources = ngc5194\n"
             "[overlay]\noverlay_file = _12co21.fits\n"
-            "# ---- maps ----\n"
-            "spire250, SPIRE250, MJy/sr, _spire250.fits, data/\n"
-            "# ---- cubes ----\n"
-            "12co21, 12CO(2-1), K, _12co21.fits, data/\n"
-            "# ---- mask ----\n"
-        )
-        (tmpdir / "config_key.txt").write_text(
             "[resolution]\ntarget_res = 27.0\nresolution = angular\n"
             "spacing_per_beam = 2\nmax_rad = auto\n"
             "NAXIS_shuff = 200\nCDELT_SHUFF = 4000\n"
@@ -50,50 +47,78 @@ class TestKeyHandler:
             "[output]\nsave_fits = false\nsave_mom_maps = true\n"
             "save_maps = true\nfolder_savefits = ./saved_FITS_files/\n"
             "[structure]\nstructure_creation = default\n"
+            "# ---- maps ----\n"
+            "spire250, SPIRE250, MJy/sr, _spire250.fits, data/\n"
+            "# ---- cubes ----\n"
+            "12co21, 12CO(2-1), K, _12co21.fits, data/\n"
+            "# ---- mask ----\n"
         )
+        return conf_path
 
     def test_load_basic(self, tmp_path):
-        self._write_minimal_keys(tmp_path)
+        conf_path = self._write_minimal_config(tmp_path)
         from pystructurePipeline.handler_keys import KeyHandler
-        kh = KeyHandler(str(tmp_path))
+        kh = KeyHandler(str(conf_path))
         assert kh.sources == ["ngc5194"]
         assert len(kh.maps) == 1
         assert len(kh.cubes) == 1
         assert kh.meta["target_res"] == 27.0
 
     def test_validate_passes(self, tmp_path):
-        self._write_minimal_keys(tmp_path)
+        conf_path = self._write_minimal_config(tmp_path)
         from pystructurePipeline.handler_keys import KeyHandler
-        assert KeyHandler(str(tmp_path)).validate() is True
+        assert KeyHandler(str(conf_path)).validate() is True
 
-    def test_missing_key_dir_raises(self):
+    def test_missing_conf_path_raises(self):
         from pystructurePipeline.handler_keys import KeyHandler
         with pytest.raises(FileNotFoundError):
-            KeyHandler("/nonexistent/path/")
+            KeyHandler("/nonexistent/path/config.txt")
+
+    def test_missing_target_definitions_raises(self, tmp_path):
+        conf_path = self._write_minimal_config(tmp_path)
+        (tmp_path / "keys" / "target_definitions.txt").unlink()
+        from pystructurePipeline.handler_keys import KeyHandler
+        with pytest.raises(FileNotFoundError):
+            KeyHandler(str(conf_path))
 
     def test_repr(self, tmp_path):
-        self._write_minimal_keys(tmp_path)
+        conf_path = self._write_minimal_config(tmp_path)
         from pystructurePipeline.handler_keys import KeyHandler
-        kh = KeyHandler(str(tmp_path))
+        kh = KeyHandler(str(conf_path))
         assert "KeyHandler" in repr(kh)
         assert "ngc5194" in repr(kh)
 
     def test_multi_source_list(self, tmp_path):
-        self._write_minimal_keys(tmp_path)
-        (tmp_path / "data_key.txt").write_text(
-            "[sources]\nsources = ngc5194, ngc5457\n"
-            "[overlay]\noverlay_file = _12co21.fits\n"
-            "# ---- maps ----\nspire250, SPIRE250, MJy/sr, _s.fits, data/\n"
-            "# ---- cubes ----\n12co21, 12CO(2-1), K, _12co21.fits, data/\n"
-            "# ---- mask ----\n"
+        conf_path = self._write_minimal_config(tmp_path)
+        conf_path.write_text(
+            conf_path.read_text().replace(
+                "[sources]\nsources = ngc5194\n",
+                "[sources]\nsources = ngc5194, ngc5457\n",
+            )
         )
-        (tmp_path / "target_definitions.txt").write_text(
+        (tmp_path / "keys" / "target_definitions.txt").write_text(
             "ngc5194\t202.4696\t47.1952\t8.58\t0.10\t22.0\t3.0\t173.0\t3.0\t3.54\t0.05\n"
             "ngc5457\t210.8025\t54.3492\t6.70\t0.32\t18.0\t5.0\t39.0\t5.0\t13.46\t0.50\n"
         )
         from pystructurePipeline.handler_keys import KeyHandler
-        kh = KeyHandler(str(tmp_path))
+        kh = KeyHandler(str(conf_path))
         assert kh.sources == ["ngc5194", "ngc5457"]
+
+    def test_hfs_file_loaded_when_present(self, tmp_path):
+        conf_path = self._write_minimal_config(tmp_path)
+        (tmp_path / "keys" / "hfs_lines.txt").write_text(
+            "hcn10\t88.6316023\t88.6304156\tGHz\n"
+        )
+        from pystructurePipeline.handler_keys import KeyHandler
+        kh = KeyHandler(str(conf_path))
+        assert kh.hfs_data is not None
+        assert len(kh.hfs_data) == 1
+
+    def test_hfs_file_none_when_absent(self, tmp_path):
+        conf_path = self._write_minimal_config(tmp_path)
+        from pystructurePipeline.handler_keys import KeyHandler
+        kh = KeyHandler(str(conf_path))
+        assert kh.hfs_data is None
 
 
 # ---------------------------------------------------------------------------
@@ -222,8 +247,8 @@ class TestInitWorkdir:
     def test_creates_expected_files(self, tmp_path):
         from pystructurePipeline.init_workdir import init_workdir
         init_workdir(str(tmp_path))
-        assert (tmp_path / "keys" / "master_key.txt").exists()
-        assert (tmp_path / "keys" / "config_key.txt").exists()
+        assert (tmp_path / "config.txt").exists()
+        assert (tmp_path / "keys" / "target_definitions.txt").exists()
         assert (tmp_path / "run_pystructure.py").exists()
 
     def test_overwrite_false_raises(self, tmp_path):
@@ -257,10 +282,10 @@ class TestCLI:
         with pytest.raises(SystemExit):
             main(["--init", "--workdir", str(tmp_path)])
 
-    def test_missing_key_dir_exits(self):
+    def test_missing_conf_exits(self):
         from pystructurePipeline.cli import main
         with pytest.raises((SystemExit, FileNotFoundError)):
-            main(["--key_dir", "/nonexistent/"])
+            main(["--conf", "/nonexistent/config.txt"])
 
     def test_no_args_exits(self):
         from pystructurePipeline.cli import main
@@ -270,7 +295,7 @@ class TestCLI:
     def test_invalid_stage_exits(self):
         from pystructurePipeline.cli import main
         with pytest.raises(SystemExit):
-            main(["--key_dir", ".", "--stages", "invalid_stage"])
+            main(["--conf", "config.txt", "--stages", "invalid_stage"])
 
 
 # ---------------------------------------------------------------------------
@@ -337,14 +362,15 @@ class TestPipelineHandlerLogging:
 
     def test_log_file_created_on_init(self, tmp_path):
         """PipelineHandler(log_file=...) should create the log file immediately."""
-        # Re-use the minimal key set from TestKeyHandler
+        # Re-use the minimal config from TestKeyHandler
         kh = TestKeyHandler()
-        kh._write_minimal_keys(tmp_path)
+        conf_path = kh._write_minimal_config(tmp_path)
 
         from pystructurePipeline.handler_pipeline import PipelineHandler
         log_path = tmp_path / "run.log"
-        handler = PipelineHandler(key_dir=str(tmp_path), verbose=False,
+        handler = PipelineHandler(conf_path=str(conf_path), verbose=False,
                                   log_file=str(log_path))
         assert log_path.exists()
         content = log_path.read_text()
-        assert "[pyStructure] [Loading]   [INFO]     Loading key files..." in content
+        assert "[Loading]" in content
+        assert "Loading configuration..." in content
