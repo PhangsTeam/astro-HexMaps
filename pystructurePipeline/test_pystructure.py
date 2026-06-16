@@ -45,7 +45,7 @@ class TestKeyHandler:
             "mom_thresh = 5\nconseq_channels = 3\nmom2_method = fwhm\n"
             "[spectral]\nspec_smooth = default\nspec_smooth_method = binned\n"
             "[output]\nsave_fits = false\nsave_mom_maps = true\n"
-            "save_maps = true\nfolder_savefits = ./saved_FITS_files/\n"
+            "save_maps = true\nfolder_savefits = ./saved_fits_files/\n"
             "[structure]\nstructure_creation = default\n"
             "# ---- maps ----\n"
             "spire250, SPIRE250, MJy/sr, _spire250.fits, data/\n"

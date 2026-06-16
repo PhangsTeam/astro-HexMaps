@@ -23,8 +23,8 @@
 [2026-06-16 12:29:58] [Products] [INFO]    Spectra processing complete for ngc5194. Table written to: /Users/lneumann/work/scripts/PyStructure/output/ngc5194_data_struct_27as_2026_06_16.ecsv
 [2026-06-16 12:29:58] [FITS]     [INFO]    Writing FITS maps for ngc5194.
 [2026-06-16 12:29:58] [FITS]     [WARNING] Spacing_per_beam = 2.0 < 4. The output FITS images may show hexagonal grid artefacts. Consider using spacing_per_beam ≥ 4 for publication-quality output maps.
-[2026-06-16 12:29:59] [FITS]     [INFO]    Moment map FITS files written to: ./saved_FITS_files/
-[2026-06-16 12:29:59] [FITS]     [INFO]    2D map FITS files written to: ./saved_FITS_files/
+[2026-06-16 12:29:59] [FITS]     [INFO]    Moment map FITS files written to: ./saved_fits_files/
+[2026-06-16 12:29:59] [FITS]     [INFO]    2D map FITS files written to: ./saved_fits_files/
 [2026-06-16 12:29:59] [Return]   [INFO]    --- Run summary ---
 [2026-06-16 12:29:59] [Return]   [INFO]      ngc5194: OK
 [2026-06-16 12:29:59] [Return]   [INFO]    All sources completed successfully.

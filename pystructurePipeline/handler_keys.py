@@ -318,7 +318,7 @@ class KeyHandler:
         self.meta["save_fits"]        =       _get("output", "save_fits",        "false").lower() == "true"
         self.meta["save_mom_maps"]    =       _get("output", "save_mom_maps",    "true").lower()  == "true"
         self.meta["save_maps"]        =       _get("output", "save_maps",        "true").lower()  == "true"
-        self.meta["folder_savefits"]  =       _get("output", "folder_savefits",  "./saved_FITS_files/")
+        self.meta["folder_savefits"]  =       _get("output", "folder_savefits",  "./saved_fits_files/")
 
         # Spectral smoothing
         self.meta["spec_smooth"]        = _get("spectral", "spec_smooth",        "default")

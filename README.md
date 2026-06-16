@@ -144,7 +144,7 @@ PyStructure/                      <- git repo - install this with pip
 |   `-- hfs_lines.txt
 |-- data/                           <- your FITS files
 |-- output/                         <- pipeline writes .ecsv tables here
-|-- saved_FITS_files/                  FITS moment/map images land here
+|-- saved_fits_files/                  FITS moment/map images land here
 `-- run_pystructure.py              <- edit and run this
 ```
 
@@ -195,7 +195,7 @@ Example:
 [pyStructure] [Regrid]    [INFO]     Hexagonal grid generated: 1060 sampling points (spacing = 13.5 arcsec).
 [pyStructure] [Regrid]    [INFO]     Cube 12co21 sampled successfully.
 [pyStructure] [Products]  [INFO]     Mask complete. Computing moments.
-[pyStructure] [FITS]      [INFO]     Moment map FITS files written to: ./saved_FITS_files/
+[pyStructure] [FITS]      [INFO]     Moment map FITS files written to: ./saved_fits_files/
 [pyStructure] [Return]    [INFO]     --- Run summary ---
 ```
 

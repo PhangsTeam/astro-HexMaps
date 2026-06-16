@@ -193,7 +193,7 @@ def run_fits(source, fname, meta, maps, cubes, params):
     """
     save_mom_maps    = meta.get("save_mom_maps",    True)
     save_maps        = meta.get("save_maps",        True)
-    folder           = meta.get("folder_savefits",  "./saved_FITS_files/")
+    folder           = meta.get("folder_savefits",  "./saved_fits_files/")
     target_res_as    = _resolve_target_res(params, meta)
     spacing_per_beam = meta.get("spacing_per_beam", 2.0)
 
