@@ -9,7 +9,7 @@ and edit the settings below.  Then execute from your working directory:
 
 Or use the installed CLI directly:
 
-    pystructure --key_dir keys/ --stages regrid spectra --targets ngc5194
+    pystructure --key_dir keys/ --stages regrid products --targets ngc5194
 """
 
 import pystructurePipeline as pys
@@ -22,12 +22,12 @@ import pystructurePipeline as pys
 KEY_DIR = "keys/"
 
 # Stages to run. Choose any subset (in order) of:
-#   "sampling"  – generate hexagonal grid
-#   "regrid"    – convolve and sample bands / cubes
-#   "spectra"   – process spectra, compute moments
-#   "output"    – write FITS moment and band maps
+#   "regrid"    – generate the hexagonal sampling grid, convolve and sample
+#                 bands / cubes, write the .ecsv table
+#   "products"  – process spectra, compute moments, write shuffled spectra
+#   "fits"      – write FITS moment maps and band maps
 # Set to None to run ALL stages.
-STAGES = None  # e.g. ["sampling", "regrid"]
+STAGES = None  # e.g. ["regrid", "products"]
 
 # Sources to process. Must match entries in keys/target_definitions.txt.
 # Set to None to process all sources defined in keys/data_key.txt.
