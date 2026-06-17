@@ -503,5 +503,5 @@ def run_products(source, fname, meta, cubes, input_mask, hfs_data):
     # Write enriched table back to disk
     # ------------------------------------------------------------------
     this_data.write(fname, format="ascii.ecsv", overwrite=True)
-    LOG.info(f"Spectra processing complete for {source}. "
-              f"Table written to: {fname}")
+    LOG.info(f"Spectra processing complete for {source}.")
+    LOG.info(f"Database written to: {fname}")

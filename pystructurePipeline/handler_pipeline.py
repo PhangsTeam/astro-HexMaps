@@ -95,7 +95,7 @@ class PipelineHandler:
         # file as it is logged (in addition to printing).
         logger.configure(verbose=verbose, log_file=log_file)
 
-        LOG_LOADING.info("Loading configuration...")
+        LOG_LOADING.info("Loading config file...")
         self.key_handler = KeyHandler(conf_path)
         self.key_handler.validate()
 
@@ -159,7 +159,7 @@ class PipelineHandler:
         source_list = targets if targets else self.source_handler.all_sources()
         self.run_success = {s: True for s in source_list}
 
-        LOG_LOADING.info(f"Running stages {ordered} for source(s): {source_list}")
+        LOG_LOADING.info(f"Running stages: {ordered}")
 
         for source in source_list:
             LOG_LOADING.info(f"--- Processing source: {source} ---")

@@ -36,22 +36,28 @@ class TestKeyHandler:
             "[meta]\nuser = Test\ncomments = test\n"
             "[sources]\nsources = ngc5194\n"
             "[overlay]\noverlay_file = _12co21.fits\n"
-            "[resolution]\ntarget_res = 27.0\nresolution = angular\n"
-            "spacing_per_beam = 2\nmax_rad = auto\n"
-            "NAXIS_shuff = 200\nCDELT_SHUFF = 4000\n"
-            "[masking]\nref_line = first\nSN_processing = 2,4\n"
-            "strict_mask = false\nuse_input_mask = false\n"
-            "use_fixed_vel_mask = false\nuse_hfs_lines = false\n"
-            "mom_thresh = 5\nconseq_channels = 3\nmom2_method = fwhm\n"
-            "[spectral]\nspec_smooth = default\nspec_smooth_method = binned\n"
-            "[output]\nsave_fits = false\nsave_mom_maps = true\n"
-            "save_maps = true\nfolder_savefits = ./saved_fits_files/\n"
-            "[structure]\nstructure_creation = default\n"
             "# ---- maps ----\n"
             "spire250, SPIRE250, MJy/sr, _spire250.fits, data/\n"
             "# ---- cubes ----\n"
             "12co21, 12CO(2-1), K, _12co21.fits, data/\n"
             "# ---- mask ----\n"
+            # NOTE: [resolution]/[masking]/[spectral]/[output]/[structure]
+            # are placed AFTER the maps/cubes/mask tables here, matching the
+            # real config.txt template. This ordering is what previously
+            # triggered the bug where every setting in these sections
+            # silently fell back to its default — see
+            # test_settings_after_tables_are_not_silently_dropped below.
+            "[resolution]\ntarget_res = 27.0\nresolution = angular\n"
+            "pixels_per_beam = 2\nmax_rad = auto\n"
+            "NAXIS_shuff = 200\nCDELT_SHUFF = 4000\n"
+            "[masking]\nref_line = first\nSN_processing = 2,4\n"
+            "strict_mask = false\nuse_input_mask = false\n"
+            "use_fixed_vel_mask = false\nuse_hfs_lines = false\n"
+            "mom_thresh = 5\nconseq_channels = 3\n"
+            "[spectral]\nspec_smooth = default\nspec_smooth_method = binned\n"
+            "[output]\nsave_fits = false\nsave_mom_maps = true\n"
+            "save_maps = true\nfolder_savefits = ./saved_fits_files/\n"
+            "[structure]\nstructure_creation = default\n"
         )
         return conf_path
 
@@ -63,6 +69,80 @@ class TestKeyHandler:
         assert len(kh.maps) == 1
         assert len(kh.cubes) == 1
         assert kh.meta["target_res"] == 27.0
+
+    def test_settings_after_tables_are_not_silently_dropped(self, tmp_path):
+        """
+        Regression test: in the real config.txt template, [resolution] /
+        [masking] / [spectral] / [output] / [structure] all come AFTER the
+        maps/cubes/mask tables. A previous bug stopped feeding configparser
+        at the first "# ---- maps ----" divider and never resumed, so every
+        setting in those later sections silently fell back to its default
+        no matter what the file said. Using a non-default value here makes
+        sure that bug can't return unnoticed.
+        """
+        conf_path = self._write_minimal_config(tmp_path)
+        conf_path.write_text(
+            conf_path.read_text().replace(
+                "target_res = 27.0", "target_res = 45.0"
+            ).replace(
+                "save_fits = false", "save_fits = true"
+            )
+        )
+        from pystructurePipeline.handler_keys import KeyHandler
+        kh = KeyHandler(str(conf_path))
+        assert kh.meta["target_res"] == 45.0
+        assert kh.meta["save_fits"] is True
+
+    def test_fallback_use_logs_warning(self, tmp_path, capsys):
+        """
+        Whenever a [resolution]/[masking]/[spectral]/[output]/[structure]
+        setting is absent from config.txt and its hardcoded default is used
+        instead, a [WARNING] should be logged so this doesn't go unnoticed
+        (the original motivation: a typo'd or misplaced setting should never
+        silently and quietly fall back without a trace).
+        """
+        from pystructurePipeline.pystructureLogger import logger
+        logger.configure(verbose=True, log_file=None)
+
+        conf_path = self._write_minimal_config(tmp_path)
+        from pystructurePipeline.handler_keys import KeyHandler
+        KeyHandler(str(conf_path))
+        captured = capsys.readouterr()
+        assert "[WARNING]" in captured.out
+        # "mom2_method" is absent from the minimal config fixture's
+        # [masking] section, so it must fall back and warn.
+        assert "mom2_method" in captured.out
+        assert "using default" in captured.out
+
+    def test_fname_fill_fallback_does_not_warn(self, tmp_path, capsys):
+        """
+        fname_fill is an optional, rarely-used parameter (only relevant when
+        structure_creation = "fill"), so its fallback to "" must NOT log a
+        warning, unlike every other [resolution]/[masking]/[spectral]/
+        [output]/[structure] setting.
+        """
+        from pystructurePipeline.pystructureLogger import logger
+        logger.configure(verbose=True, log_file=None)
+
+        conf_path = self._write_minimal_config(tmp_path)
+        from pystructurePipeline.handler_keys import KeyHandler
+        kh = KeyHandler(str(conf_path))
+        captured = capsys.readouterr()
+        assert kh.meta["fname_fill"] == ""
+        assert "fname_fill" not in captured.out
+
+    def test_explicit_setting_does_not_log_warning(self, tmp_path, capsys):
+        """An explicitly-set value should not trigger a fallback warning."""
+        from pystructurePipeline.pystructureLogger import logger
+        logger.configure(verbose=True, log_file=None)
+
+        conf_path = self._write_minimal_config(tmp_path)
+        from pystructurePipeline.handler_keys import KeyHandler
+        KeyHandler(str(conf_path))
+        captured = capsys.readouterr()
+        # target_res IS set explicitly in the minimal config fixture, so it
+        # must not appear in any fallback warning.
+        assert "target_res not set" not in captured.out
 
     def test_target_definitions_ignores_whitespace_around_commas(self, tmp_path):
         """

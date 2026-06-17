@@ -17,7 +17,7 @@ e.g.
     [HH:MM:SS] [Regrid]   [INFO]    Map SPIRE250 sampled successfully.
     [HH:MM:SS] [Products] [ERROR]   12CO21 spectrum is all zeros; skipping.
     [HH:MM:SS] [Loading]  [INFO]    Loading key files...
-    [HH:MM:SS] [FITS]     [WARNING] spacing_per_beam < 4; expect artefacts.
+    [HH:MM:SS] [FITS]     [WARNING] pixels_per_beam < 4; expect artefacts.
 
 In addition to printing, every message is stored as a structured record
 (timestamp, stage, level, message). The full log can optionally be written
@@ -32,7 +32,7 @@ Module-level logger bound to a fixed stage name::
     LOG = get_logger("Regrid")
 
     LOG.info("Map SPIRE250 sampled successfully.")
-    LOG.warning("spacing_per_beam < 4; expect artefacts.")
+    LOG.warning("pixels_per_beam < 4; expect artefacts.")
     LOG.error(f"Cube {name} not found: {path}")
 
 Configuring verbosity / file output (done once, typically by PipelineHandler)::

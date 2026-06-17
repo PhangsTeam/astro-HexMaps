@@ -810,7 +810,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
     # ------------------------------------------------------------------
     os.makedirs(meta.get("out_dir", "output/"), exist_ok=True)
     this_data.write(fname, format="ascii.ecsv", overwrite=True)
-    LOG.info(f"PyStructure table written to: {fname}")
+    LOG.info(f"Database written to: {fname}")
     return fname
 
 

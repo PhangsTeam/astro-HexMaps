@@ -168,22 +168,41 @@ class KeyHandler:
             LOG.error(f"Config file not found: {self.conf_path}")
             raise FileNotFoundError(f"Config file not found: {self.conf_path}")
 
-    def _ini_lines_before_tables(self, path: Path) -> str:
+    def _ini_lines_for_configparser(self, path: Path) -> str:
         """
-        Return the portion of *path* before the first tabular section divider.
+        Return the portion of *path* that is safe to feed to configparser.
 
-        Shared by config.txt parsing: everything up to (not including) the
-        first ``# ---- maps/cubes/mask ----`` divider comment is safe to feed
-        to configparser. The stop condition uses a precise regex so that
-        comment prose mentioning "maps"/"cubes"/"mask" elsewhere in the file
-        header does not trigger an early stop.
+        config.txt interleaves standard ``[section]`` blocks with free-form
+        comma-separated tables (the maps/cubes/mask rows). configparser can
+        only handle the former, so this strips out exactly the table rows —
+        i.e. every line between a ``# ---- maps/cubes/mask ----`` divider and
+        the next ``[section]`` header or another divider — while keeping all
+        ``[section]`` blocks, including ones that appear *after* the tables
+        (such as [resolution], [masking], [spectral], [output], [structure]
+        in the unified config.txt).
+
+        The divider-detection regex matches only the exact divider comment
+        lines, not comment prose elsewhere in the file that happens to
+        mention "maps"/"cubes"/"mask".
         """
         ini_lines = []
+        in_table = False
         with open(path, "r") as f:
             for raw_line in f:
                 stripped = raw_line.strip()
+
                 if re.match(r'^#\s*----\s*(map|cube|mask)', stripped, re.IGNORECASE):
-                    break
+                    in_table = True
+                    continue
+
+                if in_table and stripped.startswith("["):
+                    # A new [section] header ends the table region, even
+                    # without an explicit divider comment.
+                    in_table = False
+
+                if in_table:
+                    continue
+
                 ini_lines.append(raw_line)
         return "".join(ini_lines)
 
@@ -214,25 +233,43 @@ class KeyHandler:
         # Only the [paths]/[meta] header is safe to feed to configparser
         # directly (the file also contains comma-separated tables further
         # down), so reuse the same "stop at first table divider" logic.
-        ini_text = self._ini_lines_before_tables(self.conf_path)
+        ini_text = self._ini_lines_for_configparser(self.conf_path)
         cfg = configparser.ConfigParser(inline_comment_prefixes=("#",))
         cfg.read_string(ini_text)
 
         paths = dict(cfg["paths"]) if "paths" in cfg else {}
         meta  = dict(cfg["meta"])  if "meta"  in cfg else {}
 
+        def _get_path(key, fallback):
+            if key in paths:
+                return paths[key]
+            LOG.warning(f"[paths] {key} not set in config.txt; using default: {fallback}")
+            return fallback
+
+        def _get_meta(key, fallback):
+            if key in meta:
+                return meta[key]
+            LOG.warning(f"[meta] {key} not set in config.txt; using default: {fallback!r}")
+            return fallback
+
         # Resolve all paths relative to the directory containing config.txt.
         # Using .resolve() converts conf_path to an absolute path first, so
         # this is safe even when conf_path itself is given as a relative path.
         base = self.conf_path.resolve().parent
 
-        self.meta["data_dir"]  = str(base / paths.get("data_dir", "data/"))
-        self.meta["out_dir"]   = str(base / paths.get("out_dir", "output/"))
+        self.meta["data_dir"]  = str(base / _get_path("data_dir", "data/"))
+        self.meta["out_dir"]   = str(base / _get_path("out_dir", "output/"))
+        # geom_file and hfs_file intentionally fall back to a default path
+        # next to config.txt without a warning: this is documented behavior
+        # (geom_file is required regardless and will raise its own error if
+        # missing; hfs_file is optional and its "fallback" already depends
+        # on whether the default file happens to exist, not just on whether
+        # the key was set).
         self.meta["geom_file"] = str(base / paths.get("geom_file", "keys/target_definitions.txt"))
         self.meta["hfs_file"]  = str(base / paths.get("hfs_file", "")) if paths.get("hfs_file") else None
 
-        self.meta["user"]      = meta.get("user",     "Unknown user")
-        self.meta["comments"]  = meta.get("comments", "")
+        self.meta["user"]      = _get_meta("user",     "Unknown user")
+        self.meta["comments"]  = _get_meta("comments", "")
 
         # Store the absolute project root so _load_sources_and_tables can
         # resolve relative map_dir / line_dir entries to absolute paths.
@@ -263,7 +300,7 @@ class KeyHandler:
         target_res       : float  — target beam FWHM (arcsec for angular mode,
                                     pc for physical mode)
         resolution       : str    — "angular" | "physical" | "native"
-        spacing_per_beam : float  — number of sampling points per beam diameter
+        pixels_per_beam : float  — number of sampling points per beam diameter
         max_rad          : float | "auto"  — maximum map radius in degrees
         NAXIS_shuff      : int    — number of channels in the shuffled spectrum
         CDELT_SHUFF      : float  — channel width of the shuffled spectrum (m/s)
@@ -296,18 +333,27 @@ class KeyHandler:
         ------------------
         structure_creation : "default" | "fill" | "archive"
         fname_fill         : str — pin a specific output filename for fill mode
+                                   (rarely used; no fallback warning is logged
+                                   when left unset)
         """
-        ini_text = self._ini_lines_before_tables(self.conf_path)
+        ini_text = self._ini_lines_for_configparser(self.conf_path)
         cfg = configparser.ConfigParser(inline_comment_prefixes=("#",))
         cfg.read_string(ini_text)
 
-        def _get(section, key, fallback):
-            return cfg.get(section, key, fallback=str(fallback))
+        def _get(section, key, fallback, warn=True):
+            if cfg.has_option(section, key):
+                return cfg.get(section, key)
+            if warn:
+                LOG.warning(
+                    f"[{section}] {key} not set in config.txt; "
+                    f"using default: {fallback}"
+                )
+            return str(fallback)
 
         # Resolution
         self.meta["target_res"]       = float(_get("resolution", "target_res",       27.0))
         self.meta["resolution"]       =       _get("resolution", "resolution",       "angular")
-        self.meta["spacing_per_beam"] = float(_get("resolution", "spacing_per_beam", 2.0))
+        self.meta["pixels_per_beam"] = float(_get("resolution", "pixels_per_beam", 2.0))
         self.meta["max_rad"]          =       _get("resolution", "max_rad",          "auto")
         self.meta["NAXIS_shuff"]      = int(float(_get("resolution", "NAXIS_shuff",  200)))
         self.meta["CDELT_SHUFF"]      = float(_get("resolution", "CDELT_SHUFF",      4000.0))
@@ -335,7 +381,10 @@ class KeyHandler:
 
         # Structure creation
         self.meta["structure_creation"] = _get("structure", "structure_creation", "default")
-        self.meta["fname_fill"]         = _get("structure", "fname_fill",         "")
+        # fname_fill is an optional, rarely-used override (only relevant
+        # when structure_creation = "fill"), so its fallback to "" is
+        # expected for most users and not worth a warning.
+        self.meta["fname_fill"]         = _get("structure", "fname_fill", "", warn=False)
 
     def _load_target_definitions(self):
         """
@@ -417,7 +466,7 @@ class KeyHandler:
             # ---- mask ----
             # (leave empty if no external mask is used)
         """
-        ini_text = self._ini_lines_before_tables(self.conf_path)
+        ini_text = self._ini_lines_for_configparser(self.conf_path)
         cfg = configparser.ConfigParser(inline_comment_prefixes=("#",))
         cfg.read_string(ini_text)
 

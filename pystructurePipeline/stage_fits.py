@@ -195,17 +195,17 @@ def run_fits(source, fname, meta, maps, cubes, params):
     save_maps        = meta.get("save_maps",        True)
     folder           = meta.get("folder_savefits",  "./saved_fits_files/")
     target_res_as    = _resolve_target_res(params, meta)
-    spacing_per_beam = meta.get("spacing_per_beam", 2.0)
+    pixels_per_beam = meta.get("pixels_per_beam", 2.0)
 
     if not (save_mom_maps or save_maps):
         LOG.info(f"Output writing disabled for {source}; skipping.")
         return
 
     # Warn if spacing is too coarse for good image reconstruction
-    if float(spacing_per_beam) < 4:
-        LOG.warning(f"Spacing_per_beam = {spacing_per_beam} < 4. "
-                    "The output FITS images may show hexagonal grid artefacts. "
-                    "Consider using spacing_per_beam ≥ 4 for publication-quality output maps.")
+    if float(pixels_per_beam) < 4:
+        LOG.warning(f"Pixels_per_beam = {pixels_per_beam} < 4.")
+        LOG.warning("The output FITS images may show hexagonal grid artefacts.")
+        LOG.warning("Consider using pixels_per_beam ≥ 4 for publication-quality output maps.")
 
     os.makedirs(folder, exist_ok=True)
 
