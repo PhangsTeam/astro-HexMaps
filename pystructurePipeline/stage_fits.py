@@ -192,6 +192,10 @@ def save_to_fits_cube(ra, dec, hdr_in, ov_slice, col_name, filename,
     metadata (SPEC_VCHAN0, SPEC_DELTAV, SPEC_CRPIX) so it matches the
     original overlay velocity axis used throughout the rest of the pipeline.
 
+    Output is strictly binary (0/1, with NaN outside the footprint): any
+    fractional value introduced by resampling onto a coarser pixel grid is
+    re-thresholded at 0.5 (see the inline comment below for the rationale).
+
     Silently skips if *col_name* does not exist in *this_data*.
 
     Parameters
@@ -233,6 +237,27 @@ def save_to_fits_cube(ra, dec, hdr_in, ov_slice, col_name, filename,
             resampled.append(plane)
         cube   = np.stack(resampled, axis=0)
         hdr_2d = hdr_repr
+
+    # ------------------------------------------------------------------
+    # Re-binarize after resampling.
+    #
+    # The input mask is exactly 0/1 per hex-grid point. sample_to_hdr uses
+    # nearest-neighbour interpolation, so it alone cannot introduce
+    # fractional values. But the spatial resampling step above (when the
+    # overlay pixel scale is finer than the beam) uses reproject_interp's
+    # default bilinear interpolation, which turns each output pixel into an
+    # area-weighted average of several 0/1 input pixels — i.e. the fraction
+    # of that pixel's area covered by mask=1 input pixels.
+    #
+    # A threshold of 0.5 is the natural, mathematically motivated choice for
+    # converting that fraction back to a hard 0/1 decision: it is the
+    # majority-rule / maximum-likelihood boundary (more than half the pixel
+    # area is "in the mask"), and it minimises the total misclassified area
+    # under a linear (area-weighted) resampling kernel with no prior bias
+    # toward over- or under-masking. NaNs (outside the observed footprint)
+    # are left untouched.
+    finite = np.isfinite(cube)
+    cube[finite] = (cube[finite] >= 0.5).astype(float)
 
     # Build the 3-D output header: spatial WCS from hdr_2d, spectral axis
     # reconstructed from the table metadata so it matches SPEC_VAXIS.
@@ -326,7 +351,7 @@ def run_fits(source, fname, meta, maps, cubes, params):
             save_to_fits(ra_deg, dec_deg, ov_hdr_2d, ov_slice, "EMOM2", "emom2", source, this_data, line, folder, target_res_as)
             save_to_fits(ra_deg, dec_deg, ov_hdr_2d, ov_slice, "TPEAK", "tpeak", source, this_data, line, folder, target_res_as)
             save_to_fits(ra_deg, dec_deg, ov_hdr_2d, ov_slice, "RMS",   "rms",   source, this_data, line, folder, target_res_as)
-        LOG.info(f"Moment maps written to: {folder}")
+        LOG.info(f"Moment map FITS files written to: {folder}")
 
     # ------------------------------------------------------------------
     # 2D map images
@@ -335,7 +360,7 @@ def run_fits(source, fname, meta, maps, cubes, params):
         for map_name in maps["map_name"]:
             save_to_fits(ra_deg, dec_deg, ov_hdr_2d, ov_slice, "MAP_",  "map",  source, this_data, map_name, folder, target_res_as)
             save_to_fits(ra_deg, dec_deg, ov_hdr_2d, ov_slice, "EMAP_", "emap", source, this_data, map_name, folder, target_res_as)
-        LOG.info(f"(Input) maps written to: {folder}")
+        LOG.info(f"2D map FITS files written to: {folder}")
 
     # ------------------------------------------------------------------
     # Velocity-integration mask(s)
@@ -355,7 +380,7 @@ def run_fits(source, fname, meta, maps, cubes, params):
                                   folder, target_res_as)
                 n_written += 1
         if n_written:
-            LOG.info(f"Mask(s) written to: {folder}")
+            LOG.info(f"Mask FITS cube(s) written to: {folder}")
         else:
             LOG.warning(f"save_mask is True but no SPEC_MASK column found for {source}.")
 

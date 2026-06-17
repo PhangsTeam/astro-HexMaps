@@ -425,6 +425,30 @@ class TestStageFits:
         assert out_hdr["CRVAL3"] == 100.0
         assert out_hdr["CDELT3"] == 10.0
 
+    def test_save_to_fits_cube_output_is_binary(self, tmp_path):
+        """
+        Resampling onto a coarser pixel grid (when target_res is larger than
+        the native beam) uses bilinear-style interpolation internally, which
+        can introduce fractional values between 0 and 1. The final output
+        must always be re-thresholded back to strictly 0/1 (NaN allowed
+        outside the footprint), regardless of whether that resampling step
+        ran.
+        """
+        from pystructurePipeline.stage_fits import save_to_fits_cube
+        from astropy.io import fits
+        import numpy as np
+
+        ra, dec, hdr, ov_slice, t = self._make_mask_table_and_header()
+        # hdr's native beam is 0.001 deg = 3.6 arcsec; request a much coarser
+        # target_res so resample_hdr's reprojection branch is exercised.
+        save_to_fits_cube(ra, dec, hdr, ov_slice, "SPEC_MASK", "mask",
+                          "testsrc", t, str(tmp_path), target_res=20.0)
+
+        data = fits.getdata(str(tmp_path / "testsrc_mask.fits"))
+        finite = data[np.isfinite(data)]
+        assert len(finite) > 0
+        assert set(np.unique(finite)).issubset({0.0, 1.0})
+
     def test_save_to_fits_cube_skips_missing_column(self, tmp_path):
         from pystructurePipeline.stage_fits import save_to_fits_cube
 

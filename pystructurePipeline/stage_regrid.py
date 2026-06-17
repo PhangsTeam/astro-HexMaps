@@ -507,7 +507,7 @@ def sample_at_res(in_data, ra_samp, dec_samp, in_hdr=None,
                 trg_hdr["CDELT3"] = spec_smooth[0] * 1000
                 trg_hdr["CRVAL3"] = new_vaxis[0] + (trg_hdr["CRPIX3"] - 1) * trg_hdr["CDELT3"]
 
-        data, _ = reproject_interp((data, hdr_out), trg_hdr, order="bilinear")
+        data, _ = reproject_interp((data, hdr_out), trg_hdr, order="nearest-neighbor")
 
         if save_fits:
             out_hdr        = copy.copy(trg_hdr)
