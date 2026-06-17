@@ -322,6 +322,8 @@ class KeyHandler:
         save_fits      : bool — save convolved intermediate FITS cubes
         save_mom_maps  : bool — save moment maps as FITS files
         save_maps      : bool — save 2D map FITS files
+        save_mask      : bool — save the velocity-integration mask(s) as a
+                                3D FITS cube (default False)
         folder_savefits: str  — output folder for FITS maps
 
         Spectral smoothing
@@ -373,6 +375,7 @@ class KeyHandler:
         self.meta["save_fits"]        =       _get("output", "save_fits",        "false").lower() == "true"
         self.meta["save_mom_maps"]    =       _get("output", "save_mom_maps",    "true").lower()  == "true"
         self.meta["save_maps"]        =       _get("output", "save_maps",        "true").lower()  == "true"
+        self.meta["save_mask"]        =       _get("output", "save_mask",        "false").lower() == "true"
         self.meta["folder_savefits"]  =       _get("output", "folder_savefits",  "./saved_fits_files/")
 
         # Spectral smoothing

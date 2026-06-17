@@ -29,6 +29,16 @@ Output filename convention
 
 e.g.  ngc5194_12CO21_mom0.fits
       ngc5194_SPIRE250_map.fits
+
+Mask output
+-----------
+If save_mask is True (in [output]), the velocity-integration mask(s) used
+during the products stage are also written out as 3-D FITS cubes (one file
+per mask, with the spectral axis matching the original overlay velocity
+axis): one for the combined SPEC_MASK, plus one per SPEC_MASK_<LINE> column
+present in the table.
+
+Filename convention: {source}_mask.fits, {source}_mask_<line>.fits
 """
 
 import os
@@ -168,19 +178,92 @@ def save_to_fits(ra, dec, hdr_in, ov_slice, key, filename,
     fits.writeto(fname_fits, data=map_cart, header=hdr_in, overwrite=True)
 
 
+def save_to_fits_cube(ra, dec, hdr_in, ov_slice, col_name, filename,
+                      this_source, this_data, folder, target_res):
+    """
+    Regrid one 2-D table column (n_pts x n_chan) onto a rectangular spatial
+    grid, channel by channel, and write the result as a 3-D FITS cube.
+
+    Used for mask columns (SPEC_MASK, SPEC_MASK_<LINE>), which are stored in
+    the .ecsv as one row per hex-grid point and one column per spectral
+    channel, rather than the single 2-D quantities save_to_fits handles.
+
+    The spectral axis of the output cube is reconstructed from the table
+    metadata (SPEC_VCHAN0, SPEC_DELTAV, SPEC_CRPIX) so it matches the
+    original overlay velocity axis used throughout the rest of the pipeline.
+
+    Silently skips if *col_name* does not exist in *this_data*.
+
+    Parameters
+    ----------
+    ra, dec     : arrays       — hex-grid RA/Dec (degrees)
+    hdr_in      : FITS Header  — 2-D overlay header (pixel grid definition)
+    ov_slice    : np.ndarray   — footprint mask (1.0 inside mapped area, NaN outside)
+    col_name    : str          — table column name, e.g. "SPEC_MASK"
+    filename    : str          — quantity label used in the output filename, e.g. "mask"
+    this_source : str          — source name
+    this_data   : Table        — the PyStructure table
+    folder      : str          — output directory
+    target_res  : float        — target beam FWHM in arcseconds (for header)
+    """
+    if col_name not in this_data.colnames:
+        return
+
+    data_in  = np.asarray(this_data[col_name])
+    n_pts, n_chan = data_in.shape
+
+    # Regrid every channel onto the same rectangular spatial grid used by
+    # save_to_fits, building up a (n_chan, ny, nx) cube.
+    hdr_2d = copy.copy(hdr_in)
+    planes = []
+    for ch in range(n_chan):
+        plane = sample_to_hdr(data_in[:, ch], ra, dec, hdr_2d)
+        plane = ov_slice * plane
+        planes.append(plane)
+    cube = np.stack(planes, axis=0)
+
+    # Resample spatially to a coarser grid if the overlay pixel scale is
+    # finer than the beam (same logic as save_to_fits, applied per channel).
+    native_beam_as = 3600.0 * min(hdr_2d.get("BMAJ", 1e6), hdr_2d.get("BMIN", 1e6))
+    if native_beam_as < 0.99 * target_res:
+        hdr_repr = resample_hdr(hdr_2d, target_res)
+        resampled = []
+        for ch in range(n_chan):
+            plane, _ = reproject_interp((cube[ch], hdr_2d), hdr_repr)
+            resampled.append(plane)
+        cube   = np.stack(resampled, axis=0)
+        hdr_2d = hdr_repr
+
+    # Build the 3-D output header: spatial WCS from hdr_2d, spectral axis
+    # reconstructed from the table metadata so it matches SPEC_VAXIS.
+    hdr_3d = copy.copy(hdr_2d)
+    hdr_3d["NAXIS"]  = 3
+    hdr_3d["NAXIS3"] = n_chan
+    hdr_3d["CTYPE3"] = "VELO"
+    hdr_3d["CRPIX3"] = this_data.meta["SPEC_CRPIX"]
+    hdr_3d["CRVAL3"] = this_data.meta["SPEC_VCHAN0"].value
+    hdr_3d["CDELT3"] = this_data.meta["SPEC_DELTAV"].value
+    hdr_3d["CUNIT3"] = str(this_data.meta["SPEC_DELTAV"].unit)
+
+    fname_fits = os.path.join(folder, f"{this_source}_{filename}.fits")
+    fits.writeto(fname_fits, data=cube, header=hdr_3d, overwrite=True)
+
+
 # ============================================================================
 # Stage entry point
 # ============================================================================
 
 def run_fits(source, fname, meta, maps, cubes, params):
     """
-    Write FITS moment maps and 2D map images for *source*.
+    Write FITS moment maps, 2D map images, and mask cube(s) for *source*.
 
     This is the entry point for the "fits" pipeline stage.
 
     Reads the processed .ecsv table and writes one FITS file per moment quantity
-    per line (if save_mom_maps is True) and one FITS file per 2D map (if
-    save_maps is True).
+    per line (if save_mom_maps is True), one FITS file per 2D map (if
+    save_maps is True), and a 3-D FITS cube for the velocity-integration
+    mask(s) (if save_mask is True): one for the combined SPEC_MASK, plus one
+    per SPEC_MASK_<LINE> column present in the table.
 
     Parameters
     ----------
@@ -193,18 +276,18 @@ def run_fits(source, fname, meta, maps, cubes, params):
     """
     save_mom_maps    = meta.get("save_mom_maps",    True)
     save_maps        = meta.get("save_maps",        True)
+    save_mask        = meta.get("save_mask",        False)
     folder           = meta.get("folder_savefits",  "./saved_fits_files/")
     target_res_as    = _resolve_target_res(params, meta)
     pixels_per_beam = meta.get("pixels_per_beam", 2.0)
 
-    if not (save_mom_maps or save_maps):
+    if not (save_mom_maps or save_maps or save_mask):
         LOG.info(f"Output writing disabled for {source}; skipping.")
         return
 
     # Warn if spacing is too coarse for good image reconstruction
     if float(pixels_per_beam) < 4:
-        LOG.warning(f"Pixels_per_beam = {pixels_per_beam} < 4.")
-        LOG.warning("The output FITS images may show hexagonal grid artefacts.")
+        LOG.warning(f"The output FITS images may show hexagonal grid artefacts (ppb = {pixels_per_beam} < 4).")
         LOG.warning("Consider using pixels_per_beam ≥ 4 for publication-quality output maps.")
 
     os.makedirs(folder, exist_ok=True)
@@ -243,7 +326,7 @@ def run_fits(source, fname, meta, maps, cubes, params):
             save_to_fits(ra_deg, dec_deg, ov_hdr_2d, ov_slice, "EMOM2", "emom2", source, this_data, line, folder, target_res_as)
             save_to_fits(ra_deg, dec_deg, ov_hdr_2d, ov_slice, "TPEAK", "tpeak", source, this_data, line, folder, target_res_as)
             save_to_fits(ra_deg, dec_deg, ov_hdr_2d, ov_slice, "RMS",   "rms",   source, this_data, line, folder, target_res_as)
-        LOG.info(f"Moment map FITS files written to: {folder}")
+        LOG.info(f"Moment maps written to: {folder}")
 
     # ------------------------------------------------------------------
     # 2D map images
@@ -252,7 +335,29 @@ def run_fits(source, fname, meta, maps, cubes, params):
         for map_name in maps["map_name"]:
             save_to_fits(ra_deg, dec_deg, ov_hdr_2d, ov_slice, "MAP_",  "map",  source, this_data, map_name, folder, target_res_as)
             save_to_fits(ra_deg, dec_deg, ov_hdr_2d, ov_slice, "EMAP_", "emap", source, this_data, map_name, folder, target_res_as)
-        LOG.info(f"2D map FITS files written to: {folder}")
+        LOG.info(f"(Input) maps written to: {folder}")
+
+    # ------------------------------------------------------------------
+    # Velocity-integration mask(s)
+    # ------------------------------------------------------------------
+    if save_mask:
+        n_written = 0
+        if "SPEC_MASK" in this_data.colnames:
+            save_to_fits_cube(ra_deg, dec_deg, ov_hdr_2d, ov_slice,
+                              "SPEC_MASK", "mask", source, this_data,
+                              folder, target_res_as)
+            n_written += 1
+        for col in this_data.colnames:
+            if col.startswith("SPEC_MASK_"):
+                line_name = col[len("SPEC_MASK_"):].lower()
+                save_to_fits_cube(ra_deg, dec_deg, ov_hdr_2d, ov_slice,
+                                  col, f"mask_{line_name}", source, this_data,
+                                  folder, target_res_as)
+                n_written += 1
+        if n_written:
+            LOG.info(f"Mask(s) written to: {folder}")
+        else:
+            LOG.warning(f"save_mask is True but no SPEC_MASK column found for {source}.")
 
 
 def _resolve_target_res(params, meta):

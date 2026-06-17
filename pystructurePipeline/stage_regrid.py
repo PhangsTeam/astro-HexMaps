@@ -10,7 +10,7 @@ This stage is the core data-ingestion step of the pipeline.  It:
    and minimises the number of correlated positions for a given beam spacing.
    The grid is clipped to the footprint of the overlay cube (pixels with at
    least one finite channel), with spacing derived from the target resolution
-   and the spacing_per_beam parameter in config.txt.
+   and the pixels_per_beam parameter in config.txt.
 2. Initialises the output Astropy Table with source metadata and
    deprojected galactocentric coordinates.
 3. For each 2D map:   convolves to the target beam → samples at hex points.
@@ -263,7 +263,7 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
     meta : dict
         Pipeline settings from KeyHandler.meta.
         Used keys: data_dir, overlay_file, resolution, target_res,
-        spacing_per_beam, max_rad.
+        pixels_per_beam, max_rad.
 
     Returns
     -------
@@ -337,10 +337,10 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
     mask     = np.sum(np.isfinite(ov_cube), axis=0) >= 1
     mask_hdr = twod_head(ov_hdr)
 
-    spacing_per_beam = meta.get("spacing_per_beam", 2.0)
+    pixels_per_beam = meta.get("pixels_per_beam", 2.0)
     max_rad          = meta.get("max_rad", "auto")
-    # Spacing in degrees: one beam FWHM divided by spacing_per_beam
-    spacing = target_res_as / 3600.0 / float(spacing_per_beam)
+    # Spacing in degrees: one beam FWHM divided by pixels_per_beam
+    spacing = target_res_as / 3600.0 / float(pixels_per_beam)
 
     samp_ra, samp_dec = make_sampling_points(
         ra_ctr     = params["ra_ctr"],
@@ -507,7 +507,7 @@ def sample_at_res(in_data, ra_samp, dec_samp, in_hdr=None,
                 trg_hdr["CDELT3"] = spec_smooth[0] * 1000
                 trg_hdr["CRVAL3"] = new_vaxis[0] + (trg_hdr["CRPIX3"] - 1) * trg_hdr["CDELT3"]
 
-        data, _ = reproject_interp((data, hdr_out), trg_hdr, order="nearest-neighbor")
+        data, _ = reproject_interp((data, hdr_out), trg_hdr, order="bilinear")
 
         if save_fits:
             out_hdr        = copy.copy(trg_hdr)
@@ -518,6 +518,7 @@ def sample_at_res(in_data, ra_samp, dec_samp, in_hdr=None,
                 path.join(path_save_fits, f"{source}_{line_name}_{target_res_as}as.fits"),
                 data=data, header=out_hdr, overwrite=True,
             )
+            LOG.info(f"Convolved {line_name} written to: {path_save_fits}")
     else:
         LOG.info(f"No target header supplied; skipping reprojection.")
         trg_hdr = hdr_out
@@ -663,6 +664,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
     fname              = _build_fname(source, meta)
     structure_creation = meta.get("structure_creation", "default")
     data_dir           = meta.get("data_dir", "data/")
+    fits_dir           = meta.get("folder_savefits",  "./saved_fits_files/")
     save_fits          = meta.get("save_fits", False)
 
     # Decide whether to create a fresh table or fill an existing one
@@ -694,7 +696,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
             target_hdr     = ov_hdr,
             line_name      = map_entry["map_name"],
             source         = source,
-            path_save_fits = data_dir,
+            path_save_fits = fits_dir,
             save_fits      = save_fits,
             perbeam        = perbeam,
         )
@@ -736,7 +738,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
             target_hdr     = ov_hdr,
             line_name      = cube["line_name"],
             source         = source,
-            path_save_fits = data_dir,
+            path_save_fits = fits_dir,
             save_fits      = save_fits,
         )
         this_data["SPEC_" + cube["line_name"].upper()] = Column(

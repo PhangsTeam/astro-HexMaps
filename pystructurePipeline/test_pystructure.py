@@ -70,6 +70,25 @@ class TestKeyHandler:
         assert len(kh.cubes) == 1
         assert kh.meta["target_res"] == 27.0
 
+    def test_save_mask_defaults_false(self, tmp_path):
+        """save_mask is not set in the minimal fixture, so it must default to False."""
+        conf_path = self._write_minimal_config(tmp_path)
+        from pystructurePipeline.handler_keys import KeyHandler
+        kh = KeyHandler(str(conf_path))
+        assert kh.meta["save_mask"] is False
+
+    def test_save_mask_explicit_true(self, tmp_path):
+        conf_path = self._write_minimal_config(tmp_path)
+        conf_path.write_text(
+            conf_path.read_text().replace(
+                "[output]\nsave_fits = false",
+                "[output]\nsave_mask = true\nsave_fits = false",
+            )
+        )
+        from pystructurePipeline.handler_keys import KeyHandler
+        kh = KeyHandler(str(conf_path))
+        assert kh.meta["save_mask"] is True
+
     def test_settings_after_tables_are_not_silently_dropped(self, tmp_path):
         """
         Regression test: in the real config.txt template, [resolution] /
@@ -339,6 +358,81 @@ class TestFitsUtils:
         maj, minn, pa, info = deconvolve_gauss(30.0, 20.0, 30.0, 0.0, 20.0, 0.0)
         assert info[0]   # worked
         assert maj > 0
+
+
+# ---------------------------------------------------------------------------
+# stage_fits — mask cube output
+# ---------------------------------------------------------------------------
+
+class TestStageFits:
+
+    def _make_mask_table_and_header(self):
+        """
+        Build a small synthetic table with a SPEC_MASK column plus a matching
+        2-D overlay header, small enough to regrid quickly in tests.
+        """
+        import numpy as np
+        import astropy.units as au
+        from astropy.table import Table, Column
+        from astropy.io import fits
+
+        n_pts, n_chan = 9, 4
+        ra  = np.array([10.0, 10.001, 10.002] * 3)
+        dec = np.array([20.0] * 3 + [20.001] * 3 + [20.002] * 3)
+        mask = np.zeros((n_pts, n_chan))
+        mask[:, 1:3] = 1  # channels 1-2 "in mask" for every point
+
+        t = Table()
+        t["ra_deg"]    = Column(ra,  unit=au.deg)
+        t["dec_deg"]   = Column(dec, unit=au.deg)
+        t["SPEC_MASK"] = Column(mask)
+        t.meta["SPEC_VCHAN0"] = 100.0 * au.km / au.s
+        t.meta["SPEC_DELTAV"] = 10.0  * au.km / au.s
+        t.meta["SPEC_CRPIX"]  = 1
+
+        hdr = fits.Header()
+        hdr["NAXIS"]  = 2
+        hdr["NAXIS1"] = 5
+        hdr["NAXIS2"] = 5
+        hdr["CTYPE1"] = "RA---TAN"
+        hdr["CTYPE2"] = "DEC--TAN"
+        hdr["CRVAL1"] = 10.001
+        hdr["CRVAL2"] = 20.001
+        hdr["CRPIX1"] = 3
+        hdr["CRPIX2"] = 3
+        hdr["CDELT1"] = -0.001
+        hdr["CDELT2"] = 0.001
+        hdr["BMAJ"]   = 0.001
+        hdr["BMIN"]   = 0.001
+
+        ov_slice = np.ones((5, 5))
+        return ra, dec, hdr, ov_slice, t
+
+    def test_save_to_fits_cube_writes_3d_cube(self, tmp_path):
+        from pystructurePipeline.stage_fits import save_to_fits_cube
+        from astropy.io import fits
+
+        ra, dec, hdr, ov_slice, t = self._make_mask_table_and_header()
+        save_to_fits_cube(ra, dec, hdr, ov_slice, "SPEC_MASK", "mask",
+                          "testsrc", t, str(tmp_path), target_res=3.6)
+
+        out_path = tmp_path / "testsrc_mask.fits"
+        assert out_path.exists()
+
+        data, out_hdr = fits.getdata(str(out_path), header=True)
+        assert data.shape == (4, 5, 5)
+        assert out_hdr["NAXIS3"] == 4
+        assert out_hdr["CRVAL3"] == 100.0
+        assert out_hdr["CDELT3"] == 10.0
+
+    def test_save_to_fits_cube_skips_missing_column(self, tmp_path):
+        from pystructurePipeline.stage_fits import save_to_fits_cube
+
+        ra, dec, hdr, ov_slice, t = self._make_mask_table_and_header()
+        # No "SPEC_MASK_HCN10" column exists in this table
+        save_to_fits_cube(ra, dec, hdr, ov_slice, "SPEC_MASK_HCN10", "mask_hcn10",
+                          "testsrc", t, str(tmp_path), target_res=3.6)
+        assert not (tmp_path / "testsrc_mask_hcn10.fits").exists()
 
 
 # ---------------------------------------------------------------------------
