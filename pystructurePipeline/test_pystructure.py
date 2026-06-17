@@ -5,6 +5,7 @@ Run with:  pytest tests/ -v
 
 import sys
 import pytest
+import numpy as np
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -457,6 +458,163 @@ class TestStageFits:
         save_to_fits_cube(ra, dec, hdr, ov_slice, "SPEC_MASK_HCN10", "mask_hcn10",
                           "testsrc", t, str(tmp_path), target_res=3.6)
         assert not (tmp_path / "testsrc_mask_hcn10.fits").exists()
+
+    # -----------------------------------------------------------------
+    # PPV-native moment pipeline
+    # -----------------------------------------------------------------
+
+    def _make_synthetic_ppv_cube(self, n_chan=40, ny=4, nx=4, seed=0):
+        """
+        Build a small synthetic (n_chan, ny, nx) cube with a clean Gaussian
+        emission line (high S/N, centred at channel 20) plus unit-variance
+        noise, identical at every spatial pixel. Returns (cube, vaxis_kms).
+        """
+        import numpy as np
+        rng = np.random.RandomState(seed)
+        vaxis = np.arange(n_chan, dtype=float)  # channel index stands in for km/s
+        cube = rng.normal(0, 1.0, size=(n_chan, ny, nx))
+        line = 20 * np.exp(-0.5 * ((vaxis - 20) / 1.7) ** 2)
+        cube += line[:, None, None]
+        return cube, vaxis
+
+    def test_construct_mask_ppv_recovers_known_line(self):
+        """
+        construct_mask_ppv should mask channels around the injected line
+        centre and leave most far-from-line channels unmasked, for every
+        spatial pixel (since the synthetic cube is spatially uniform).
+        """
+        from pystructurePipeline.stage_fits import construct_mask_ppv
+
+        cube, vaxis = self._make_synthetic_ppv_cube()
+        mask = construct_mask_ppv(cube, SN_processing=[2, 4])
+
+        assert mask.shape == cube.shape
+        assert set(np.unique(mask)).issubset({0, 1})
+
+        # The line centre (channel 20) should be masked everywhere
+        assert np.all(mask[20] == 1)
+        # Far from the line (channel 0) should be unmasked everywhere
+        assert np.all(mask[0] == 0)
+
+    def test_construct_mask_ppv_matches_hex_grid_construct_mask(self):
+        """
+        construct_mask_ppv must reproduce stage_products.construct_mask's
+        mask exactly when run on the same underlying data, just reshaped:
+        one hex-grid "point" per spatial pixel of the PPV cube.
+        """
+        import astropy.units as au
+        from astropy.table import Table, Column
+        from pystructurePipeline.stage_fits import construct_mask_ppv
+        from pystructurePipeline.stage_products import construct_mask
+
+        cube, vaxis = self._make_synthetic_ppv_cube(ny=3, nx=3)
+        n_chan, ny, nx = cube.shape
+
+        # Build the equivalent hex-grid table: one row per spatial pixel
+        spec = np.moveaxis(cube, 0, -1).reshape(ny * nx, n_chan)
+        t = Table()
+        t["SPEC_LINE"] = Column(spec)
+        t.meta["SPEC_VCHAN0"] = 0.0 * au.km / au.s
+        t.meta["SPEC_DELTAV"] = 1.0 * au.km / au.s
+        t.meta["SPEC_CRPIX"]  = 1
+
+        mask_ppv = construct_mask_ppv(cube, SN_processing=[2, 4])
+        mask_hex, _, _ = construct_mask("LINE", t, SN_processing=[2, 4])
+
+        mask_hex_reshaped = np.moveaxis(
+            mask_hex.value.reshape(ny, nx, n_chan), -1, 0
+        )
+        assert np.array_equal(mask_ppv, mask_hex_reshaped)
+
+    def test_apply_strict_mask_ppv_removes_small_components(self):
+        from pystructurePipeline.stage_fits import apply_strict_mask_ppv
+
+        mask = np.zeros((1, 10, 10), dtype=int)
+        mask[0, 5, 5] = 1            # isolated single pixel: too small, removed
+        mask[0, 0:3, 0:3] = 1        # 3x3 block = 9 pixels: kept
+
+        filtered = apply_strict_mask_ppv(mask, min_pixels=5)
+        assert filtered[0, 5, 5] == 0
+        assert np.all(filtered[0, 0:3, 0:3] == 1)
+
+    def test_get_mom_maps_ppv_matches_get_mom_maps(self):
+        """
+        get_mom_maps_ppv must return the literal same values as calling
+        utils_table.get_mom_maps directly on the reshaped (n_pix, n_chan)
+        array -- it is a pure reshape wrapper, not a re-implementation.
+        """
+        import astropy.units as au
+        from pystructurePipeline.stage_fits import get_mom_maps_ppv
+        from pystructurePipeline.utils_table import get_mom_maps
+
+        cube, vaxis_arr = self._make_synthetic_ppv_cube(ny=2, nx=2)
+        n_chan, ny, nx = cube.shape
+
+        cube_q  = cube * au.K
+        vaxis_q = vaxis_arr * au.km / au.s
+        mask    = (cube > 3).astype(int)
+        # widen the mask a bit so get_mom_maps' high-S/N submask has enough
+        # consecutive channels to compute mom1/mom2 (mirrors construct_mask's
+        # dilation in spirit, simplified for this unit test)
+        for shift in (1, 2, -1, -2):
+            mask = np.maximum(mask, np.roll(cube, shift, axis=0) > 3)
+        mom_calc = (3, 3, "fwhm")
+
+        ppv_maps = get_mom_maps_ppv(cube_q, mask, vaxis_q, mom_calc)
+
+        cube_pts = np.moveaxis(cube, 0, -1).reshape(ny * nx, n_chan) * au.K
+        mask_pts = np.moveaxis(mask, 0, -1).reshape(ny * nx, n_chan)
+        flat_maps = get_mom_maps(cube_pts, mask_pts, vaxis_q, mom_calc)
+
+        for key in ppv_maps:
+            assert ppv_maps[key].shape == (ny, nx)
+            np.testing.assert_allclose(
+                ppv_maps[key].value.ravel(), flat_maps[key].value,
+                equal_nan=True,
+            )
+
+    def test_convolve_cube_to_target_skips_when_already_at_resolution(self):
+        from pystructurePipeline.stage_fits import convolve_cube_to_target
+        from astropy.io import fits
+
+        cube = np.ones((5, 6, 6))
+        hdr = fits.Header()
+        hdr["BMAJ"] = 30.0 / 3600.0  # already coarser than the 27" target
+        hdr["BMIN"] = 30.0 / 3600.0
+
+        out_data, out_hdr = convolve_cube_to_target(cube, hdr, target_res_as=27.0)
+        assert np.array_equal(out_data, cube)
+
+    def test_get_convolved_ppv_cube_uses_cached_file(self, tmp_path):
+        from pystructurePipeline.stage_fits import get_convolved_ppv_cube
+        from astropy.io import fits
+
+        cube = np.arange(2 * 3 * 3, dtype=float).reshape(2, 3, 3)
+        hdr = fits.Header()
+        hdr["NAXIS"] = 3
+        hdr["NAXIS1"], hdr["NAXIS2"], hdr["NAXIS3"] = 3, 3, 2
+        cached_path = tmp_path / "testsrc_co_27.0as.fits"
+        fits.writeto(str(cached_path), cube, hdr)
+
+        data, _ = get_convolved_ppv_cube(
+            "testsrc", "co", "/nonexistent_dir", ".fits",
+            27.0, hdr, str(tmp_path),
+        )
+        assert np.array_equal(data, cube)
+
+    def test_get_convolved_ppv_cube_raises_if_nothing_available(self, tmp_path):
+        from pystructurePipeline.stage_fits import get_convolved_ppv_cube
+        from astropy.io import fits
+
+        hdr = fits.Header()
+        hdr["NAXIS"] = 3
+        hdr["NAXIS1"], hdr["NAXIS2"], hdr["NAXIS3"] = 3, 3, 2
+
+        with pytest.raises(FileNotFoundError):
+            get_convolved_ppv_cube(
+                "testsrc", "co", str(tmp_path), ".fits",
+                27.0, hdr, str(tmp_path),
+            )
 
 
 # ---------------------------------------------------------------------------

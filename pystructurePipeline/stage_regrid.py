@@ -666,6 +666,8 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
     data_dir           = meta.get("data_dir", "data/")
     fits_dir           = meta.get("folder_savefits",  "./saved_fits_files/")
     save_fits          = meta.get("save_fits", False)
+    if save_fits:
+        os.makedirs(fits_dir, exist_ok=True)
 
     # Decide whether to create a fresh table or fill an existing one
     if "fill" in structure_creation and path.exists(fname):
@@ -710,8 +712,11 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
             if path.exists(uc_file):
                 uc_int, _ = sample_at_res(
                     uc_file, samp_ra, samp_dec,
-                    target_res_as = target_res_as, target_hdr = ov_hdr,
-                    perbeam=perbeam, unc=True,
+                    target_res_as = target_res_as, 
+                    target_hdr    = ov_hdr,
+                    line_name     = f"{map_entry["map_name"]}_err",
+                    perbeam       = perbeam, 
+                    unc           = True,
                 )
                 this_data["EMAP_" + map_entry["map_name"].upper()] = Column(
                     uc_int, unit=au.Unit(str(map_entry["map_unit"])),

@@ -95,7 +95,7 @@ class PipelineHandler:
         # file as it is logged (in addition to printing).
         logger.configure(verbose=verbose, log_file=log_file)
 
-        LOG_LOADING.info("Loading config file...")
+        LOG_LOADING.info("Loading config file ...")
         self.key_handler = KeyHandler(conf_path)
         self.key_handler.validate()
 
@@ -220,7 +220,7 @@ class PipelineHandler:
         .ecsv with the enriched table.
         """
         from pystructurePipeline.stage_products import run_products, LOG as PRODUCTS_LOG
-        PRODUCTS_LOG.info(f"Processing spectra for {source}.")
+        PRODUCTS_LOG.info(f"Create products for source: {source} ...")
         run_products(
             source     = source,
             fname      = self._get_output_fname(source),
@@ -234,19 +234,22 @@ class PipelineHandler:
         """
         Dispatch the fits stage for *source*.
 
-        Reads the final .ecsv and regrid the moment maps and 2D maps onto a
-        rectangular pixel grid, writing one FITS file per quantity into
-        folder_savefits.
+        Computes moment maps directly on the convolved PPV cubes (not the
+        hex-grid .ecsv table), regrid the 2D map columns onto a rectangular
+        pixel grid, and optionally writes the velocity-integration mask(s)
+        as FITS cubes — all into folder_savefits.
         """
         from pystructurePipeline.stage_fits import run_fits, LOG as FITS_LOG
-        FITS_LOG.info(f"Writing FITS maps for {source}.")
+        FITS_LOG.info(f"Creating FITS files for source: {source} ...")
         run_fits(
-            source = source,
-            fname  = self._get_output_fname(source),
-            meta   = self.key_handler.meta,
-            maps   = self.key_handler.get_maps(),
-            cubes  = self.key_handler.get_cubes(),
-            params = self.source_handler.get_source_params(source),
+            source     = source,
+            fname      = self._get_output_fname(source),
+            meta       = self.key_handler.meta,
+            maps       = self.key_handler.get_maps(),
+            cubes      = self.key_handler.get_cubes(),
+            params     = self.source_handler.get_source_params(source),
+            input_mask = self.key_handler.get_input_mask(),
+            hfs_data   = self.key_handler.get_hfs_data(),
         )
 
     # ------------------------------------------------------------------
