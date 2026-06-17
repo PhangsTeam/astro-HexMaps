@@ -28,13 +28,18 @@ For each cube, the pipeline:
      (ny, nx) maps.
   4. Writes one FITS file per moment quantity per line.
 
-2D maps and the mask cube(s): unchanged
-------------------------------------------
+2D maps: unchanged; mask cube(s): now PPV-native too
+---------------------------------------------------------
 2D band/map columns (MAP_*/EMAP_*) have no PPV-cube equivalent (they are
 already 2-D quantities in the .ecsv), so they are still regridded from the
-hex-grid table via save_to_fits, exactly as before. Likewise, save_to_fits_cube
-still writes the velocity-integration mask(s) as 3-D FITS cubes when
-save_mask is True, by regridding the hex-grid SPEC_MASK*/* columns.
+hex-grid table via save_to_fits, exactly as before.
+
+The velocity-integration mask(s), however, are now written PPV-native as
+well (when save_mask is True): the same mask array built and used inside
+run_moments_ppv (construct_mask_ppv / external_mask_ppv / etc.) is written
+directly to FITS via save_ppv_mask_to_fits, with no hex-grid table involved
+at any point. This requires save_mom_maps to also be True, since the mask
+is only constructed while computing moments.
 
 Output filename convention
 --------------------------
@@ -191,15 +196,16 @@ def get_convolved_ppv_cube(source, line_name, line_dir, line_ext, target_res_as,
 
     cached_path = os.path.join(fits_dir, f"{source}_{line_name}_{target_res_as}as.fits")
     if os.path.exists(cached_path):
-        log.info(f"Using existing convolved cube for {line_name}: {cached_path}")
+        log.info(f"Using existing convolved cube for line: {line_name}: {cached_path}")
         return fits.getdata(cached_path, header=True)
 
     raw_path = os.path.join(line_dir, source + line_ext)
-    log.warning(f"No saved convolved cube found for {line_name} "
-               f"(expected {cached_path}); convolving raw input from scratch: {raw_path}")
+    log.info(f"No saved convolved cube found for line: {line_name}")
+    log.info(f"Expected: {cached_path}")
+    log.info(f"Convolving raw input from scratch: {raw_path}")
     if not os.path.exists(raw_path):
-        log.error(f"Raw input cube not found for {line_name}: {raw_path}")
-        raise FileNotFoundError(f"Raw input cube not found for {line_name}: {raw_path}")
+        log.error(f"Raw input cube not found for line: {line_name}: {raw_path}")
+        raise FileNotFoundError(f"Raw input cube not found for line: {line_name}: {raw_path}")
 
     data, hdr = fits.getdata(raw_path, header=True)
     data, hdr = convolve_cube_to_target(data, hdr, target_res_as, log=log)
@@ -529,106 +535,6 @@ def external_mask_ppv(mask_file, ov_hdr, log=None):
     return data
 
 
-def save_to_fits_cube(ra, dec, hdr_in, ov_slice, col_name, filename,
-                      this_source, this_data, folder, target_res):
-    """
-    Regrid one 2-D table column (n_pts x n_chan) onto a rectangular spatial
-    grid, channel by channel, and write the result as a 3-D FITS cube.
-
-    Used for mask columns (SPEC_MASK, SPEC_MASK_<LINE>), which are stored in
-    the .ecsv as one row per hex-grid point and one column per spectral
-    channel, rather than the single 2-D quantities save_to_fits handles.
-
-    The spectral axis of the output cube is reconstructed from the table
-    metadata (SPEC_VCHAN0, SPEC_DELTAV, SPEC_CRPIX) so it matches the
-    original overlay velocity axis used throughout the rest of the pipeline.
-
-    Output is strictly binary (0/1, with NaN outside the footprint): any
-    fractional value introduced by resampling onto a coarser pixel grid is
-    re-thresholded at 0.5 (see the inline comment below for the rationale).
-
-    Silently skips if *col_name* does not exist in *this_data*.
-
-    Parameters
-    ----------
-    ra, dec     : arrays       — hex-grid RA/Dec (degrees)
-    hdr_in      : FITS Header  — 2-D overlay header (pixel grid definition)
-    ov_slice    : np.ndarray   — footprint mask (1.0 inside mapped area, NaN outside)
-    col_name    : str          — table column name, e.g. "SPEC_MASK"
-    filename    : str          — quantity label used in the output filename, e.g. "mask"
-    this_source : str          — source name
-    this_data   : Table        — the PyStructure table
-    folder      : str          — output directory
-    target_res  : float        — target beam FWHM in arcseconds (for header)
-    """
-    if col_name not in this_data.colnames:
-        return
-
-    data_in  = np.asarray(this_data[col_name])
-    n_pts, n_chan = data_in.shape
-
-    # Regrid every channel onto the same rectangular spatial grid used by
-    # save_to_fits, building up a (n_chan, ny, nx) cube.
-    hdr_2d = copy.copy(hdr_in)
-    planes = []
-    for ch in range(n_chan):
-        plane = sample_to_hdr(data_in[:, ch], ra, dec, hdr_2d)
-        plane = ov_slice * plane
-        planes.append(plane)
-    cube = np.stack(planes, axis=0)
-
-    # Resample spatially to a coarser grid if the overlay pixel scale is
-    # finer than the beam (same logic as save_to_fits, applied per channel).
-    native_beam_as = 3600.0 * min(hdr_2d.get("BMAJ", 1e6), hdr_2d.get("BMIN", 1e6))
-    if native_beam_as < 0.99 * target_res:
-        hdr_repr = resample_hdr(hdr_2d, target_res)
-        resampled = []
-        for ch in range(n_chan):
-            plane, _ = reproject_interp((cube[ch], hdr_2d), hdr_repr)
-            resampled.append(plane)
-        cube   = np.stack(resampled, axis=0)
-        hdr_2d = hdr_repr
-
-    # ------------------------------------------------------------------
-    # Re-binarize after resampling.
-    #
-    # The input mask is exactly 0/1 per hex-grid point. sample_to_hdr uses
-    # nearest-neighbour interpolation, so it alone cannot introduce
-    # fractional values. But the spatial resampling step above (when the
-    # overlay pixel scale is finer than the beam) uses reproject_interp's
-    # default bilinear interpolation, which turns each output pixel into an
-    # area-weighted average of several 0/1 input pixels — i.e. the fraction
-    # of that pixel's area covered by mask=1 input pixels.
-    #
-    # A threshold of 0.5 is the natural, mathematically motivated choice for
-    # converting that fraction back to a hard 0/1 decision: it is the
-    # majority-rule / maximum-likelihood boundary (more than half the pixel
-    # area is "in the mask"), and it minimises the total misclassified area
-    # under a linear (area-weighted) resampling kernel with no prior bias
-    # toward over- or under-masking. NaNs (outside the observed footprint)
-    # are left untouched.
-    finite = np.isfinite(cube)
-    cube[finite] = (cube[finite] >= 0.5).astype(float)
-
-    # Build the 3-D output header: spatial WCS from hdr_2d, spectral axis
-    # reconstructed from the table metadata so it matches SPEC_VAXIS.
-    hdr_3d = copy.copy(hdr_2d)
-    hdr_3d["NAXIS"]  = 3
-    hdr_3d["NAXIS3"] = n_chan
-    hdr_3d["CTYPE3"] = "VELO"
-    hdr_3d["CRPIX3"] = this_data.meta["SPEC_CRPIX"]
-    hdr_3d["CRVAL3"] = this_data.meta["SPEC_VCHAN0"].value
-    hdr_3d["CDELT3"] = this_data.meta["SPEC_DELTAV"].value
-    hdr_3d["CUNIT3"] = str(this_data.meta["SPEC_DELTAV"].unit)
-
-    fname_fits = os.path.join(folder, f"{this_source}_{filename}.fits")
-    fits.writeto(fname_fits, data=cube, header=hdr_3d, overwrite=True)
-
-
-# ============================================================================
-# Stage entry point
-# ============================================================================
-
 def get_mom_maps_ppv(cube, mask, vaxis, mom_calc):
     """
     Compute moment maps directly on a PPV cube, reusing utils_table.get_mom_maps
@@ -669,7 +575,35 @@ def get_mom_maps_ppv(cube, mask, vaxis, mom_calc):
     return mom_maps
 
 
-def run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder):
+def save_ppv_mask_to_fits(mask, ov_hdr, source, filename, folder):
+    """
+    Write a PPV-native velocity-integration mask to a 3-D FITS cube.
+
+    Unlike the hex-grid path's mask regridding (which used to reproject a
+    SPEC_MASK* table column onto the overlay grid), the mask here is already a plain numpy array on
+    the overlay's native PPV grid — produced directly by construct_mask_ppv
+    / build_hfs_mask_ppv / fixed_velocity_mask_ppv / external_mask_ppv — so
+    no resampling or re-binarization is needed; it is written out as-is.
+
+    Parameters
+    ----------
+    mask     : np.ndarray (n_chan, ny, nx) — 0/1 mask array
+    ov_hdr   : FITS Header (3-D) — overlay header; supplies both the spatial
+              WCS and the spectral axis for the output cube
+    source   : str — source name
+    filename : str — quantity label used in the output filename, e.g. "mask"
+              or "mask_12co21"
+    folder   : str — output directory
+
+    Output filename: {source}_{filename}.fits
+    """
+    hdr_out = copy.copy(ov_hdr)
+    fname_fits = os.path.join(folder, f"{source}_{filename}.fits")
+    fits.writeto(fname_fits, data=np.asarray(mask, dtype=float), header=hdr_out, overwrite=True)
+
+
+def run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder,
+                    save_mask=False):
     """
     Compute and write PPV-native moment maps for every cube of *source*.
 
@@ -695,6 +629,11 @@ def run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder):
     hfs_data   : pd.DataFrame or None — hyperfine data from KeyHandler
     params     : dict — source geometry from SourceHandler
     folder     : str — output directory for the moment FITS files
+    save_mask  : bool — if True, also write the PPV mask(s) used here to FITS
+                (see save_ppv_mask_to_fits): the combined mask once as
+                {source}_mask.fits, plus one {source}_mask_<line>.fits for
+                every line whose HFS-extended mask actually differs from
+                the combined mask.
     """
     use_input_mask     = meta.get("use_input_mask",     False)
     use_fixed_vel_mask = meta.get("use_fixed_vel_mask", False)
@@ -806,6 +745,10 @@ def run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder):
             LOG.info("Applying strict spatial mask filter (connected-component, PPV grid).")
             mask = apply_strict_mask_ppv(mask.astype(int))
 
+    if save_mask:
+        save_ppv_mask_to_fits(mask, ov_hdr, source, "mask", folder)
+        LOG.info(f"PPV mask cube written to: {folder}")
+
     # ------------------------------------------------------------------
     # Compute and write moments for every line.
     # ------------------------------------------------------------------
@@ -820,6 +763,10 @@ def run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder):
             if mask_hfs is not None:
                 active_mask = mask_hfs
                 LOG.info(f"Using HFS-extended PPV mask for {line_name}.")
+                if save_mask and not np.array_equal(mask_hfs, mask):
+                    save_ppv_mask_to_fits(mask_hfs, ov_hdr, source,
+                                         f"mask_{line_name.lower()}", folder)
+                    LOG.info(f"PPV mask cube for {line_name} written to: {folder}")
 
         mom_maps = get_mom_maps_ppv(cube_data[line_name.upper()], active_mask, vaxis, mom_calc)
 
@@ -866,9 +813,12 @@ def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data
 
     2D map images (if save_maps is True) are still regridded from the
     hex-grid .ecsv table via save_to_fits, since 2D map columns have no PPV
-    cube equivalent. Mask cube(s) (if save_mask is True) are written via
-    save_to_fits_cube, also from the hex-grid table: one for the combined
-    SPEC_MASK, plus one per SPEC_MASK_<LINE> column present.
+    cube equivalent. Mask cube(s) (if save_mask is True) are now written
+    PPV-native too, as a byproduct of run_moments_ppv: the combined mask
+    once as {source}_mask.fits, plus one {source}_mask_<line>.fits for
+    every line whose HFS-extended mask differs from the combined mask. This
+    means save_mask now requires save_mom_maps to also be True (a warning
+    is logged if save_mask is requested without save_mom_maps).
 
     Parameters
     ----------
@@ -919,10 +869,19 @@ def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data
 
     # ------------------------------------------------------------------
     # Moment maps — PPV-native, NOT from the hex-grid .ecsv table.
+    # The PPV mask(s) used here are also written out (if save_mask is True)
+    # as a byproduct of this same call, since the mask only exists as a
+    # plain array inside run_moments_ppv.
     # ------------------------------------------------------------------
     if save_mom_maps:
-        run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder)
+        run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder,
+                        save_mask=save_mask)
         LOG.info(f"Moment map FITS files written to: {folder}")
+    elif save_mask:
+        LOG.warning(f"save_mask is True but save_mom_maps is False for {source}; "
+                   "the PPV mask is only built while computing moments, so no "
+                   "mask FITS file(s) will be written. Set save_mom_maps = true "
+                   "to enable mask output.")
 
     # ------------------------------------------------------------------
     # 2D map images
@@ -932,28 +891,6 @@ def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data
             save_to_fits(ra_deg, dec_deg, ov_hdr_2d, ov_slice, "MAP_",  "map",  source, this_data, map_name, folder, target_res_as)
             save_to_fits(ra_deg, dec_deg, ov_hdr_2d, ov_slice, "EMAP_", "emap", source, this_data, map_name, folder, target_res_as)
         LOG.info(f"2D map FITS files written to: {folder}")
-
-    # ------------------------------------------------------------------
-    # Velocity-integration mask(s)
-    # ------------------------------------------------------------------
-    if save_mask:
-        n_written = 0
-        if "SPEC_MASK" in this_data.colnames:
-            save_to_fits_cube(ra_deg, dec_deg, ov_hdr_2d, ov_slice,
-                              "SPEC_MASK", "mask", source, this_data,
-                              folder, target_res_as)
-            n_written += 1
-        for col in this_data.colnames:
-            if col.startswith("SPEC_MASK_"):
-                line_name = col[len("SPEC_MASK_"):].lower()
-                save_to_fits_cube(ra_deg, dec_deg, ov_hdr_2d, ov_slice,
-                                  col, f"mask_{line_name}", source, this_data,
-                                  folder, target_res_as)
-                n_written += 1
-        if n_written:
-            LOG.info(f"Mask FITS cube(s) written to: {folder}")
-        else:
-            LOG.warning(f"save_mask is True but no SPEC_MASK column found for {source}.")
 
 
 def _resolve_target_res(params, meta):

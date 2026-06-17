@@ -367,97 +367,33 @@ class TestFitsUtils:
 
 class TestStageFits:
 
-    def _make_mask_table_and_header(self):
+    def test_save_ppv_mask_to_fits_writes_cube_as_is(self, tmp_path):
         """
-        Build a small synthetic table with a SPEC_MASK column plus a matching
-        2-D overlay header, small enough to regrid quickly in tests.
+        save_ppv_mask_to_fits writes a plain numpy mask array directly,
+        with no regridding/resampling/re-binarization step (the mask is
+        already on the overlay's native PPV grid, unlike the old hex-grid
+        save_to_fits_cube path).
         """
-        import numpy as np
-        import astropy.units as au
-        from astropy.table import Table, Column
+        from pystructurePipeline.stage_fits import save_ppv_mask_to_fits
         from astropy.io import fits
 
-        n_pts, n_chan = 9, 4
-        ra  = np.array([10.0, 10.001, 10.002] * 3)
-        dec = np.array([20.0] * 3 + [20.001] * 3 + [20.002] * 3)
-        mask = np.zeros((n_pts, n_chan))
-        mask[:, 1:3] = 1  # channels 1-2 "in mask" for every point
+        mask = np.zeros((4, 5, 5))
+        mask[1:3, 2, 2] = 1
 
-        t = Table()
-        t["ra_deg"]    = Column(ra,  unit=au.deg)
-        t["dec_deg"]   = Column(dec, unit=au.deg)
-        t["SPEC_MASK"] = Column(mask)
-        t.meta["SPEC_VCHAN0"] = 100.0 * au.km / au.s
-        t.meta["SPEC_DELTAV"] = 10.0  * au.km / au.s
-        t.meta["SPEC_CRPIX"]  = 1
+        ov_hdr = fits.Header()
+        ov_hdr["NAXIS"]  = 3
+        ov_hdr["NAXIS1"], ov_hdr["NAXIS2"], ov_hdr["NAXIS3"] = 5, 5, 4
+        ov_hdr["CTYPE1"], ov_hdr["CTYPE2"], ov_hdr["CTYPE3"] = "RA---TAN", "DEC--TAN", "VELO"
+        ov_hdr["CRVAL3"], ov_hdr["CDELT3"], ov_hdr["CRPIX3"] = 0.0, 1000.0, 1
 
-        hdr = fits.Header()
-        hdr["NAXIS"]  = 2
-        hdr["NAXIS1"] = 5
-        hdr["NAXIS2"] = 5
-        hdr["CTYPE1"] = "RA---TAN"
-        hdr["CTYPE2"] = "DEC--TAN"
-        hdr["CRVAL1"] = 10.001
-        hdr["CRVAL2"] = 20.001
-        hdr["CRPIX1"] = 3
-        hdr["CRPIX2"] = 3
-        hdr["CDELT1"] = -0.001
-        hdr["CDELT2"] = 0.001
-        hdr["BMAJ"]   = 0.001
-        hdr["BMIN"]   = 0.001
-
-        ov_slice = np.ones((5, 5))
-        return ra, dec, hdr, ov_slice, t
-
-    def test_save_to_fits_cube_writes_3d_cube(self, tmp_path):
-        from pystructurePipeline.stage_fits import save_to_fits_cube
-        from astropy.io import fits
-
-        ra, dec, hdr, ov_slice, t = self._make_mask_table_and_header()
-        save_to_fits_cube(ra, dec, hdr, ov_slice, "SPEC_MASK", "mask",
-                          "testsrc", t, str(tmp_path), target_res=3.6)
+        save_ppv_mask_to_fits(mask, ov_hdr, "testsrc", "mask", str(tmp_path))
 
         out_path = tmp_path / "testsrc_mask.fits"
         assert out_path.exists()
-
         data, out_hdr = fits.getdata(str(out_path), header=True)
-        assert data.shape == (4, 5, 5)
+        assert np.array_equal(data, mask)
         assert out_hdr["NAXIS3"] == 4
-        assert out_hdr["CRVAL3"] == 100.0
-        assert out_hdr["CDELT3"] == 10.0
-
-    def test_save_to_fits_cube_output_is_binary(self, tmp_path):
-        """
-        Resampling onto a coarser pixel grid (when target_res is larger than
-        the native beam) uses bilinear-style interpolation internally, which
-        can introduce fractional values between 0 and 1. The final output
-        must always be re-thresholded back to strictly 0/1 (NaN allowed
-        outside the footprint), regardless of whether that resampling step
-        ran.
-        """
-        from pystructurePipeline.stage_fits import save_to_fits_cube
-        from astropy.io import fits
-        import numpy as np
-
-        ra, dec, hdr, ov_slice, t = self._make_mask_table_and_header()
-        # hdr's native beam is 0.001 deg = 3.6 arcsec; request a much coarser
-        # target_res so resample_hdr's reprojection branch is exercised.
-        save_to_fits_cube(ra, dec, hdr, ov_slice, "SPEC_MASK", "mask",
-                          "testsrc", t, str(tmp_path), target_res=20.0)
-
-        data = fits.getdata(str(tmp_path / "testsrc_mask.fits"))
-        finite = data[np.isfinite(data)]
-        assert len(finite) > 0
-        assert set(np.unique(finite)).issubset({0.0, 1.0})
-
-    def test_save_to_fits_cube_skips_missing_column(self, tmp_path):
-        from pystructurePipeline.stage_fits import save_to_fits_cube
-
-        ra, dec, hdr, ov_slice, t = self._make_mask_table_and_header()
-        # No "SPEC_MASK_HCN10" column exists in this table
-        save_to_fits_cube(ra, dec, hdr, ov_slice, "SPEC_MASK_HCN10", "mask_hcn10",
-                          "testsrc", t, str(tmp_path), target_res=3.6)
-        assert not (tmp_path / "testsrc_mask_hcn10.fits").exists()
+        assert out_hdr["CRVAL3"] == 0.0
 
     # -----------------------------------------------------------------
     # PPV-native moment pipeline
