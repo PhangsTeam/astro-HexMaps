@@ -33,8 +33,8 @@ def init_workdir(workdir: str = ".", overwrite: bool = False) -> None:
 
     Copies the following into *workdir*:
       config.txt                    ← the file you edit on every run
-      keys/target_definitions.txt   ← source geometry (edit once, reuse)
-      keys/hfs_lines.txt            ← hyperfine structure lines (optional, edit once)
+      keys/target_definitions.csv   ← source geometry (edit once, reuse)
+      keys/hfs_lines.csv            ← hyperfine structure lines (optional, edit once)
       run_pystructure.py            ← ready-to-edit run script
 
     Parameters
@@ -62,7 +62,7 @@ def init_workdir(workdir: str = ".", overwrite: bool = False) -> None:
     shutil.copy2(conf_src, conf_dst)
     copied.append("config.txt")
 
-    # --- keys/ subfolder: target_definitions.txt + hfs_lines.txt ---
+    # --- keys/ subfolder: target_definitions.csv + hfs_lines.csv ---
     for key_file in keys_src.iterdir():
         dst = keys_dst / key_file.name
         if dst.exists() and not overwrite:
@@ -92,6 +92,6 @@ def init_workdir(workdir: str = ".", overwrite: bool = False) -> None:
         print(f"[INFO]       {f}")
     print(f"[INFO]     Next steps:")
     print(f"[INFO]       1. Edit config.txt  — paths, sources, maps/cubes, resolution, masking")
-    print(f"[INFO]       2. Edit keys/target_definitions.txt  — add your sources (rarely changes)")
-    print(f"[INFO]       3. (optional) Edit keys/hfs_lines.txt  — hyperfine structure lines")
+    print(f"[INFO]       2. Edit keys/target_definitions.csv  — add your sources (rarely changes)")
+    print(f"[INFO]       3. (optional) Edit keys/hfs_lines.csv  — hyperfine structure lines")
     print(f"[INFO]       4. Run:  python run_pystructure.py  (or:  pystructure --conf config.txt)")

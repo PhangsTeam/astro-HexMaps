@@ -25,7 +25,7 @@ class TestKeyHandler:
         keys_dir.mkdir(exist_ok=True)
 
         (keys_dir / "target_definitions.txt").write_text(
-            "ngc5194\t202.4696\t47.1952\t8.58\t0.10\t22.0\t3.0\t173.0\t3.0\t3.54\t0.05\n"
+            "ngc5194,\t202.4696,  47.1952,\t8.58, 0.10,\t22.0, 3.0, 173.0, 3.0, 3.54, 0.05\n"
         )
 
         conf_path = tmpdir / "config.txt"
@@ -64,6 +64,22 @@ class TestKeyHandler:
         assert len(kh.cubes) == 1
         assert kh.meta["target_res"] == 27.0
 
+    def test_target_definitions_ignores_whitespace_around_commas(self, tmp_path):
+        """
+        target_definitions.txt is comma-separated, but mixed tabs/spaces
+        around each comma (for column alignment) must be ignored, and
+        numeric columns must come back as floats, not whitespace-padded
+        strings.
+        """
+        conf_path = self._write_minimal_config(tmp_path)
+        from pystructurePipeline.handler_keys import KeyHandler
+        kh = KeyHandler(str(conf_path))
+        row = kh.source_table.iloc[0]
+        assert row["source"] == "ngc5194"
+        assert row["ra_ctr"] == 202.4696
+        assert row["dec_ctr"] == 47.1952
+        assert isinstance(row["dist_mpc"], float)
+
     def test_validate_passes(self, tmp_path):
         conf_path = self._write_minimal_config(tmp_path)
         from pystructurePipeline.handler_keys import KeyHandler
@@ -97,8 +113,8 @@ class TestKeyHandler:
             )
         )
         (tmp_path / "keys" / "target_definitions.txt").write_text(
-            "ngc5194\t202.4696\t47.1952\t8.58\t0.10\t22.0\t3.0\t173.0\t3.0\t3.54\t0.05\n"
-            "ngc5457\t210.8025\t54.3492\t6.70\t0.32\t18.0\t5.0\t39.0\t5.0\t13.46\t0.50\n"
+            "ngc5194, 202.4696, 47.1952, 8.58, 0.10, 22.0, 3.0, 173.0, 3.0, 3.54, 0.05\n"
+            "ngc5457, 210.8025, 54.3492, 6.70, 0.32, 18.0, 5.0, 39.0, 5.0, 13.46, 0.50\n"
         )
         from pystructurePipeline.handler_keys import KeyHandler
         kh = KeyHandler(str(conf_path))
@@ -107,18 +123,67 @@ class TestKeyHandler:
     def test_hfs_file_loaded_when_present(self, tmp_path):
         conf_path = self._write_minimal_config(tmp_path)
         (tmp_path / "keys" / "hfs_lines.txt").write_text(
-            "hcn10\t88.6316023\t88.6304156\tGHz\n"
+            "hcn10,\t88.6316023,  88.6304156,\tGHz\n"
         )
         from pystructurePipeline.handler_keys import KeyHandler
         kh = KeyHandler(str(conf_path))
         assert kh.hfs_data is not None
         assert len(kh.hfs_data) == 1
+        row = kh.hfs_data.iloc[0]
+        assert row["hfs_name"] == "hcn10"
+        assert row["hfs_ref_freq"] == 88.6316023
+        assert row["unit"] == "GHz"
 
     def test_hfs_file_none_when_absent(self, tmp_path):
         conf_path = self._write_minimal_config(tmp_path)
         from pystructurePipeline.handler_keys import KeyHandler
         kh = KeyHandler(str(conf_path))
         assert kh.hfs_data is None
+
+    def test_geom_file_custom_path(self, tmp_path):
+        """geom_file should be configurable via [paths], just like hfs_file."""
+        conf_path = self._write_minimal_config(tmp_path)
+        custom_geom = tmp_path / "shared" / "my_targets.txt"
+        custom_geom.parent.mkdir(parents=True)
+        custom_geom.write_text(
+            "ngc1234, 10.0, 20.0, 5.0, 0.1, 30.0, 2.0, 90.0, 2.0, 2.0, 0.1\n"
+        )
+        conf_path.write_text(
+            conf_path.read_text().replace(
+                "[paths]\n",
+                f"[paths]\ngeom_file = {custom_geom}\n",
+                1,
+            ).replace(
+                "[sources]\nsources = ngc5194\n",
+                "[sources]\nsources = ngc1234\n",
+            )
+        )
+        from pystructurePipeline.handler_keys import KeyHandler
+        kh = KeyHandler(str(conf_path))
+        assert kh.sources == ["ngc1234"]
+        assert "ngc1234" in list(kh.source_table["source"])
+
+    def test_geom_file_missing_raises(self, tmp_path):
+        """Unlike hfs_file, geom_file is required: a missing file must raise."""
+        conf_path = self._write_minimal_config(tmp_path)
+        (tmp_path / "keys" / "target_definitions.txt").unlink()
+        from pystructurePipeline.handler_keys import KeyHandler
+        with pytest.raises(FileNotFoundError):
+            KeyHandler(str(conf_path))
+
+    def test_geom_file_missing_with_custom_path_raises(self, tmp_path):
+        """A configured-but-nonexistent geom_file path must also raise."""
+        conf_path = self._write_minimal_config(tmp_path)
+        conf_path.write_text(
+            conf_path.read_text().replace(
+                "[paths]\n",
+                "[paths]\ngeom_file = does_not_exist.txt\n",
+                1,
+            )
+        )
+        from pystructurePipeline.handler_keys import KeyHandler
+        with pytest.raises(FileNotFoundError):
+            KeyHandler(str(conf_path))
 
 
 # ---------------------------------------------------------------------------

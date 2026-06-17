@@ -1,7 +1,8 @@
 # =============================================================================
 # PyStructure config.txt
 # =============================================================================
-# Configuration file for a PyStructure run.
+# Single configuration file for a PyStructure run. Combines what used to be
+# master_key.txt + data_key.txt + config_key.txt.
 #
 # Run with:
 #   pystructure --conf config.txt
@@ -10,7 +11,7 @@
 # subfolder next to this config.txt, because they change far less often than
 # everything below:
 #   keys/target_definitions.txt   — source geometry (RA, Dec, distance, ...)
-#   keys/hfs_lines.txt            — hyperfine structure line definitions (optional)
+#   keys/hfs_lines.txt             — hyperfine structure line definitions (optional)
 #
 # Lines starting with '#' are comments.
 # =============================================================================
@@ -26,7 +27,13 @@ data_dir    = data/
 # Directory for output .ecsv PyStructure files
 out_dir     = output/
 
+# Required: path to the source geometry table (RA, Dec, distance, ...).
+# Defaults to keys/target_definitions.txt next to this file if not set.
+# geom_file = keys/target_definitions.txt
+
 # Optional: path to hyperfine structure file (comment out if not needed)
+# Defaults to keys/hfs_lines.txt next to this file if not set, but is only
+# used if that file actually exists.
 # hfs_file  = keys/hfs_lines.txt
 
 [meta]
@@ -38,7 +45,7 @@ comments = Example PyStructure run
 
 
 # -----------------------------------------------------------------------------
-# [sources] / [overlay] / maps / cubes / mask — what to process
+# [sources] / [overlay] / maps / cubes / mask — what to process (was data_key.txt)
 # -----------------------------------------------------------------------------
 # SECTION [sources]   : comma-separated list of sources to process
 # SECTION [overlay]   : extension of the overlay FITS file (used to define the
@@ -93,7 +100,8 @@ spire250,  SPIRE 250 um,      MJy/sr,  _spire250_gauss21.fits,  data/
 
 # -----------------------------------------------------------------------------
 # [resolution] / [masking] / [spectral] / [output] / [structure]
-# all values have sensible defaults; only override what you need.
+# (was config_key.txt) — all values have sensible defaults; only override
+# what you need.
 # -----------------------------------------------------------------------------
 
 [resolution]
@@ -176,10 +184,10 @@ save_fits        = false
 save_mom_maps    = true
 
 # Save 2D map FITS files
-save_maps        = true
+save_maps   = true
 
 # Directory for output FITS maps
-folder_savefits  = ./saved_FITS_files/
+folder_savefits  = ./saved_fits_files/
 
 
 [structure]
@@ -190,4 +198,4 @@ folder_savefits  = ./saved_FITS_files/
 structure_creation = default
 
 # When structure_creation = fill, you can optionally pin the filename:
-# fname_fill = ngc5194_data_struct_27as_2026_06_16.ecsv
+# fname_fill = ngc5194_data_struct_27as_2025_01_01.ecsv

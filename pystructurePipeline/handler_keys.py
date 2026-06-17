@@ -18,10 +18,14 @@ keys/ subfolder (next to config.txt)
         per source. All sources that may ever be processed should be listed
         here; the subset to actually run is controlled by config.txt
         [sources]. Kept separate because this table is normally shared
-        across many projects and changes rarely.
+        across many projects and changes rarely. Its path is set via
+        [paths] geom_file in config.txt (default: keys/target_definitions.txt)
+        and is REQUIRED — KeyHandler raises if it is missing.
     hfs_lines.txt (optional)
         Hyperfine structure line definitions. Also normally shared and
-        rarely changed; only read if [paths] hfs_file is set in config.txt.
+        rarely changed. Its path is set via [paths] hfs_file in config.txt
+        (default: keys/hfs_lines.txt) and is OPTIONAL — if not found, HFS
+        correction is simply unavailable and no error is raised.
 
 This keeps the file you edit constantly (config.txt) separate from the
 reference tables you set up once and reuse (keys/).
@@ -73,10 +77,11 @@ class KeyHandler:
     Parameters
     ----------
     conf_path : str or Path
-        Path to config.txt. The geometry table (keys/target_definitions.txt)
-        and optional HFS file (keys/hfs_lines.txt) are looked up in a `keys/`
-        subfolder next to this file, unless [paths] hfs_file in config.txt
-        points elsewhere.
+        Path to config.txt. The geometry table (required; default
+        keys/target_definitions.txt) and optional HFS file (default
+        keys/hfs_lines.txt) both default to a `keys/` subfolder next to this
+        file, but either can be pointed elsewhere via [paths] geom_file /
+        [paths] hfs_file in config.txt.
 
     Attributes
     ----------
@@ -199,7 +204,8 @@ class KeyHandler:
             [paths]
             data_dir   = data/
             out_dir    = output/
-            # hfs_file = keys/hfs_lines.txt   (optional)
+            # geom_file = keys/target_definitions.txt   (required; this is the default)
+            # hfs_file  = keys/hfs_lines.txt             (optional)
 
             [meta]
             user     = Your Name
@@ -222,21 +228,24 @@ class KeyHandler:
 
         self.meta["data_dir"]  = str(base / paths.get("data_dir", "data/"))
         self.meta["out_dir"]   = str(base / paths.get("out_dir", "output/"))
+        self.meta["geom_file"] = str(base / paths.get("geom_file", "keys/target_definitions.txt"))
         self.meta["hfs_file"]  = str(base / paths.get("hfs_file", "")) if paths.get("hfs_file") else None
 
         self.meta["user"]      = meta.get("user",     "Unknown user")
         self.meta["comments"]  = meta.get("comments", "")
 
         # Store the absolute project root so _load_sources_and_tables can
-        # resolve relative map_dir / line_dir entries to absolute paths, and
-        # so _load_target_definitions / _load_hfs_key can find keys/.
+        # resolve relative map_dir / line_dir entries to absolute paths.
         self.meta["_base"] = str(base)
 
-        # target_definitions.txt and hfs_lines.txt live in a fixed keys/
-        # subfolder next to config.txt (these are not configurable paths —
-        # they're expected to be shared/reused across projects and rarely
-        # change, unlike everything else in config.txt).
-        self.meta["geom_file"] = str(base / "keys" / "target_definitions.txt")
+        # geom_file (target_definitions.txt) is REQUIRED — handled like any
+        # other [paths] entry, with a default pointing at keys/ next to
+        # config.txt, but _load_target_definitions raises if it's missing.
+        #
+        # hfs_file (hfs_lines.txt) is OPTIONAL — if not explicitly set in
+        # [paths], fall back to keys/hfs_lines.txt next to config.txt, but
+        # only use it if that file actually exists; otherwise HFS correction
+        # is simply unavailable (no error).
         if not self.meta["hfs_file"]:
             default_hfs = base / "keys" / "hfs_lines.txt"
             self.meta["hfs_file"] = str(default_hfs) if default_hfs.exists() else None
@@ -330,11 +339,18 @@ class KeyHandler:
 
     def _load_target_definitions(self):
         """
-        Parse keys/target_definitions.txt (fixed location next to config.txt).
+        Parse the geometry table at [paths] geom_file in config.txt
+        (default: keys/target_definitions.txt next to config.txt).
 
-        The file is a tab-separated table with no header row.  Comment lines
-        beginning with '#' are ignored.  Columns must appear in the order
-        defined by TARGET_COLUMNS.
+        This file is REQUIRED — unlike hfs_file, there is no "just don't use
+        it" fallback, since every source needs geometry. If the resolved
+        path does not exist, this raises FileNotFoundError.
+
+        The file is a comma-separated table with no header row.  Any spaces
+        or tabs surrounding a comma are ignored, so columns can be aligned
+        with extra whitespace for readability.  Comment lines beginning with
+        '#' are ignored.  Columns must appear in the order defined by
+        TARGET_COLUMNS.
 
         The full table is stored in ``self.source_table`` (a DataFrame). The
         subset of sources to actually process is determined later when the
@@ -345,8 +361,12 @@ class KeyHandler:
         if not geom_path.exists():
             LOG.error(f"target_definitions not found: {geom_path}")
             raise FileNotFoundError(f"target_definitions not found: {geom_path}")
+        # Comma-separated, but tolerant of stray spaces/tabs around each
+        # field (e.g. "ngc5194,  202.4696,\t47.1952"). A regex separator
+        # consumes the comma plus any surrounding whitespace in one go.
         self.source_table = pd.read_csv(
-            geom_path, sep="\t", names=TARGET_COLUMNS, comment="#"
+            geom_path, sep=r"\s*,\s*", engine="python",
+            names=TARGET_COLUMNS, comment="#",
         )
 
     def _load_sources_and_tables(self):
@@ -487,7 +507,8 @@ class KeyHandler:
         """
         Load the optional keys/hfs_lines.txt file.
 
-        The file is tab-separated with columns: hfs_name, hfs_ref_freq,
+        The file is comma-separated (spaces/tabs around each comma are
+        ignored) with columns: hfs_name, hfs_ref_freq,
         hfs_freq, unit.  If no hfs_file is configured (explicitly via
         [paths] hfs_file, or implicitly via keys/hfs_lines.txt existing) or
         the file does not exist, ``self.hfs_data`` is set to None and no
@@ -501,7 +522,12 @@ class KeyHandler:
         if not hfs_path.exists():
             self.hfs_data = None
             return
-        self.hfs_data = pd.read_csv(hfs_path, sep="\t", names=HFS_COLUMNS, comment="#")
+        # Comma-separated, but tolerant of stray spaces/tabs around each
+        # field — see the matching comment in _load_target_definitions.
+        self.hfs_data = pd.read_csv(
+            hfs_path, sep=r"\s*,\s*", engine="python",
+            names=HFS_COLUMNS, comment="#",
+        )
 
     # ------------------------------------------------------------------
     # Validation

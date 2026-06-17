@@ -102,9 +102,12 @@ handler.run_stages(["regrid", "products"], targets=["ngc5194"])
 > `config_key.txt` into one `config.txt` file (any order is fine, as long as
 > the `# ---- maps ----` / `# ---- cubes ----` / `# ---- mask ----` tables
 > come after all the `[section]` blocks). `target_definitions.txt` and
-> `hfs_lines.txt` are unchanged — just keep them in a `keys/` subfolder next
-> to your new `config.txt`. `--key_dir keys/` becomes `--conf config.txt`,
-> and `PipelineHandler(key_dir=...)` becomes `PipelineHandler(conf_path=...)`.
+> `hfs_lines.txt` keep the same filename and column layout, but are now
+> comma-separated instead of tab-separated (whitespace around each comma is
+> ignored, so you can still align columns with spaces or tabs for
+> readability); keep them in a `keys/` subfolder next to your new
+> `config.txt`. `--key_dir keys/` becomes `--conf config.txt`, and
+> `PipelineHandler(key_dir=...)` becomes `PipelineHandler(conf_path=...)`.
 
 ---
 
@@ -144,7 +147,7 @@ PyStructure/                      <- git repo - install this with pip
 |   `-- hfs_lines.txt
 |-- data/                           <- your FITS files
 |-- output/                         <- pipeline writes .ecsv tables here
-|-- saved_fits_files/                  FITS moment/map images land here
+|-- saved_FITS_files/                  FITS moment/map images land here
 `-- run_pystructure.py              <- edit and run this
 ```
 
@@ -195,7 +198,7 @@ Example:
 [pyStructure] [Regrid]    [INFO]     Hexagonal grid generated: 1060 sampling points (spacing = 13.5 arcsec).
 [pyStructure] [Regrid]    [INFO]     Cube 12co21 sampled successfully.
 [pyStructure] [Products]  [INFO]     Mask complete. Computing moments.
-[pyStructure] [FITS]      [INFO]     Moment map FITS files written to: ./saved_fits_files/
+[pyStructure] [FITS]      [INFO]     Moment map FITS files written to: ./saved_FITS_files/
 [pyStructure] [Return]    [INFO]     --- Run summary ---
 ```
 
