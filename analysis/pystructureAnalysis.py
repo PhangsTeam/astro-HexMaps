@@ -40,9 +40,9 @@ class pystructureAnalysis:
 
     def __init__(self, path: str):
         self.struct = Table.read(path)
-        self.lines  = self._find_lines()
-        self.rgal   = np.array(self.struct["rgal_kpc"])
-        self.theta  = np.array(self.struct["theta_rad"]) + np.pi
+        self.lines = self._find_lines()
+        self.rgal = np.array(self.struct["rgal_kpc"])
+        self.theta = np.array(self.struct["theta_rad"]) + np.pi
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -53,7 +53,7 @@ class pystructureAnalysis:
         lines = []
         for key in self.struct.keys():
             if key.startswith("SHUFF"):
-                lines.append(key[len("SHUFF"):])
+                lines.append(key[len("SHUFF") :])
             elif key.startswith("MOM0"):
                 lines.append(key.split("_")[1])
         lines = list(dict.fromkeys(lines))  # only keep unique elements
@@ -85,7 +85,7 @@ class pystructureAnalysis:
             If given, returns (delta_RA, delta_Dec) in arcseconds.
             If None, returns absolute (RA, Dec) in degrees.
         """
-        ra  = np.array(self.struct["ra_deg"])
+        ra = np.array(self.struct["ra_deg"])
         dec = np.array(self.struct["dec_deg"])
 
         if center is None:
@@ -94,18 +94,35 @@ class pystructureAnalysis:
         ref = SkyCoord(center, frame=FK5, unit=(au.hourangle, au.deg))
         pts = SkyCoord(ra=ra * au.deg, dec=dec * au.deg, frame=FK5)
         aframe = ref.skyoffset_frame()
-        delta_ra  = pts.transform_to(aframe).lon.arcsec
+        delta_ra = pts.transform_to(aframe).lon.arcsec
         delta_dec = pts.transform_to(aframe).lat.arcsec
         return delta_ra, delta_dec
+
+    def sky_aspect_factor(self):
+        """
+        Aspect ratio correction for plotting RA vs Dec in degrees.
+
+        Returns a value suitable for:
+            ax.set_aspect(factor)
+        """
+        dec = np.array(self.struct["dec_deg"])
+        dec0 = np.median(dec)
+        return 1.0 / np.cos(np.deg2rad(dec0))
 
     # ------------------------------------------------------------------
     # Quick-look plots
     # ------------------------------------------------------------------
 
-    def quickplot_map(self, line: str, quantity: str = "MOM0",
-                      s: int = 50, cmap: str = "RdYlBu_r",
-                      stretch: str = "lin", center: str = None,
-                      ax=None):
+    def quickplot_map(
+        self,
+        line: str,
+        quantity: str = "MOM0",
+        s: int = 100,
+        cmap: str = "RdYlBu_r",
+        stretch: str = "lin",
+        center: str = None,
+        ax=None,
+    ):
         """
         Scatter-plot a 2D moment map on the hexagonal grid.
 
@@ -122,10 +139,12 @@ class pystructureAnalysis:
         """
         col = f"{quantity}_{line.upper()}"
         if col not in self.struct.colnames:
-            raise KeyError(f"Column '{col}' not found. Available: {self.struct.colnames}")
+            raise KeyError(
+                f"Column '{col}' not found. Available: {self.struct.colnames}"
+            )
 
         values = np.array(self.struct[col])
-        unit   = str(self.struct[col].unit) if hasattr(self.struct[col], "unit") else ""
+        unit = str(self.struct[col].unit) if hasattr(self.struct[col], "unit") else ""
 
         if center is not None:
             x, y = self.get_coordinates(center)
@@ -143,12 +162,19 @@ class pystructureAnalysis:
         if stretch == "lin":
             norm = mcolors.Normalize(vmin=np.nanmin(values), vmax=np.nanmax(values))
         elif stretch == "log":
-            norm = mcolors.LogNorm(vmin=finite[finite > 0].min(), vmax=np.nanmax(values))
+            norm = mcolors.LogNorm(
+                vmin=finite[finite > 0].min(), vmax=np.nanmax(values)
+            )
         elif stretch == "symlog":
-            norm = mcolors.SymLogNorm(linthresh=np.nanmax(np.abs(values)) * 0.1,
-                                      vmin=np.nanmin(values), vmax=np.nanmax(values))
+            norm = mcolors.SymLogNorm(
+                linthresh=np.nanmax(np.abs(values)) * 0.1,
+                vmin=np.nanmin(values),
+                vmax=np.nanmax(values),
+            )
         else:
-            raise ValueError(f"Unknown stretch '{stretch}'. Use 'lin', 'log', or 'symlog'.")
+            raise ValueError(
+                f"Unknown stretch '{stretch}'. Use 'lin', 'log', or 'symlog'."
+            )
 
         own_fig = ax is None
         if own_fig:
@@ -162,6 +188,11 @@ class pystructureAnalysis:
         ax.set_ylabel(ylabel)
         ax.set_title(f"{line}  {quantity}")
 
+        if center is not None:
+            ax.set_aspect("equal")
+        else:
+            ax.set_aspect(self.sky_aspect_factor())
+
         cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         cbar.set_label(f"{quantity} [{unit}]" if unit else quantity)
 
@@ -169,8 +200,9 @@ class pystructureAnalysis:
             plt.tight_layout()
             plt.show()
 
-    def quickplot_spectrum(self, line: str, idx: int = None,
-                           show_mask: bool = True, ax=None):
+    def quickplot_spectrum(
+        self, line: str, idx: int = None, show_mask: bool = True, ax=None
+    ):
         """
         Plot a single spectrum from the native velocity grid.
 
@@ -189,8 +221,8 @@ class pystructureAnalysis:
             idx = self._centre_pixel()
 
         vaxis = self._get_vaxis(shuffled=False)
-        spec  = np.array(self.struct[col][idx])
-        unit  = str(self.struct[col].unit) if hasattr(self.struct[col], "unit") else ""
+        spec = np.array(self.struct[col][idx])
+        unit = str(self.struct[col].unit) if hasattr(self.struct[col], "unit") else ""
         vunit = str(vaxis.unit) if hasattr(vaxis, "unit") else "km/s"
         vvals = vaxis.value if hasattr(vaxis, "value") else np.array(vaxis)
 
@@ -203,14 +235,23 @@ class pystructureAnalysis:
         if show_mask and "SPEC_MASK" in self.struct.colnames:
             mask = np.array(self.struct["SPEC_MASK"][idx])
             ylo, yhi = ax.get_ylim()
-            ax.fill_between(vvals, ylo, yhi, where=(mask == 1),
-                            color="lightblue", alpha=0.4, label="mask")
+            ax.fill_between(
+                vvals,
+                ylo,
+                yhi,
+                where=(mask == 1),
+                color="lightblue",
+                alpha=0.4,
+                label="mask",
+            )
             ax.set_ylim(ylo, yhi)
 
         ax.axhline(0, color="k", linewidth=0.6, linestyle="--")
         ax.set_xlabel(f"Velocity [{vunit}]")
         ax.set_ylabel(f"T$_{{\\rm b}}$ [{unit}]" if unit else "Brightness temperature")
-        ax.set_title(f"{line}  —  pixel {idx}  (r$_{{\\rm gal}}$ = {self.rgal[idx]:.2f} kpc)")
+        ax.set_title(
+            f"{line}  —  pixel {idx}  (r$_{{\\rm gal}}$ = {self.rgal[idx]:.2f} kpc)"
+        )
         ax.legend(fontsize=9)
 
         if own_fig:
@@ -235,8 +276,8 @@ class pystructureAnalysis:
             idx = self._centre_pixel()
 
         vaxis = self._get_vaxis(shuffled=True)
-        spec  = np.array(self.struct[col][idx])
-        unit  = str(self.struct[col].unit) if hasattr(self.struct[col], "unit") else ""
+        spec = np.array(self.struct[col][idx])
+        unit = str(self.struct[col].unit) if hasattr(self.struct[col], "unit") else ""
         vvals = vaxis.value if hasattr(vaxis, "value") else np.array(vaxis)
 
         own_fig = ax is None
@@ -254,8 +295,9 @@ class pystructureAnalysis:
             plt.tight_layout()
             plt.show()
 
-    def quickplot_radial_profile(self, line: str, quantity: str = "MOM0",
-                                 nbins: int = 10, ax=None):
+    def quickplot_radial_profile(
+        self, line: str, quantity: str = "MOM0", nbins: int = 10, ax=None
+    ):
         """
         Plot a radial profile (binned median) of a moment map.
 
@@ -271,15 +313,19 @@ class pystructureAnalysis:
             raise KeyError(f"Column '{col}' not found.")
 
         values = np.array(self.struct[col])
-        unit   = str(self.struct[col].unit) if hasattr(self.struct[col], "unit") else ""
+        unit = str(self.struct[col].unit) if hasattr(self.struct[col], "unit") else ""
 
-        r_max  = np.nanmax(self.rgal)
-        edges  = np.linspace(0, r_max, nbins + 1)
-        r_cen  = 0.5 * (edges[:-1] + edges[1:])
-        medians = np.array([
-            np.nanmedian(values[(self.rgal >= edges[i]) & (self.rgal < edges[i + 1])])
-            for i in range(nbins)
-        ])
+        r_max = np.nanmax(self.rgal)
+        edges = np.linspace(0, r_max, nbins + 1)
+        r_cen = 0.5 * (edges[:-1] + edges[1:])
+        medians = np.array(
+            [
+                np.nanmedian(
+                    values[(self.rgal >= edges[i]) & (self.rgal < edges[i + 1])]
+                )
+                for i in range(nbins)
+            ]
+        )
 
         own_fig = ax is None
         if own_fig:
@@ -308,19 +354,21 @@ class pystructureAnalysis:
 
         Returns a dict with keys: ``ratio``, ``uc``, ``ulimit``, ``llimit``.
         """
-        i1  = np.array(self.struct[f"MOM0_{line1.upper()}"])
-        e1  = np.array(self.struct[f"EMOM0_{line1.upper()}"])
-        i2  = np.array(self.struct[f"MOM0_{line2.upper()}"])
-        e2  = np.array(self.struct[f"EMOM0_{line2.upper()}"])
+        i1 = np.array(self.struct[f"MOM0_{line1.upper()}"])
+        e1 = np.array(self.struct[f"EMOM0_{line1.upper()}"])
+        i2 = np.array(self.struct[f"MOM0_{line2.upper()}"])
+        e2 = np.array(self.struct[f"EMOM0_{line2.upper()}"])
 
         ratio = np.full_like(i1, np.nan)
-        uc    = np.full_like(i1, np.nan)
-        ulim  = np.full_like(i1, np.nan)
-        llim  = np.full_like(i1, np.nan)
+        uc = np.full_like(i1, np.nan)
+        ulim = np.full_like(i1, np.nan)
+        llim = np.full_like(i1, np.nan)
 
-        det   = (i1 / e1 > sn) & (i2 / e2 > sn)
+        det = (i1 / e1 > sn) & (i2 / e2 > sn)
         ratio[det] = i1[det] / i2[det]
-        uc[det]    = ratio[det] * np.sqrt((e1[det] / i1[det])**2 + (e2[det] / i2[det])**2)
+        uc[det] = ratio[det] * np.sqrt(
+            (e1[det] / i1[det]) ** 2 + (e2[det] / i2[det]) ** 2
+        )
 
         ul = (~det) & (i2 / e2 > sn)
         ulim[ul] = (2 / 3) * sn * e1[ul] / i2[ul]
@@ -346,5 +394,7 @@ class pystructureAnalysis:
         return tbl
 
     def __repr__(self):
-        return (f"pystructureAnalysis(source='{self.struct.meta.get('Source', '?')}', "
-                f"n_pts={len(self.struct)}, lines={self.lines})")
+        return (
+            f"pystructureAnalysis(source='{self.struct.meta.get('Source', '?')}', "
+            f"n_pts={len(self.struct)}, lines={self.lines})"
+        )
