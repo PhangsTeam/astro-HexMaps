@@ -16,12 +16,11 @@ import shutil
 import os
 from pathlib import Path
 
-
 # Templates are bundled inside the installed package at templates/.
 # When running from a development clone where templates/ has not been committed,
 # fall back to the repo root (one level above the package), which carries the
 # same layout: config.txt at the root, keys/ next to it.
-_PACKAGE_DIR   = Path(__file__).parent
+_PACKAGE_DIR = Path(__file__).parent
 _TEMPLATES_DIR = _PACKAGE_DIR / "templates"
 if not _TEMPLATES_DIR.exists():
     _TEMPLATES_DIR = _PACKAGE_DIR.parent
@@ -91,7 +90,15 @@ def init_workdir(workdir: str = ".", overwrite: bool = False) -> None:
     for f in copied:
         print(f"[INFO]       {f}")
     print(f"[INFO]     Next steps:")
-    print(f"[INFO]       1. Edit config.txt  — paths, sources, maps/cubes, resolution, masking")
-    print(f"[INFO]       2. Edit keys/target_definitions.csv  — add your sources (rarely changes)")
-    print(f"[INFO]       3. (optional) Edit keys/hfs_lines.csv  — hyperfine structure lines")
-    print(f"[INFO]       4. Run:  python run_pystructure.py  (or:  pystructure --conf config.txt)")
+    print(
+        f"[INFO]       1. Edit config.txt  — paths, sources, maps/cubes, resolution, masking"
+    )
+    print(
+        f"[INFO]       2. Edit keys/target_definitions.csv  — add your sources (rarely changes)"
+    )
+    print(
+        f"[INFO]       3. (optional) Edit keys/hfs_lines.csv  — hyperfine structure lines"
+    )
+    print(
+        f"[INFO]       4. Run:  python run_pystructure.py  (or:  pystructure --conf config.txt)"
+    )

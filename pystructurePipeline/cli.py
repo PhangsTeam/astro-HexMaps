@@ -62,9 +62,7 @@ def parse_args(argv=None):
         nargs="+",
         choices=ALL_STAGES,
         default=None,
-        help=(
-            f"Pipeline stage(s) to run: {', '.join(ALL_STAGES)}. Default: all."
-        ),
+        help=(f"Pipeline stage(s) to run: {', '.join(ALL_STAGES)}. Default: all."),
     )
     parser.add_argument(
         "--targets",
@@ -94,6 +92,7 @@ def main(argv=None):
     # ------------------------------------------------------------------
     if args.init:
         from pystructurePipeline.init_workdir import init_workdir
+
         try:
             init_workdir(workdir=args.workdir, overwrite=args.overwrite)
         except FileExistsError as exc:
@@ -120,8 +119,9 @@ def main(argv=None):
         sys.exit(1)
 
     stages = args.stages if args.stages else DATABASE_STAGES
-    handler = PipelineHandler(conf_path=args.conf, verbose=not args.quiet,
-                              log_file=args.log_file)
+    handler = PipelineHandler(
+        conf_path=args.conf, verbose=not args.quiet, log_file=args.log_file
+    )
 
     try:
         handler.run_stages(stages=stages, targets=args.targets)

@@ -43,7 +43,7 @@ import os
 from pathlib import Path
 from datetime import date
 
-from pystructurePipeline.handler_keys    import KeyHandler
+from pystructurePipeline.handler_keys import KeyHandler
 from pystructurePipeline.handler_sources import SourceHandler
 from pystructurePipeline.pystructureLogger import get_logger, logger
 
@@ -55,7 +55,7 @@ ALL_STAGES = ["regrid", "products", "fits"]
 # modules themselves (stage_regrid -> "Regrid", stage_products -> "Products",
 # stage_fits -> "FITS").
 LOG_LOADING = get_logger("Loading")
-LOG_RETURN  = get_logger("Return")
+LOG_RETURN = get_logger("Return")
 
 
 class PipelineHandler:
@@ -103,8 +103,10 @@ class PipelineHandler:
             self.key_handler.get_source_table(),
             self.key_handler.get_sources(),
         )
-        LOG_LOADING.info(f"Loaded {self.source_handler.n_sources()} source(s): "
-                         f"{self.source_handler.all_sources()}")
+        LOG_LOADING.info(
+            f"Loaded {self.source_handler.n_sources()} source(s): "
+            f"{self.source_handler.all_sources()}"
+        )
 
         # Ensure the output directory exists before any stage tries to write
         out_dir = self.key_handler.meta.get("out_dir", "output/")
@@ -150,7 +152,9 @@ class PipelineHandler:
         """
         unknown = [s for s in stages if s not in ALL_STAGES]
         if unknown:
-            LOG_LOADING.error(f"Unknown stage(s): {unknown}. Valid stages: {ALL_STAGES}")
+            LOG_LOADING.error(
+                f"Unknown stage(s): {unknown}. Valid stages: {ALL_STAGES}"
+            )
             raise ValueError(f"Unknown stage(s): {unknown}. Valid stages: {ALL_STAGES}")
 
         # Preserve canonical stage order
@@ -173,7 +177,9 @@ class PipelineHandler:
             except Exception as exc:
                 self.run_success[source] = False
                 LOG_RETURN.error(f"Stage failed for {source}: {exc}")
-                import traceback; traceback.print_exc()
+                import traceback
+
+                traceback.print_exc()
 
         self._print_summary()
 
@@ -201,14 +207,15 @@ class PipelineHandler:
         deprojected coordinates, and writes the result to a .ecsv file.
         """
         from pystructurePipeline.stage_regrid import run_regrid, LOG as REGRID_LOG
+
         REGRID_LOG.info(f"Convolving and sampling data for {source}.")
         run_regrid(
-            source     = source,
-            params     = self.source_handler.get_source_params(source),
-            meta       = self.key_handler.meta,
-            maps       = self.key_handler.get_maps(),
-            cubes      = self.key_handler.get_cubes(),
-            input_mask = self.key_handler.get_input_mask(),
+            source=source,
+            params=self.source_handler.get_source_params(source),
+            meta=self.key_handler.meta,
+            maps=self.key_handler.get_maps(),
+            cubes=self.key_handler.get_cubes(),
+            input_mask=self.key_handler.get_input_mask(),
         )
 
     def _run_products(self, source: str):
@@ -220,14 +227,15 @@ class PipelineHandler:
         .ecsv with the enriched table.
         """
         from pystructurePipeline.stage_products import run_products, LOG as PRODUCTS_LOG
+
         PRODUCTS_LOG.info(f"Create products for source: {source} ...")
         run_products(
-            source     = source,
-            fname      = self._get_output_fname(source),
-            meta       = self.key_handler.meta,
-            cubes      = self.key_handler.get_cubes(),
-            input_mask = self.key_handler.get_input_mask(),
-            hfs_data   = self.key_handler.get_hfs_data(),
+            source=source,
+            fname=self._get_output_fname(source),
+            meta=self.key_handler.meta,
+            cubes=self.key_handler.get_cubes(),
+            input_mask=self.key_handler.get_input_mask(),
+            hfs_data=self.key_handler.get_hfs_data(),
         )
 
     def _run_fits(self, source: str):
@@ -240,16 +248,17 @@ class PipelineHandler:
         as FITS cubes — all into folder_savefits.
         """
         from pystructurePipeline.stage_fits import run_fits, LOG as FITS_LOG
+
         FITS_LOG.info(f"Creating FITS files for source: {source} ...")
         run_fits(
-            source     = source,
-            fname      = self._get_output_fname(source),
-            meta       = self.key_handler.meta,
-            maps       = self.key_handler.get_maps(),
-            cubes      = self.key_handler.get_cubes(),
-            params     = self.source_handler.get_source_params(source),
-            input_mask = self.key_handler.get_input_mask(),
-            hfs_data   = self.key_handler.get_hfs_data(),
+            source=source,
+            fname=self._get_output_fname(source),
+            meta=self.key_handler.meta,
+            maps=self.key_handler.get_maps(),
+            cubes=self.key_handler.get_cubes(),
+            params=self.source_handler.get_source_params(source),
+            input_mask=self.key_handler.get_input_mask(),
+            hfs_data=self.key_handler.get_hfs_data(),
         )
 
     # ------------------------------------------------------------------
@@ -269,17 +278,19 @@ class PipelineHandler:
         angular mode, 27 arcsec → ngc5194_data_struct_27as_2025_06_01.ecsv
         physical mode, 100 pc   → ngc5194_data_struct_100pc_2025_06_01.ecsv
         """
-        meta       = self.key_handler.meta
-        out_dir    = meta.get("out_dir", "output/")
+        meta = self.key_handler.meta
+        out_dir = meta.get("out_dir", "output/")
         resolution = meta.get("resolution", "angular")
         target_res = meta.get("target_res", 27.0)
 
-        suffix = (str(int(target_res)) + "as" if resolution == "angular"
-                  else str(int(target_res)) + "pc" if resolution == "physical"
-                  else "native")
+        suffix = (
+            str(int(target_res)) + "as"
+            if resolution == "angular"
+            else str(int(target_res)) + "pc" if resolution == "physical" else "native"
+        )
 
         date_str = date.today().strftime("%Y_%m_%d")
-        fname    = os.path.join(out_dir, f"{source}_data_struct_{suffix}_{date_str}.ecsv")
+        fname = os.path.join(out_dir, f"{source}_data_struct_{suffix}_{date_str}.ecsv")
 
         # In archive mode, bump the version number if the file already exists
         if "archive" in meta.get("structure_creation", "") and os.path.exists(fname):

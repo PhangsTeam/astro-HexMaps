@@ -48,7 +48,10 @@ from astropy import units as au
 from reproject import reproject_interp
 
 from pystructurePipeline.utils_fits import (
-    twod_head, conv_with_gauss, deproject, make_sampling_points,
+    twod_head,
+    conv_with_gauss,
+    deproject,
+    make_sampling_points,
 )
 
 from pystructurePipeline.pystructureLogger import get_logger
@@ -58,10 +61,10 @@ LOG = get_logger("Regrid")
 warnings.filterwarnings("ignore")
 
 
-
 # ============================================================================
 # Velocity-axis helpers
 # ============================================================================
+
 
 def _get_vaxis(hdr):
     """
@@ -89,11 +92,11 @@ def _ensure_ms(hdr, data=None):
     if abs(hdr["CDELT3"]) < 200:
         hdr["CDELT3"] *= 1000
         hdr["CRVAL3"] *= 1000
-        hdr["CUNIT3"]  = "m/s"
+        hdr["CUNIT3"] = "m/s"
 
     # Flip decreasing axis
     if data is not None and hdr["CDELT3"] < 0:
-        vaxis_inv    = _get_vaxis(hdr)
+        vaxis_inv = _get_vaxis(hdr)
         hdr["CDELT3"] = abs(hdr["CDELT3"])
         hdr["CRPIX3"] = 1
         hdr["CRVAL3"] = vaxis_inv[-1]
@@ -135,7 +138,7 @@ def _harmonize_restfreq(hdr_in, hdr_target):
     """
     restfreq = hdr_in.get("RESTFRQ") or hdr_target.get("RESTFRQ")
     if restfreq:
-        hdr_in["RESTFRQ"]     = restfreq
+        hdr_in["RESTFRQ"] = restfreq
         hdr_target["RESTFRQ"] = restfreq
     else:
         for h in (hdr_in, hdr_target):
@@ -145,6 +148,7 @@ def _harmonize_restfreq(hdr_in, hdr_target):
 # ============================================================================
 # Spectral smoothing
 # ============================================================================
+
 
 def _spectral_smooth(data, hdr_out, spec_smooth):
     """
@@ -190,9 +194,9 @@ def _spectral_smooth(data, hdr_out, spec_smooth):
     if not isinstance(mode, (int, float)):
         return data, hdr_out
 
-    spec_res    = abs(hdr_out["CDELT3"]) / 1000.0   # current channel width in km/s
+    spec_res = abs(hdr_out["CDELT3"]) / 1000.0  # current channel width in km/s
     fwhm_factor = np.sqrt(8 * np.log(2))
-    dim_data    = np.shape(data)
+    dim_data = np.shape(data)
 
     if spec_res >= mode:
         LOG.info(f"No spectral smoothing; already at target resolution.")
@@ -202,31 +206,43 @@ def _spectral_smooth(data, hdr_out, spec_smooth):
 
     if method == "gauss":
         # Convolve with a Gaussian whose width bridges native → target resolution
-        pix    = ((mode**2 - spec_res**2)**0.5 / spec_res) / fwhm_factor
+        pix = ((mode**2 - spec_res**2) ** 0.5 / spec_res) / fwhm_factor
         kernel = Gaussian1DKernel(pix)
         for s in range(dim_data[1] * dim_data[2]):
             y, x = s % dim_data[1], s // dim_data[1]
             data[:, y, x] = convolve(data[:, y, x], kernel, nan_treatment="fill")
 
     elif method in ("binned", "combined"):
-        vaxis   = _get_vaxis(hdr_out)
+        vaxis = _get_vaxis(hdr_out)
         n_ratio = int(mode / spec_res)
         if (mode / spec_res - n_ratio) > 0.9:
             n_ratio += 1
         new_len = len(vaxis) // n_ratio
 
         if n_ratio > 1:
-            new_vaxis = np.array([np.nanmean(vaxis[n_ratio*j:n_ratio*(j+1)])
-                                   for j in range(new_len)])
-            data      = np.array([np.nanmean(data[n_ratio*j:n_ratio*(j+1), :, :], axis=0)
-                                   for j in range(new_len)])
+            new_vaxis = np.array(
+                [
+                    np.nanmean(vaxis[n_ratio * j : n_ratio * (j + 1)])
+                    for j in range(new_len)
+                ]
+            )
+            data = np.array(
+                [
+                    np.nanmean(data[n_ratio * j : n_ratio * (j + 1), :, :], axis=0)
+                    for j in range(new_len)
+                ]
+            )
             hdr_out["NAXIS3"] = new_len
             hdr_out["CDELT3"] = new_vaxis[1] - new_vaxis[0]
-            hdr_out["CRVAL3"] = new_vaxis[0] + (hdr_out["CRPIX3"] - 1) * hdr_out["CDELT3"]
+            hdr_out["CRVAL3"] = (
+                new_vaxis[0] + (hdr_out["CRPIX3"] - 1) * hdr_out["CDELT3"]
+            )
 
         # For "combined": apply a small Gaussian to reach the exact target
         if method == "combined" and n_ratio * spec_res < mode:
-            pix    = ((mode**2 - (n_ratio * spec_res)**2)**0.5 / spec_res) / fwhm_factor
+            pix = (
+                (mode**2 - (n_ratio * spec_res) ** 2) ** 0.5 / spec_res
+            ) / fwhm_factor
             kernel = Gaussian1DKernel(pix)
             for s in range(dim_data[1] * dim_data[2]):
                 y, x = s % dim_data[1], s // dim_data[1]
@@ -238,6 +254,7 @@ def _spectral_smooth(data, hdr_out, spec_smooth):
 # ============================================================================
 # Hexagonal sampling grid
 # ============================================================================
+
 
 def run_sampling(source: str, params: dict, meta: dict) -> dict:
     """
@@ -279,34 +296,26 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
     FileNotFoundError if the overlay FITS file does not exist.
     ValueError if the overlay cube is 4-D.
     """
-    data_dir     = meta.get("data_dir", "data/")
+    data_dir = meta.get("data_dir", "data/")
     overlay_file = meta.get("overlay_file", "")
 
     # Construct the overlay filename: if the source name is already embedded in
     # overlay_file use it as-is, otherwise prepend the source name.
-    overlay_fname = (path.join(data_dir, overlay_file)
-                     if source in overlay_file
-                     else path.join(data_dir, source + overlay_file))
+    overlay_fname = (
+        path.join(data_dir, overlay_file)
+        if source in overlay_file
+        else path.join(data_dir, source + overlay_file)
+    )
 
     if not path.exists(overlay_fname):
-        LOG.error(
-            f"Overlay file not found for {source}: {overlay_fname}"
-        )
-        raise FileNotFoundError(
-            f"Overlay file not found for {source}: {overlay_fname}"
-        )
+        LOG.error(f"Overlay file not found for {source}: {overlay_fname}")
+        raise FileNotFoundError(f"Overlay file not found for {source}: {overlay_fname}")
 
     ov_cube, ov_hdr = fits.getdata(overlay_fname, header=True)
 
     if ov_hdr["NAXIS"] == 4:
-        LOG.error(
-            f"4D overlay cube for {source}. "
-            "Please provide a 3D cube."
-        )
-        raise ValueError(
-            f"4D overlay cube for {source}. "
-            "Please provide a 3D cube."
-        )
+        LOG.error(f"4D overlay cube for {source}. " "Please provide a 3D cube.")
+        raise ValueError(f"4D overlay cube for {source}. " "Please provide a 3D cube.")
 
     # ------------------------------------------------------------------
     # Determine target resolution in arcseconds
@@ -322,8 +331,10 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
         # Convert target_res (parsecs) to arcseconds using the source distance
         dist_mpc = params.get("dist_mpc", 1.0)
         target_res_as = 3600.0 * 180.0 / np.pi * 1e-6 * float(target_res) / dist_mpc
-        LOG.info(f"Physical resolution: {target_res} pc "
-                  f"= {target_res_as:.1f} arcsec at {dist_mpc} Mpc.")
+        LOG.info(
+            f"Physical resolution: {target_res} pc "
+            f"= {target_res_as:.1f} arcsec at {dist_mpc} Mpc."
+        )
     else:
         # Angular: use target_res directly in arcseconds
         target_res_as = float(target_res)
@@ -335,52 +346,59 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
     # The mask is True wherever at least one spectral channel is finite.
     # This clips the grid to the mapped area without relying on a separate mask file.
     ov_footprint = np.sum(np.isfinite(ov_cube), axis=0) >= 1
-    mask_hdr     = twod_head(ov_hdr)
+    mask_hdr = twod_head(ov_hdr)
 
     # Apply the same half-beam edge erosion used for the FITS output files
     # so that the hex grid and the FITS products share the same effective
     # footprint — hex points in the edge strip (where convolution artefacts
     # arise because the beam extends beyond the observed area) are excluded.
-    pix_scale_as    = abs(ov_hdr["CDELT1"]) * 3600.0
+    pix_scale_as = abs(ov_hdr["CDELT1"]) * 3600.0
     trim_radius_pix = int(np.floor((target_res_as / 2.0) / pix_scale_as))
     if trim_radius_pix > 0:
         from skimage.morphology import disk as _disk
         from scipy.ndimage import binary_erosion as _binary_erosion
+
         mask = _binary_erosion(ov_footprint, structure=_disk(trim_radius_pix))
-        LOG.info(f"Hex grid footprint eroded by {trim_radius_pix} px "
-                 f"(half beam = {target_res_as/2:.1f} arcsec); "
-                 f"{mask.sum()} of {ov_footprint.sum()} pixels retained.")
+        LOG.info(
+            f"Hex grid footprint eroded by {trim_radius_pix} px "
+            f"(half beam = {target_res_as/2:.1f} arcsec); "
+            f"{mask.sum()} of {ov_footprint.sum()} pixels retained."
+        )
     else:
         mask = ov_footprint
-        LOG.warning("Edge trim radius is <= 0 pixels; no hex grid edge removal applied.")
+        LOG.warning(
+            "Edge trim radius is <= 0 pixels; no hex grid edge removal applied."
+        )
 
     pixels_per_beam = meta.get("pixels_per_beam", 2.0)
-    max_rad          = meta.get("max_rad", "auto")
+    max_rad = meta.get("max_rad", "auto")
     # Spacing in degrees: one beam FWHM divided by pixels_per_beam
     spacing = target_res_as / 3600.0 / float(pixels_per_beam)
 
     samp_ra, samp_dec = make_sampling_points(
-        ra_ctr     = params["ra_ctr"],
-        dec_ctr    = params["dec_ctr"],
-        max_rad    = max_rad,
-        spacing    = spacing,
-        mask       = mask,
-        hdr_mask   = mask_hdr,
-        overlay_in = overlay_fname,
-        show       = False,
-        log        = LOG,
+        ra_ctr=params["ra_ctr"],
+        dec_ctr=params["dec_ctr"],
+        max_rad=max_rad,
+        spacing=spacing,
+        mask=mask,
+        hdr_mask=mask_hdr,
+        overlay_in=overlay_fname,
+        show=False,
+        log=LOG,
     )
 
-    LOG.info(f"Hexagonal grid generated: "
-              f"{len(samp_ra)} sampling points "
-              f"(spacing = {spacing * 3600:.1f} arcsec).")
+    LOG.info(
+        f"Hexagonal grid generated: "
+        f"{len(samp_ra)} sampling points "
+        f"(spacing = {spacing * 3600:.1f} arcsec)."
+    )
 
     return dict(
-        samp_ra       = samp_ra,
-        samp_dec      = samp_dec,
-        ov_hdr        = ov_hdr,
-        mask_hdr      = mask_hdr,
-        target_res_as = target_res_as,
+        samp_ra=samp_ra,
+        samp_dec=samp_dec,
+        ov_hdr=ov_hdr,
+        mask_hdr=mask_hdr,
+        target_res_as=target_res_as,
     )
 
 
@@ -388,11 +406,22 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
 # Core sampling function
 # ============================================================================
 
-def sample_at_res(in_data, ra_samp, dec_samp, in_hdr=None,
-                  target_res_as=None, target_hdr=None,
-                  line_name="", source="", save_fits=False,
-                  path_save_fits="", perbeam=False,
-                  spec_smooth=("default", "binned"), unc=False):
+
+def sample_at_res(
+    in_data,
+    ra_samp,
+    dec_samp,
+    in_hdr=None,
+    target_res_as=None,
+    target_hdr=None,
+    line_name="",
+    source="",
+    save_fits=False,
+    path_save_fits="",
+    perbeam=False,
+    spec_smooth=("default", "binned"),
+    unc=False,
+):
     """
     Convolve *in_data* to *target_res_as* arcsec and sample at the hex points.
 
@@ -446,14 +475,14 @@ def sample_at_res(in_data, ra_samp, dec_samp, in_hdr=None,
         data, hdr = fits.getdata(in_data, header=True)
     else:
         data = copy.deepcopy(in_data)
-        hdr  = in_hdr
+        hdr = in_hdr
 
     if target_res_as is None:
         target_res_as = 0
 
     dim_data = np.shape(data)
-    is_cube  = (len(dim_data) == 3)
-    trg_hdr  = copy.deepcopy(target_hdr) if target_hdr is not None else None
+    is_cube = len(dim_data) == 3
+    trg_hdr = copy.deepcopy(target_hdr) if target_hdr is not None else None
 
     # For 2D data, reduce the target header to 2D
     if not is_cube and trg_hdr is not None:
@@ -463,18 +492,20 @@ def sample_at_res(in_data, ra_samp, dec_samp, in_hdr=None,
     # Spatial convolution
     # ------------------------------------------------------------------
     if "BMAJ" not in hdr:
-        LOG.warning(f"No BMAJ in header of {in_data if isinstance(in_data, str) else 'array'}; skipping convolution.")
+        LOG.warning(
+            f"No BMAJ in header of {in_data if isinstance(in_data, str) else 'array'}; skipping convolution."
+        )
         hdr_out = copy.copy(hdr)
     elif hdr["BMAJ"] < 0.99 * target_res_as / 3600.0:
         LOG.info(f"Convolving {line_name} to {round(target_res_as, 2)} arcsec.")
         data, hdr_out = conv_with_gauss(
-            in_data     = data,
-            in_hdr      = hdr,
-            target_beam = target_res_as * np.array([1.0, 1.0, 0.0]),
-            quiet       = True,
-            perbeam     = perbeam,
-            unc         = unc,
-            log         = LOG,
+            in_data=data,
+            in_hdr=hdr,
+            target_beam=target_res_as * np.array([1.0, 1.0, 0.0]),
+            quiet=True,
+            perbeam=perbeam,
+            unc=unc,
+            log=LOG,
         )
     else:
         LOG.info(f"{line_name} already at target resolution; skipping convolution.")
@@ -490,13 +521,13 @@ def sample_at_res(in_data, ra_samp, dec_samp, in_hdr=None,
 
         # Flip the target header if its axis is also decreasing
         if trg_hdr is not None and trg_hdr["CDELT3"] < 0:
-            vaxis_inv     = _get_vaxis(trg_hdr)
+            vaxis_inv = _get_vaxis(trg_hdr)
             trg_hdr["CDELT3"] = abs(trg_hdr["CDELT3"])
             trg_hdr["CRPIX3"] = 1
             trg_hdr["CRVAL3"] = vaxis_inv[-1]
 
         if hdr_out["CDELT3"] < 0:
-            vaxis_inv     = _get_vaxis(hdr_out)
+            vaxis_inv = _get_vaxis(hdr_out)
             hdr_out["CDELT3"] = abs(hdr_out["CDELT3"])
             hdr_out["CRPIX3"] = 1
             hdr_out["CRVAL3"] = vaxis_inv[-1]
@@ -518,22 +549,28 @@ def sample_at_res(in_data, ra_samp, dec_samp, in_hdr=None,
         # Adjust target spectral axis if spectral smoothing changed the channel width
         if isinstance(spec_smooth[0], (int, float)) and spec_smooth[0] != "default":
             if spec_smooth[0] > trg_hdr.get("CDELT3", 0) / 1000.0:
-                vaxis_ov  = _get_vaxis(trg_hdr)
+                vaxis_ov = _get_vaxis(trg_hdr)
                 new_vaxis = np.arange(vaxis_ov[0], vaxis_ov[-1], spec_smooth[0] * 1000)
                 trg_hdr["NAXIS3"] = len(new_vaxis)
                 trg_hdr["CDELT3"] = spec_smooth[0] * 1000
-                trg_hdr["CRVAL3"] = new_vaxis[0] + (trg_hdr["CRPIX3"] - 1) * trg_hdr["CDELT3"]
+                trg_hdr["CRVAL3"] = (
+                    new_vaxis[0] + (trg_hdr["CRPIX3"] - 1) * trg_hdr["CDELT3"]
+                )
 
         data, _ = reproject_interp((data, hdr_out), trg_hdr, order="nearest-neighbor")
 
         if save_fits:
-            out_hdr        = copy.copy(trg_hdr)
+            out_hdr = copy.copy(trg_hdr)
             out_hdr["BMAJ"] = target_res_as / 3600.0
             out_hdr["BMIN"] = target_res_as / 3600.0
             out_hdr["LINE"] = line_name
             fits.writeto(
-                path.join(path_save_fits, f"{source}_{line_name}_{target_res_as}as.fits"),
-                data=data, header=out_hdr, overwrite=True,
+                path.join(
+                    path_save_fits, f"{source}_{line_name}_{target_res_as}as.fits"
+                ),
+                data=data,
+                header=out_hdr,
+                overwrite=True,
             )
             LOG.info(f"Convolved {line_name} written to: {path_save_fits}")
     else:
@@ -546,28 +583,35 @@ def sample_at_res(in_data, ra_samp, dec_samp, in_hdr=None,
     wcs_t = WCS(trg_hdr)
     if is_cube:
         pixel_coords = wcs_t.all_world2pix(
-            np.column_stack((ra_samp, dec_samp, np.zeros(len(dec_samp)))), 0)
+            np.column_stack((ra_samp, dec_samp, np.zeros(len(dec_samp)))), 0
+        )
     else:
         pixel_coords = wcs_t.all_world2pix(np.column_stack((ra_samp, dec_samp)), 0)
 
-    samp_x   = np.array(np.rint(pixel_coords[:, 0]), dtype=int)
-    samp_y   = np.array(np.rint(pixel_coords[:, 1]), dtype=int)
-    n_pts    = len(samp_x)
+    samp_x = np.array(np.rint(pixel_coords[:, 0]), dtype=int)
+    samp_y = np.array(np.rint(pixel_coords[:, 1]), dtype=int)
+    n_pts = len(samp_x)
     dim_data = np.shape(data)
 
-    result = np.full((n_pts, dim_data[0]), np.nan) if is_cube else np.full(n_pts, np.nan)
+    result = (
+        np.full((n_pts, dim_data[0]), np.nan) if is_cube else np.full(n_pts, np.nan)
+    )
 
     if is_cube:
         in_bounds = np.where(
-            (samp_x > 0) & (samp_x < dim_data[2]) &
-            (samp_y > 0) & (samp_y < dim_data[1])
+            (samp_x > 0)
+            & (samp_x < dim_data[2])
+            & (samp_y > 0)
+            & (samp_y < dim_data[1])
         )[0]
         for kk in in_bounds:
             result[kk, :] = data[:, samp_y[kk], samp_x[kk]]
     else:
         in_bounds = np.where(
-            (samp_x > 0) & (samp_x < dim_data[1]) &
-            (samp_y > 0) & (samp_y < dim_data[0])
+            (samp_x > 0)
+            & (samp_x < dim_data[1])
+            & (samp_y > 0)
+            & (samp_y < dim_data[0])
         )[0]
         result[in_bounds] = data[samp_y[in_bounds], samp_x[in_bounds]]
 
@@ -592,11 +636,11 @@ def sample_mask(in_data, ra_samp, dec_samp, in_hdr=None, target_hdr=None):
         data, hdr = fits.getdata(in_data, header=True)
     else:
         data = copy.deepcopy(in_data)
-        hdr  = in_hdr
+        hdr = in_hdr
 
     dim_data = np.shape(data)
-    is_cube  = (len(dim_data) == 3)
-    trg_hdr  = copy.deepcopy(target_hdr)
+    is_cube = len(dim_data) == 3
+    trg_hdr = copy.deepcopy(target_hdr)
 
     if not is_cube and trg_hdr is not None:
         trg_hdr = twod_head(trg_hdr)
@@ -611,28 +655,35 @@ def sample_mask(in_data, ra_samp, dec_samp, in_hdr=None, target_hdr=None):
     wcs_t = WCS(trg_hdr)
     if is_cube:
         pixel_coords = wcs_t.all_world2pix(
-            np.column_stack((ra_samp, dec_samp, np.zeros(len(dec_samp)))), 0)
+            np.column_stack((ra_samp, dec_samp, np.zeros(len(dec_samp)))), 0
+        )
     else:
         pixel_coords = wcs_t.all_world2pix(np.column_stack((ra_samp, dec_samp)), 0)
 
-    samp_x   = np.array(np.rint(pixel_coords[:, 0]), dtype=int)
-    samp_y   = np.array(np.rint(pixel_coords[:, 1]), dtype=int)
-    n_pts    = len(samp_x)
+    samp_x = np.array(np.rint(pixel_coords[:, 0]), dtype=int)
+    samp_y = np.array(np.rint(pixel_coords[:, 1]), dtype=int)
+    n_pts = len(samp_x)
     dim_data = np.shape(data)
 
-    result = np.full((n_pts, dim_data[0]), np.nan) if is_cube else np.full(n_pts, np.nan)
+    result = (
+        np.full((n_pts, dim_data[0]), np.nan) if is_cube else np.full(n_pts, np.nan)
+    )
 
     if is_cube:
         in_bounds = np.where(
-            (samp_x > 0) & (samp_x < dim_data[2]) &
-            (samp_y > 0) & (samp_y < dim_data[1])
+            (samp_x > 0)
+            & (samp_x < dim_data[2])
+            & (samp_y > 0)
+            & (samp_y < dim_data[1])
         )[0]
         for kk in in_bounds:
             result[kk, :] = data[:, samp_y[kk], samp_x[kk]]
     else:
         in_bounds = np.where(
-            (samp_x > 0) & (samp_x < dim_data[1]) &
-            (samp_y > 0) & (samp_y < dim_data[0])
+            (samp_x > 0)
+            & (samp_x < dim_data[1])
+            & (samp_y > 0)
+            & (samp_y < dim_data[0])
         )[0]
         result[in_bounds] = data[samp_y[in_bounds], samp_x[in_bounds]]
 
@@ -642,6 +693,7 @@ def sample_mask(in_data, ra_samp, dec_samp, in_hdr=None, target_hdr=None):
 # ============================================================================
 # Stage entry point
 # ============================================================================
+
 
 def run_regrid(source, params, meta, maps, cubes, input_mask):
     """
@@ -670,29 +722,42 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
     from pystructurePipeline import __version__, __author__, __email__, __credits__
 
     # Generate sampling grid
-    sampling      = run_sampling(source=source, params=params, meta=meta)
-    samp_ra       = sampling["samp_ra"]
-    samp_dec      = sampling["samp_dec"]
-    ov_hdr        = sampling["ov_hdr"]
+    sampling = run_sampling(source=source, params=params, meta=meta)
+    samp_ra = sampling["samp_ra"]
+    samp_dec = sampling["samp_dec"]
+    ov_hdr = sampling["ov_hdr"]
     target_res_as = sampling["target_res_as"]
-    n_chan         = ov_hdr["NAXIS3"]
-    n_pts          = len(samp_ra)
+    n_chan = ov_hdr["NAXIS3"]
+    n_pts = len(samp_ra)
 
-    fname              = _build_fname(source, meta)
+    fname = _build_fname(source, meta)
     structure_creation = meta.get("structure_creation", "default")
-    data_dir           = meta.get("data_dir", "data/")
-    fits_dir           = meta.get("folder_savefits",  "./saved_fits_files/")
-    save_fits          = meta.get("save_fits", False)
+    data_dir = meta.get("data_dir", "data/")
+    fits_dir = meta.get("folder_savefits", "./saved_fits_files/")
+    save_fits = meta.get("save_fits", False)
     if save_fits:
         os.makedirs(fits_dir, exist_ok=True)
 
     # Decide whether to create a fresh table or fill an existing one
     if "fill" in structure_creation and path.exists(fname):
         LOG.info(f"Fill mode: loading existing table from {fname}.")
-        this_data, fill_maps, fill_cubes = _fill_checker(fname, samp_ra, samp_dec, maps, cubes)
+        this_data, fill_maps, fill_cubes = _fill_checker(
+            fname, samp_ra, samp_dec, maps, cubes
+        )
     else:
-        this_data  = _init_table(source, params, meta, samp_ra, samp_dec, ov_hdr,
-                                 target_res_as, __version__, __author__, __email__, __credits__)
+        this_data = _init_table(
+            source,
+            params,
+            meta,
+            samp_ra,
+            samp_dec,
+            ov_hdr,
+            target_res_as,
+            __version__,
+            __author__,
+            __email__,
+            __credits__,
+        )
         fill_maps, fill_cubes = [], []
 
     # ------------------------------------------------------------------
@@ -703,41 +768,53 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
             LOG.info(f"Map {map_entry['map_name']} already present; skipping.")
             continue
 
-        map_file = path.join(str(map_entry["map_dir"]), source + str(map_entry["map_ext"]))
+        map_file = path.join(
+            str(map_entry["map_dir"]), source + str(map_entry["map_ext"])
+        )
         if not path.exists(map_file):
             LOG.error(f"Map {map_entry['map_name']} not found: {map_file}")
             continue
 
-        perbeam  = "/beam" in str(map_entry.get("map_unit", ""))
+        perbeam = "/beam" in str(map_entry.get("map_unit", ""))
         this_int, _ = sample_at_res(
-            map_file, samp_ra, samp_dec,
-            target_res_as  = target_res_as,
-            target_hdr     = ov_hdr,
-            line_name      = map_entry["map_name"],
-            source         = source,
-            path_save_fits = fits_dir,
-            save_fits      = save_fits,
-            perbeam        = perbeam,
+            map_file,
+            samp_ra,
+            samp_dec,
+            target_res_as=target_res_as,
+            target_hdr=ov_hdr,
+            line_name=map_entry["map_name"],
+            source=source,
+            path_save_fits=fits_dir,
+            save_fits=save_fits,
+            perbeam=perbeam,
         )
         this_data["MAP_" + map_entry["map_name"].upper()] = Column(
-            this_int, unit=au.Unit(str(map_entry["map_unit"])),
-            description=map_entry["map_desc"])
+            this_int,
+            unit=au.Unit(str(map_entry["map_unit"])),
+            description=map_entry["map_desc"],
+        )
 
         # Optional uncertainty map
         if str(map_entry.get("map_uc", "")).strip():
-            uc_file = path.join(str(map_entry["map_dir"]), source + str(map_entry["map_uc"]))
+            uc_file = path.join(
+                str(map_entry["map_dir"]), source + str(map_entry["map_uc"])
+            )
             if path.exists(uc_file):
                 uc_int, _ = sample_at_res(
-                    uc_file, samp_ra, samp_dec,
-                    target_res_as = target_res_as, 
-                    target_hdr    = ov_hdr,
-                    line_name     = f"{map_entry["map_name"]}_err",
-                    perbeam       = perbeam, 
-                    unc           = True,
+                    uc_file,
+                    samp_ra,
+                    samp_dec,
+                    target_res_as=target_res_as,
+                    target_hdr=ov_hdr,
+                    line_name=f"{map_entry["map_name"]}_err",
+                    perbeam=perbeam,
+                    unc=True,
                 )
                 this_data["EMAP_" + map_entry["map_name"].upper()] = Column(
-                    uc_int, unit=au.Unit(str(map_entry["map_unit"])),
-                    description=f'Uncertainty: {map_entry["map_desc"]}')
+                    uc_int,
+                    unit=au.Unit(str(map_entry["map_unit"])),
+                    description=f'Uncertainty: {map_entry["map_desc"]}',
+                )
 
         LOG.info(f"Map {map_entry['map_name']} sampled successfully.")
 
@@ -755,39 +832,58 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
             continue
 
         this_spec, _ = sample_at_res(
-            cube_file, samp_ra, samp_dec,
-            target_res_as  = target_res_as,
-            target_hdr     = ov_hdr,
-            line_name      = cube["line_name"],
-            source         = source,
-            path_save_fits = fits_dir,
-            save_fits      = save_fits,
+            cube_file,
+            samp_ra,
+            samp_dec,
+            target_res_as=target_res_as,
+            target_hdr=ov_hdr,
+            line_name=cube["line_name"],
+            source=source,
+            path_save_fits=fits_dir,
+            save_fits=save_fits,
         )
         this_data["SPEC_" + cube["line_name"].upper()] = Column(
-            this_spec, unit=au.Unit(str(cube["line_unit"])),
-            description=cube["line_desc"])
+            this_spec,
+            unit=au.Unit(str(cube["line_unit"])),
+            description=cube["line_desc"],
+        )
 
         # Optional 2D integrated-intensity map provided alongside the cube
         map_ext = str(cube.get("map_ext", "")).strip()
         if map_ext and map_ext not in ("nan", ""):
             b2d_file = path.join(str(cube["line_dir"]), source + map_ext)
             if path.exists(b2d_file):
-                b2d, _ = sample_at_res(b2d_file, samp_ra, samp_dec,
-                                       target_res_as=target_res_as, target_hdr=ov_hdr)
+                b2d, _ = sample_at_res(
+                    b2d_file,
+                    samp_ra,
+                    samp_dec,
+                    target_res_as=target_res_as,
+                    target_hdr=ov_hdr,
+                )
                 this_data["MAP_" + cube["line_name"].upper()] = Column(
-                    b2d, unit=au.Unit(str(cube["line_unit"])),
-                    description=cube["line_desc"])
+                    b2d,
+                    unit=au.Unit(str(cube["line_unit"])),
+                    description=cube["line_desc"],
+                )
 
         # Optional 2D uncertainty map for the cube
         map_uc = str(cube.get("map_uc", "")).strip()
         if map_uc and map_uc not in ("nan", ""):
             uc_file = path.join(str(cube["line_dir"]), source + map_uc)
             if path.exists(uc_file):
-                uc, _ = sample_at_res(uc_file, samp_ra, samp_dec,
-                                      target_res_as=target_res_as, target_hdr=ov_hdr, unc=True)
+                uc, _ = sample_at_res(
+                    uc_file,
+                    samp_ra,
+                    samp_dec,
+                    target_res_as=target_res_as,
+                    target_hdr=ov_hdr,
+                    unc=True,
+                )
                 this_data["EMAP_" + cube["line_name"].upper()] = Column(
-                    uc, unit=au.Unit(str(cube["line_unit"])),
-                    description=f'Uncertainty: {cube["line_desc"]}')
+                    uc,
+                    unit=au.Unit(str(cube["line_unit"])),
+                    description=f'Uncertainty: {cube["line_desc"]}',
+                )
 
         LOG.info(f"Cube {cube['line_name']} sampled successfully.")
 
@@ -799,17 +895,16 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
 
         if use_fixed:
             # Build a binary mask from a fixed velocity window
-            mask_unit  = input_mask["mask_unit"].iloc[0]
+            mask_unit = input_mask["mask_unit"].iloc[0]
             mask_start = float(input_mask["mask_start"].iloc[0]) * au.Unit(mask_unit)
-            mask_end   = float(input_mask["mask_end"].iloc[0])   * au.Unit(mask_unit)
-            unit_v     = ov_hdr.get("CUNIT3", "m/s")
+            mask_end = float(input_mask["mask_end"].iloc[0]) * au.Unit(mask_unit)
+            unit_v = ov_hdr.get("CUNIT3", "m/s")
             v0, dv, crpix = ov_hdr["CRVAL3"], ov_hdr["CDELT3"], ov_hdr["CRPIX3"]
-            vaxis     = (v0 + (np.arange(n_chan) - (crpix - 1)) * dv) * au.Unit(unit_v)
-            vaxis     = vaxis.to(au.Unit(mask_unit))
+            vaxis = (v0 + (np.arange(n_chan) - (crpix - 1)) * dv) * au.Unit(unit_v)
+            vaxis = vaxis.to(au.Unit(mask_unit))
             spec_mask = np.zeros((n_pts, n_chan))
             spec_mask[:, (vaxis >= mask_start) & (vaxis <= mask_end)] = 1.0
-            LOG.info(f"Fixed velocity mask applied "
-                      f"({mask_start} to {mask_end}).")
+            LOG.info(f"Fixed velocity mask applied " f"({mask_start} to {mask_end}).")
         else:
             # Sample an external FITS mask file
             mask_file = path.join(
@@ -820,12 +915,15 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
                 LOG.error(f"Mask file not found: {mask_file}")
                 spec_mask = np.zeros((n_pts, n_chan))
             else:
-                spec_mask, _ = sample_mask(mask_file, samp_ra, samp_dec, target_hdr=ov_hdr)
+                spec_mask, _ = sample_mask(
+                    mask_file, samp_ra, samp_dec, target_hdr=ov_hdr
+                )
                 LOG.info(f"External mask sampled.")
 
         tag = "SPEC_" + str(input_mask["mask_name"].iloc[0]).upper()
         this_data[tag] = Column(
-            spec_mask, unit=au.dimensionless_unscaled,
+            spec_mask,
+            unit=au.dimensionless_unscaled,
             description=str(input_mask["mask_desc"].iloc[0]),
         )
 
@@ -844,9 +942,12 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
     # in beyond the true observed boundary.
     # ------------------------------------------------------------------
     if save_fits:
-        overlay_file  = meta.get("overlay_file", "")
-        overlay_fname = (path.join(data_dir, overlay_file) if source in overlay_file
-                         else path.join(data_dir, source + overlay_file))
+        overlay_file = meta.get("overlay_file", "")
+        overlay_fname = (
+            path.join(data_dir, overlay_file)
+            if source in overlay_file
+            else path.join(data_dir, source + overlay_file)
+        )
         if path.exists(overlay_fname):
             ov_cube_fp = fits.getdata(overlay_fname)
             ov_footprint_2d = np.any(np.isfinite(ov_cube_fp), axis=0)
@@ -857,7 +958,9 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
                 if path.exists(cube_fits_path):
                     data_c, hdr_c = fits.getdata(cube_fits_path, header=True)
                     data_c[:, ~ov_footprint_2d] = np.nan
-                    fits.writeto(cube_fits_path, data=data_c, header=hdr_c, overwrite=True)
+                    fits.writeto(
+                        cube_fits_path, data=data_c, header=hdr_c, overwrite=True
+                    )
             LOG.info("Overlay footprint NaN mask applied to saved convolved cubes.")
 
     return fname
@@ -867,6 +970,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
 # Private helpers
 # ============================================================================
 
+
 def _build_fname(source, meta):
     """
     Construct the output .ecsv filename.
@@ -875,16 +979,29 @@ def _build_fname(source, meta):
     """
     resolution = meta.get("resolution", "angular")
     target_res = meta.get("target_res", 27.0)
-    out_dir    = meta.get("out_dir", "output/")
-    suffix = (str(int(target_res)) + "as" if resolution == "angular"
-              else str(int(target_res)) + "pc" if resolution == "physical"
-              else "native")
+    out_dir = meta.get("out_dir", "output/")
+    suffix = (
+        str(int(target_res)) + "as"
+        if resolution == "angular"
+        else str(int(target_res)) + "pc" if resolution == "physical" else "native"
+    )
     date_str = date.today().strftime("%Y_%m_%d")
     return os.path.join(out_dir, f"{source}_data_struct_{suffix}_{date_str}.ecsv")
 
 
-def _init_table(source, params, meta, samp_ra, samp_dec, ov_hdr,
-                target_res_as, version, author, email, credits_):
+def _init_table(
+    source,
+    params,
+    meta,
+    samp_ra,
+    samp_dec,
+    ov_hdr,
+    target_res_as,
+    version,
+    author,
+    email,
+    credits_,
+):
     """
     Create and populate an empty Astropy Table for *source*.
 
@@ -906,59 +1023,71 @@ def _init_table(source, params, meta, samp_ra, samp_dec, ov_hdr,
     this_data : astropy.table.Table
     """
     from datetime import date as _date
+
     this_data = Table()
 
     # Provenance metadata stored in the table header
-    this_data.meta.update({
-        "Name":     "PyStructure",
-        "Version":  version,
-        "Authors":  author,
-        "Contacts": email,
-        "Credits":  credits_,
-        "User":     meta.get("user", ""),
-        "Comments": meta.get("comments", ""),
-        "Date":     _date.today().strftime("%Y_%m_%d"),
-        "Source":   source,
-    })
+    this_data.meta.update(
+        {
+            "Name": "PyStructure",
+            "Version": version,
+            "Authors": author,
+            "Contacts": email,
+            "Credits": credits_,
+            "User": meta.get("user", ""),
+            "Comments": meta.get("comments", ""),
+            "Date": _date.today().strftime("%Y_%m_%d"),
+            "Source": source,
+        }
+    )
 
     # Sky coordinates
-    this_data["ra_deg"]  = Column(samp_ra,  unit=au.deg, description="Right ascension (J2000)")
-    this_data["dec_deg"] = Column(samp_dec, unit=au.deg, description="Declination (J2000)")
+    this_data["ra_deg"] = Column(
+        samp_ra, unit=au.deg, description="Right ascension (J2000)"
+    )
+    this_data["dec_deg"] = Column(
+        samp_dec, unit=au.deg, description="Declination (J2000)"
+    )
 
     # Source geometry metadata
-    this_data.meta["dist_mpc"]   = params["dist_mpc"]   * au.Mpc
+    this_data.meta["dist_mpc"] = params["dist_mpc"] * au.Mpc
     this_data.meta["posang_deg"] = params["posang_deg"] * au.deg
-    this_data.meta["incl_deg"]   = params["incl_deg"]   * au.deg
-    this_data.meta["beam_as"]    = target_res_as         * au.arcsec
+    this_data.meta["incl_deg"] = params["incl_deg"] * au.deg
+    this_data.meta["beam_as"] = target_res_as * au.arcsec
 
     # Spectral axis metadata (from the overlay cube header)
     unit_v = ov_hdr.get("CUNIT3", "m/s")
     this_data.meta["SPEC_VCHAN0"] = ov_hdr["CRVAL3"] * au.Unit(unit_v)
     this_data.meta["SPEC_DELTAV"] = ov_hdr["CDELT3"] * au.Unit(unit_v)
-    this_data.meta["SPEC_CRPIX"]  = ov_hdr["CRPIX3"]
-    this_data.meta["input_maps"]  = ""
+    this_data.meta["SPEC_CRPIX"] = ov_hdr["CRPIX3"]
+    this_data.meta["input_maps"] = ""
     this_data.meta["input_cubes"] = ""
 
     # Deprojected galactocentric coordinates
     rgal_deg, theta_rad = deproject(
-        samp_ra, samp_dec,
+        samp_ra,
+        samp_dec,
         [params["posang_deg"], params["incl_deg"], params["ra_ctr"], params["dec_ctr"]],
         vector=True,
     )
     dist_mpc = params["dist_mpc"]
-    r25      = params["r25"]
+    r25 = params["r25"]
 
-    this_data["rgal_as"]   = Column(rgal_deg * 3600,
-                                    unit=au.arcsec,
-                                    description="Deprojected galactocentric radius")
-    this_data["rgal_kpc"]  = Column(np.deg2rad(rgal_deg) * dist_mpc * 1e3,
-                                    unit=au.kpc,
-                                    description="Deprojected galactocentric radius")
-    this_data["rgal_r25"]  = Column(rgal_deg / (r25 / 60.0),
-                                    description="Deprojected galactocentric radius (r25 units)")
-    this_data["theta_rad"] = Column(theta_rad,
-                                    unit=au.rad,
-                                    description="Deprojected polar angle")
+    this_data["rgal_as"] = Column(
+        rgal_deg * 3600, unit=au.arcsec, description="Deprojected galactocentric radius"
+    )
+    this_data["rgal_kpc"] = Column(
+        np.deg2rad(rgal_deg) * dist_mpc * 1e3,
+        unit=au.kpc,
+        description="Deprojected galactocentric radius",
+    )
+    this_data["rgal_r25"] = Column(
+        rgal_deg / (r25 / 60.0),
+        description="Deprojected galactocentric radius (r25 units)",
+    )
+    this_data["theta_rad"] = Column(
+        theta_rad, unit=au.rad, description="Deprojected polar angle"
+    )
     return this_data
 
 
@@ -978,8 +1107,9 @@ def _fill_checker(fname, samp_ra, samp_dec, maps, cubes):
     fill_cubes  : list  — cube names that are already present and can be skipped
     """
     this_data = Table.read(fname)
-    diff = (abs(np.nansum(this_data["ra_deg"]  - samp_ra  * au.deg))
-            + abs(np.nansum(this_data["dec_deg"] - samp_dec * au.deg)))
+    diff = abs(np.nansum(this_data["ra_deg"] - samp_ra * au.deg)) + abs(
+        np.nansum(this_data["dec_deg"] - samp_dec * au.deg)
+    )
     if diff > 1e-12 * au.deg:
         LOG.error(
             f"Existing file coordinates do not match the "
@@ -989,6 +1119,10 @@ def _fill_checker(fname, samp_ra, samp_dec, maps, cubes):
             f"Existing file coordinates do not match the "
             "current sampling grid.  Set structure_creation = 'default' to overwrite."
         )
-    fill_maps  = [b for b in maps["map_name"]    if f"MAP_{b.upper()}"  in this_data.colnames]
-    fill_cubes = [c for c in cubes["line_name"]  if f"MOM0_{c.upper()}" in this_data.colnames]
+    fill_maps = [
+        b for b in maps["map_name"] if f"MAP_{b.upper()}" in this_data.colnames
+    ]
+    fill_cubes = [
+        c for c in cubes["line_name"] if f"MOM0_{c.upper()}" in this_data.colnames
+    ]
     return this_data, fill_maps, fill_cubes

@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # KeyHandler
 # ---------------------------------------------------------------------------
 
+
 class TestKeyHandler:
 
     def _write_minimal_config(self, tmpdir: Path) -> Path:
@@ -65,6 +66,7 @@ class TestKeyHandler:
     def test_load_basic(self, tmp_path):
         conf_path = self._write_minimal_config(tmp_path)
         from pystructurePipeline.handler_keys import KeyHandler
+
         kh = KeyHandler(str(conf_path))
         assert kh.sources == ["ngc5194"]
         assert len(kh.maps) == 1
@@ -75,6 +77,7 @@ class TestKeyHandler:
         """save_mask is not set in the minimal fixture, so it must default to False."""
         conf_path = self._write_minimal_config(tmp_path)
         from pystructurePipeline.handler_keys import KeyHandler
+
         kh = KeyHandler(str(conf_path))
         assert kh.meta["save_mask"] is False
 
@@ -87,6 +90,7 @@ class TestKeyHandler:
             )
         )
         from pystructurePipeline.handler_keys import KeyHandler
+
         kh = KeyHandler(str(conf_path))
         assert kh.meta["save_mask"] is True
 
@@ -102,13 +106,12 @@ class TestKeyHandler:
         """
         conf_path = self._write_minimal_config(tmp_path)
         conf_path.write_text(
-            conf_path.read_text().replace(
-                "target_res = 27.0", "target_res = 45.0"
-            ).replace(
-                "save_fits = false", "save_fits = true"
-            )
+            conf_path.read_text()
+            .replace("target_res = 27.0", "target_res = 45.0")
+            .replace("save_fits = false", "save_fits = true")
         )
         from pystructurePipeline.handler_keys import KeyHandler
+
         kh = KeyHandler(str(conf_path))
         assert kh.meta["target_res"] == 45.0
         assert kh.meta["save_fits"] is True
@@ -122,10 +125,12 @@ class TestKeyHandler:
         silently and quietly fall back without a trace).
         """
         from pystructurePipeline.pystructureLogger import logger
+
         logger.configure(verbose=True, log_file=None)
 
         conf_path = self._write_minimal_config(tmp_path)
         from pystructurePipeline.handler_keys import KeyHandler
+
         KeyHandler(str(conf_path))
         captured = capsys.readouterr()
         assert "[WARNING]" in captured.out
@@ -142,10 +147,12 @@ class TestKeyHandler:
         [output]/[structure] setting.
         """
         from pystructurePipeline.pystructureLogger import logger
+
         logger.configure(verbose=True, log_file=None)
 
         conf_path = self._write_minimal_config(tmp_path)
         from pystructurePipeline.handler_keys import KeyHandler
+
         kh = KeyHandler(str(conf_path))
         captured = capsys.readouterr()
         assert kh.meta["fname_fill"] == ""
@@ -154,10 +161,12 @@ class TestKeyHandler:
     def test_explicit_setting_does_not_log_warning(self, tmp_path, capsys):
         """An explicitly-set value should not trigger a fallback warning."""
         from pystructurePipeline.pystructureLogger import logger
+
         logger.configure(verbose=True, log_file=None)
 
         conf_path = self._write_minimal_config(tmp_path)
         from pystructurePipeline.handler_keys import KeyHandler
+
         KeyHandler(str(conf_path))
         captured = capsys.readouterr()
         # target_res IS set explicitly in the minimal config fixture, so it
@@ -173,6 +182,7 @@ class TestKeyHandler:
         """
         conf_path = self._write_minimal_config(tmp_path)
         from pystructurePipeline.handler_keys import KeyHandler
+
         kh = KeyHandler(str(conf_path))
         row = kh.source_table.iloc[0]
         assert row["source"] == "ngc5194"
@@ -183,10 +193,12 @@ class TestKeyHandler:
     def test_validate_passes(self, tmp_path):
         conf_path = self._write_minimal_config(tmp_path)
         from pystructurePipeline.handler_keys import KeyHandler
+
         assert KeyHandler(str(conf_path)).validate() is True
 
     def test_missing_conf_path_raises(self):
         from pystructurePipeline.handler_keys import KeyHandler
+
         with pytest.raises(FileNotFoundError):
             KeyHandler("/nonexistent/path/config.txt")
 
@@ -194,12 +206,14 @@ class TestKeyHandler:
         conf_path = self._write_minimal_config(tmp_path)
         (tmp_path / "keys" / "target_definitions.txt").unlink()
         from pystructurePipeline.handler_keys import KeyHandler
+
         with pytest.raises(FileNotFoundError):
             KeyHandler(str(conf_path))
 
     def test_repr(self, tmp_path):
         conf_path = self._write_minimal_config(tmp_path)
         from pystructurePipeline.handler_keys import KeyHandler
+
         kh = KeyHandler(str(conf_path))
         assert "KeyHandler" in repr(kh)
         assert "ngc5194" in repr(kh)
@@ -217,6 +231,7 @@ class TestKeyHandler:
             "ngc5457, 210.8025, 54.3492, 6.70, 0.32, 18.0, 5.0, 39.0, 5.0, 13.46, 0.50\n"
         )
         from pystructurePipeline.handler_keys import KeyHandler
+
         kh = KeyHandler(str(conf_path))
         assert kh.sources == ["ngc5194", "ngc5457"]
 
@@ -226,6 +241,7 @@ class TestKeyHandler:
             "hcn10,\t88.6316023,  88.6304156,\tGHz\n"
         )
         from pystructurePipeline.handler_keys import KeyHandler
+
         kh = KeyHandler(str(conf_path))
         assert kh.hfs_data is not None
         assert len(kh.hfs_data) == 1
@@ -237,6 +253,7 @@ class TestKeyHandler:
     def test_hfs_file_none_when_absent(self, tmp_path):
         conf_path = self._write_minimal_config(tmp_path)
         from pystructurePipeline.handler_keys import KeyHandler
+
         kh = KeyHandler(str(conf_path))
         assert kh.hfs_data is None
 
@@ -249,16 +266,19 @@ class TestKeyHandler:
             "ngc1234, 10.0, 20.0, 5.0, 0.1, 30.0, 2.0, 90.0, 2.0, 2.0, 0.1\n"
         )
         conf_path.write_text(
-            conf_path.read_text().replace(
+            conf_path.read_text()
+            .replace(
                 "[paths]\n",
                 f"[paths]\ngeom_file = {custom_geom}\n",
                 1,
-            ).replace(
+            )
+            .replace(
                 "[sources]\nsources = ngc5194\n",
                 "[sources]\nsources = ngc1234\n",
             )
         )
         from pystructurePipeline.handler_keys import KeyHandler
+
         kh = KeyHandler(str(conf_path))
         assert kh.sources == ["ngc1234"]
         assert "ngc1234" in list(kh.source_table["source"])
@@ -268,6 +288,7 @@ class TestKeyHandler:
         conf_path = self._write_minimal_config(tmp_path)
         (tmp_path / "keys" / "target_definitions.txt").unlink()
         from pystructurePipeline.handler_keys import KeyHandler
+
         with pytest.raises(FileNotFoundError):
             KeyHandler(str(conf_path))
 
@@ -282,6 +303,7 @@ class TestKeyHandler:
             )
         )
         from pystructurePipeline.handler_keys import KeyHandler
+
         with pytest.raises(FileNotFoundError):
             KeyHandler(str(conf_path))
 
@@ -290,30 +312,46 @@ class TestKeyHandler:
 # SourceHandler
 # ---------------------------------------------------------------------------
 
+
 class TestSourceHandler:
 
     def _make_table(self):
         import pandas as pd
-        return pd.DataFrame([{
-            "source": "ngc5194", "ra_ctr": 202.47, "dec_ctr": 47.20,
-            "dist_mpc": 8.58, "e_dist_mpc": 0.1, "incl_deg": 22.0,
-            "e_incl_deg": 3.0, "posang_deg": 173.0, "e_posang_deg": 3.0,
-            "r25": 3.54, "e_r25": 0.05,
-        }])
+
+        return pd.DataFrame(
+            [
+                {
+                    "source": "ngc5194",
+                    "ra_ctr": 202.47,
+                    "dec_ctr": 47.20,
+                    "dist_mpc": 8.58,
+                    "e_dist_mpc": 0.1,
+                    "incl_deg": 22.0,
+                    "e_incl_deg": 3.0,
+                    "posang_deg": 173.0,
+                    "e_posang_deg": 3.0,
+                    "r25": 3.54,
+                    "e_r25": 0.05,
+                }
+            ]
+        )
 
     def test_get_source_params(self):
         from pystructurePipeline.handler_sources import SourceHandler
+
         th = SourceHandler(self._make_table(), ["ngc5194"])
         assert abs(th.get_source_params("ngc5194")["ra_ctr"] - 202.47) < 1e-6
 
     def test_unknown_source_raises(self):
         from pystructurePipeline.handler_sources import SourceHandler
+
         th = SourceHandler(self._make_table(), ["ngc5194"])
         with pytest.raises(KeyError):
             th.get_source_params("ngc9999")
 
     def test_source_not_in_table_raises(self):
         from pystructurePipeline.handler_sources import SourceHandler
+
         with pytest.raises(ValueError):
             SourceHandler(self._make_table(), ["ngc9999"])
 
@@ -322,27 +360,32 @@ class TestSourceHandler:
 # utils.fits_utils
 # ---------------------------------------------------------------------------
 
+
 class TestFitsUtils:
 
     def test_get_beam_arcsec_missing_file(self):
         from pystructurePipeline.utils_fits import get_beam_arcsec
+
         with pytest.raises(FileNotFoundError):
             get_beam_arcsec("/nonexistent/file.fits")
 
     def test_read_fits_cube_missing_file(self):
         from pystructurePipeline.utils_fits import read_fits_cube
+
         with pytest.raises(FileNotFoundError):
             read_fits_cube("/nonexistent/file.fits")
 
     def test_hex_grid_basic(self):
         from pystructurePipeline.utils_fits import hex_grid
+
         x, y = hex_grid(0.0, 0.0, 0.01, radec=False, r_limit=0.05)
         assert len(x) > 0
 
     def test_deproject_shape(self):
         import numpy as np
         from pystructurePipeline.utils_fits import deproject
-        ra  = np.linspace(202.0, 203.0, 10)
+
+        ra = np.linspace(202.0, 203.0, 10)
         dec = np.linspace(47.0, 48.0, 10)
         r, t = deproject(ra, dec, [173.0, 22.0, 202.47, 47.20], vector=True)
         assert r.shape == ra.shape
@@ -350,20 +393,25 @@ class TestFitsUtils:
     def test_gaussian_PSF_2D_shape(self):
         import numpy as np
         from pystructurePipeline.utils_fits import gaussian_PSF_2D
-        psf = gaussian_PSF_2D(11, [0., 1., 3., 3., 0., 0., 0.], center=True, normalize=True)
+
+        psf = gaussian_PSF_2D(
+            11, [0.0, 1.0, 3.0, 3.0, 0.0, 0.0, 0.0], center=True, normalize=True
+        )
         assert psf.shape == (11, 11)
         assert abs(np.sum(psf) - 1.0) < 1e-6
 
     def test_deconvolve_gauss_basic(self):
         from pystructurePipeline.utils_fits import deconvolve_gauss
+
         maj, minn, pa, info = deconvolve_gauss(30.0, 20.0, 30.0, 0.0, 20.0, 0.0)
-        assert info[0]   # worked
+        assert info[0]  # worked
         assert maj > 0
 
 
 # ---------------------------------------------------------------------------
 # stage_fits — mask cube output
 # ---------------------------------------------------------------------------
+
 
 class TestStageFits:
 
@@ -378,7 +426,7 @@ class TestStageFits:
         # Full 30x30 observed footprint
         ov_footprint = np.ones((30, 30), dtype=bool)
         hdr = fits.Header()
-        hdr["CDELT1"] = -1.0 / 3600.0   # 1 arcsec/pixel
+        hdr["CDELT1"] = -1.0 / 3600.0  # 1 arcsec/pixel
 
         # target_res = 10 arcsec -> trim radius = floor(10/2 / 1) = 5 pixels
         edge_mask = build_edge_mask(ov_footprint, hdr, target_res_as=10.0)
@@ -403,7 +451,7 @@ class TestStageFits:
         hdr["CDELT1"] = -10.0 / 3600.0  # 10 arcsec/pixel — half beam is < 1 px
 
         edge_mask = build_edge_mask(ov_footprint, hdr, target_res_as=10.0)
-        assert edge_mask.sum() == 100   # full footprint returned
+        assert edge_mask.sum() == 100  # full footprint returned
 
     def test_build_edge_mask_erodes_non_rectangular_blob(self):
         """
@@ -417,10 +465,10 @@ class TestStageFits:
         ny, nx = 20, 20
         # Circular island: observed area is a disc of radius 8 at centre
         y, x = np.ogrid[:ny, :nx]
-        ov_footprint = ((y - 10)**2 + (x - 10)**2) < 8**2
+        ov_footprint = ((y - 10) ** 2 + (x - 10) ** 2) < 8**2
 
         hdr = fits.Header()
-        hdr["CDELT1"] = -1.0 / 3600.0   # 1 arcsec/pixel
+        hdr["CDELT1"] = -1.0 / 3600.0  # 1 arcsec/pixel
 
         # Erode by 2 pixels
         edge_mask = build_edge_mask(ov_footprint, hdr, target_res_as=4.0)
@@ -430,7 +478,7 @@ class TestStageFits:
         # Centre of the disc (far from boundary) must be kept
         assert edge_mask[10, 10] == 1.0
         # Pixels on the disc boundary must be removed by erosion
-        assert edge_mask[2, 10] == 0.0   # top of disc
+        assert edge_mask[2, 10] == 0.0  # top of disc
 
     def test_overlay_footprint_constrains_erosion(self):
         """
@@ -475,9 +523,13 @@ class TestStageFits:
         mask[1:3, 2, 2] = 1
 
         ov_hdr = fits.Header()
-        ov_hdr["NAXIS"]  = 3
+        ov_hdr["NAXIS"] = 3
         ov_hdr["NAXIS1"], ov_hdr["NAXIS2"], ov_hdr["NAXIS3"] = 5, 5, 4
-        ov_hdr["CTYPE1"], ov_hdr["CTYPE2"], ov_hdr["CTYPE3"] = "RA---TAN", "DEC--TAN", "VELO"
+        ov_hdr["CTYPE1"], ov_hdr["CTYPE2"], ov_hdr["CTYPE3"] = (
+            "RA---TAN",
+            "DEC--TAN",
+            "VELO",
+        )
         ov_hdr["CRVAL3"], ov_hdr["CDELT3"], ov_hdr["CRPIX3"] = 0.0, 1000.0, 1
 
         save_ppv_mask_to_fits(mask, ov_hdr, "testsrc", "mask", str(tmp_path))
@@ -500,6 +552,7 @@ class TestStageFits:
         noise, identical at every spatial pixel. Returns (cube, vaxis_kms).
         """
         import numpy as np
+
         rng = np.random.RandomState(seed)
         vaxis = np.arange(n_chan, dtype=float)  # channel index stands in for km/s
         cube = rng.normal(0, 1.0, size=(n_chan, ny, nx))
@@ -546,22 +599,20 @@ class TestStageFits:
         t["SPEC_LINE"] = Column(spec)
         t.meta["SPEC_VCHAN0"] = 0.0 * au.km / au.s
         t.meta["SPEC_DELTAV"] = 1.0 * au.km / au.s
-        t.meta["SPEC_CRPIX"]  = 1
+        t.meta["SPEC_CRPIX"] = 1
 
         mask_ppv = construct_mask_ppv(cube, SN_processing=[2, 4])
         mask_hex, _, _ = construct_mask("LINE", t, SN_processing=[2, 4])
 
-        mask_hex_reshaped = np.moveaxis(
-            mask_hex.value.reshape(ny, nx, n_chan), -1, 0
-        )
+        mask_hex_reshaped = np.moveaxis(mask_hex.value.reshape(ny, nx, n_chan), -1, 0)
         assert np.array_equal(mask_ppv, mask_hex_reshaped)
 
     def test_apply_strict_mask_ppv_removes_small_components(self):
         from pystructurePipeline.stage_fits import apply_strict_mask_ppv
 
         mask = np.zeros((1, 10, 10), dtype=int)
-        mask[0, 5, 5] = 1            # isolated single pixel: too small, removed
-        mask[0, 0:3, 0:3] = 1        # 3x3 block = 9 pixels: kept
+        mask[0, 5, 5] = 1  # isolated single pixel: too small, removed
+        mask[0, 0:3, 0:3] = 1  # 3x3 block = 9 pixels: kept
 
         filtered = apply_strict_mask_ppv(mask, min_pixels=5)
         assert filtered[0, 5, 5] == 0
@@ -580,9 +631,9 @@ class TestStageFits:
         cube, vaxis_arr = self._make_synthetic_ppv_cube(ny=2, nx=2)
         n_chan, ny, nx = cube.shape
 
-        cube_q  = cube * au.K
+        cube_q = cube * au.K
         vaxis_q = vaxis_arr * au.km / au.s
-        mask    = (cube > 3).astype(int)
+        mask = (cube > 3).astype(int)
         # widen the mask a bit so get_mom_maps' high-S/N submask has enough
         # consecutive channels to compute mom1/mom2 (mirrors construct_mask's
         # dilation in spirit, simplified for this unit test)
@@ -599,7 +650,8 @@ class TestStageFits:
         for key in ppv_maps:
             assert ppv_maps[key].shape == (ny, nx)
             np.testing.assert_allclose(
-                ppv_maps[key].value.ravel(), flat_maps[key].value,
+                ppv_maps[key].value.ravel(),
+                flat_maps[key].value,
                 equal_nan=True,
             )
 
@@ -627,8 +679,13 @@ class TestStageFits:
         fits.writeto(str(cached_path), cube, hdr)
 
         data, _ = get_convolved_ppv_cube(
-            "testsrc", "co", "/nonexistent_dir", ".fits",
-            27.0, hdr, str(tmp_path),
+            "testsrc",
+            "co",
+            "/nonexistent_dir",
+            ".fits",
+            27.0,
+            hdr,
+            str(tmp_path),
         )
         assert np.array_equal(data, cube)
 
@@ -642,8 +699,13 @@ class TestStageFits:
 
         with pytest.raises(FileNotFoundError):
             get_convolved_ppv_cube(
-                "testsrc", "co", str(tmp_path), ".fits",
-                27.0, hdr, str(tmp_path),
+                "testsrc",
+                "co",
+                str(tmp_path),
+                ".fits",
+                27.0,
+                hdr,
+                str(tmp_path),
             )
 
 
@@ -651,23 +713,27 @@ class TestStageFits:
 # utils.table_utils
 # ---------------------------------------------------------------------------
 
+
 class TestTableUtils:
 
     def test_load_missing_file(self):
         from pystructurePipeline.utils_table import load_pystructure
+
         with pytest.raises(FileNotFoundError):
             load_pystructure("/nonexistent/file.ecsv")
 
     def test_find_latest_missing(self, tmp_path):
         from pystructurePipeline.utils_table import find_latest_pystructure
+
         with pytest.raises(FileNotFoundError):
             find_latest_pystructure(str(tmp_path), "ngc5194")
 
     def test_shuffle_roundtrip(self):
         import numpy as np
         from pystructurePipeline.utils_table import shuffle
-        vaxis    = np.arange(-100, 101, 1.0)
-        spec     = np.exp(-0.5 * (vaxis / 20.0) ** 2)
+
+        vaxis = np.arange(-100, 101, 1.0)
+        spec = np.exp(-0.5 * (vaxis / 20.0) ** 2)
         shuffled = shuffle(spec, vaxis, zero=0.0, new_vaxis=vaxis)
         # Should be identical (same axis, zero shift)
         assert np.allclose(shuffled, spec, equal_nan=True)
@@ -679,7 +745,7 @@ class TestTableUtils:
 
         n_pts, n_chan = 5, 50
         vaxis = np.linspace(-100, 100, n_chan) * u.km / u.s
-        spec  = np.zeros((n_pts, n_chan)) * u.K
+        spec = np.zeros((n_pts, n_chan)) * u.K
         # Put a Gaussian signal in one spectrum
         spec[2, :] = np.exp(-0.5 * (np.linspace(-100, 100, n_chan) / 15.0) ** 2) * u.K
         mask = (spec.value > 0.1).astype(float)
@@ -693,10 +759,12 @@ class TestTableUtils:
 # init_workdir
 # ---------------------------------------------------------------------------
 
+
 class TestInitWorkdir:
 
     def test_creates_expected_files(self, tmp_path):
         from pystructurePipeline.init_workdir import init_workdir
+
         init_workdir(str(tmp_path))
         assert (tmp_path / "config.txt").exists()
         assert (tmp_path / "keys" / "target_definitions.txt").exists()
@@ -704,12 +772,14 @@ class TestInitWorkdir:
 
     def test_overwrite_false_raises(self, tmp_path):
         from pystructurePipeline.init_workdir import init_workdir
+
         init_workdir(str(tmp_path))
         with pytest.raises(FileExistsError):
             init_workdir(str(tmp_path), overwrite=False)
 
     def test_overwrite_true_replaces(self, tmp_path):
         from pystructurePipeline.init_workdir import init_workdir
+
         init_workdir(str(tmp_path))
         (tmp_path / "run_pystructure.py").write_text("# corrupted")
         init_workdir(str(tmp_path), overwrite=True)
@@ -720,31 +790,37 @@ class TestInitWorkdir:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 class TestCLI:
 
     def test_init_creates_files(self, tmp_path):
         from pystructurePipeline.cli import main
+
         main(["--init", "--workdir", str(tmp_path)])
         assert (tmp_path / "run_pystructure.py").exists()
 
     def test_init_overwrite_conflict(self, tmp_path):
         from pystructurePipeline.cli import main
+
         main(["--init", "--workdir", str(tmp_path)])
         with pytest.raises(SystemExit):
             main(["--init", "--workdir", str(tmp_path)])
 
     def test_missing_conf_exits(self):
         from pystructurePipeline.cli import main
+
         with pytest.raises((SystemExit, FileNotFoundError)):
             main(["--conf", "/nonexistent/config.txt"])
 
     def test_no_args_exits(self):
         from pystructurePipeline.cli import main
+
         with pytest.raises(SystemExit):
             main([])
 
     def test_invalid_stage_exits(self):
         from pystructurePipeline.cli import main
+
         with pytest.raises(SystemExit):
             main(["--conf", "config.txt", "--stages", "invalid_stage"])
 
@@ -753,10 +829,12 @@ class TestCLI:
 # Logger
 # ---------------------------------------------------------------------------
 
+
 class TestLogger:
 
     def test_get_logger_prints_formatted_message(self, capsys):
         from pystructurePipeline.pystructureLogger import logger, get_logger
+
         logger.configure(verbose=True, log_file=None)
         log = get_logger("Regrid")
         log.info("hello world")
@@ -765,6 +843,7 @@ class TestLogger:
 
     def test_verbose_false_suppresses_print(self, capsys):
         from pystructurePipeline.pystructureLogger import logger, get_logger
+
         logger.configure(verbose=False, log_file=None)
         log = get_logger("Products")
         log.warning("should not print")
@@ -776,6 +855,7 @@ class TestLogger:
 
     def test_log_file_written(self, tmp_path):
         from pystructurePipeline.pystructureLogger import logger, get_logger
+
         log_path = tmp_path / "run.log"
         logger.configure(verbose=False, log_file=str(log_path))
         log = get_logger("FITS")
@@ -786,6 +866,7 @@ class TestLogger:
 
     def test_save_writes_all_records(self, tmp_path):
         from pystructurePipeline.pystructureLogger import logger, get_logger
+
         logger.configure(verbose=False, log_file=None)
         log = get_logger("Sampling")
         log.info("a")
@@ -799,6 +880,7 @@ class TestLogger:
 
     def test_get_records_filtering(self):
         from pystructurePipeline.pystructureLogger import logger, get_logger
+
         logger.configure(verbose=False, log_file=None)
         log = get_logger("Keys")
         log.info("info msg")
@@ -818,9 +900,11 @@ class TestPipelineHandlerLogging:
         conf_path = kh._write_minimal_config(tmp_path)
 
         from pystructurePipeline.handler_pipeline import PipelineHandler
+
         log_path = tmp_path / "run.log"
-        handler = PipelineHandler(conf_path=str(conf_path), verbose=False,
-                                  log_file=str(log_path))
+        handler = PipelineHandler(
+            conf_path=str(conf_path), verbose=False, log_file=str(log_path)
+        )
         assert log_path.exists()
         content = log_path.read_text()
         assert "[Loading]" in content

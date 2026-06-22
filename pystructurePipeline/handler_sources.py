@@ -13,7 +13,6 @@ from pystructurePipeline.pystructureLogger import get_logger
 LOG = get_logger("Loading")
 
 
-
 class SourceHandler:
     """
     Manages the source list and their geometric parameters.
@@ -43,7 +42,7 @@ class SourceHandler:
 
     def __init__(self, source_table: pd.DataFrame, sources: list):
         self.source_table = source_table.copy()
-        self.sources      = list(sources)
+        self.sources = list(sources)
         # Build a name → row-index lookup for O(1) access
         self._index = {row["source"]: idx for idx, row in source_table.iterrows()}
         self._validate()
@@ -95,12 +94,8 @@ class SourceHandler:
         KeyError if *source* is not in the geometry table.
         """
         if source not in self._index:
-            LOG.error(
-                f"Source '{source}' not found in geometry table."
-            )
-            raise KeyError(
-                f"Source '{source}' not found in geometry table."
-            )
+            LOG.error(f"Source '{source}' not found in geometry table.")
+            raise KeyError(f"Source '{source}' not found in geometry table.")
         return self.source_table.loc[self._index[source]].to_dict()
 
     # Convenience accessors for the most commonly needed parameters
@@ -139,6 +134,5 @@ class SourceHandler:
 
     def __repr__(self):
         return (
-            f"SourceHandler(n_sources={self.n_sources()}, "
-            f"sources={self.sources})"
+            f"SourceHandler(n_sources={self.n_sources()}, " f"sources={self.sources})"
         )

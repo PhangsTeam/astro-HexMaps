@@ -53,14 +53,30 @@ LOG = get_logger("Loading")
 # HFS_COLUMNS:  columns in the optional keys/hfs_lines.txt
 # ---------------------------------------------------------------------------
 
-MAP_COLUMNS        = ["map_name", "map_desc", "map_unit", "map_ext", "map_dir", "map_uc"]
-CUBE_COLUMNS       = ["line_name", "line_desc", "line_unit", "line_ext", "line_dir", "map_ext", "map_uc"]
-MASK_COLUMNS_VEL   = ["mask_name", "mask_desc", "mask_start", "mask_end", "mask_unit"]
-MASK_COLUMNS_FILE  = ["mask_name", "mask_desc", "mask_ext", "mask_dir"]
-TARGET_COLUMNS     = [
-    "source", "ra_ctr", "dec_ctr", "dist_mpc", "e_dist_mpc",
-    "incl_deg", "e_incl_deg", "posang_deg", "e_posang_deg",
-    "r25", "e_r25",
+MAP_COLUMNS = ["map_name", "map_desc", "map_unit", "map_ext", "map_dir", "map_uc"]
+CUBE_COLUMNS = [
+    "line_name",
+    "line_desc",
+    "line_unit",
+    "line_ext",
+    "line_dir",
+    "map_ext",
+    "map_uc",
+]
+MASK_COLUMNS_VEL = ["mask_name", "mask_desc", "mask_start", "mask_end", "mask_unit"]
+MASK_COLUMNS_FILE = ["mask_name", "mask_desc", "mask_ext", "mask_dir"]
+TARGET_COLUMNS = [
+    "source",
+    "ra_ctr",
+    "dec_ctr",
+    "dist_mpc",
+    "e_dist_mpc",
+    "incl_deg",
+    "e_incl_deg",
+    "posang_deg",
+    "e_posang_deg",
+    "r25",
+    "e_r25",
 ]
 HFS_COLUMNS = ["hfs_name", "hfs_ref_freq", "hfs_freq", "unit"]
 
@@ -106,13 +122,13 @@ class KeyHandler:
         self._validate_conf_path()
 
         # All parsed data; populated in load()
-        self.meta         = {}
-        self.sources      = []
+        self.meta = {}
+        self.sources = []
         self.source_table = None
-        self.maps         = None
-        self.cubes        = None
-        self.input_mask   = None
-        self.hfs_data     = None
+        self.maps = None
+        self.cubes = None
+        self.input_mask = None
+        self.hfs_data = None
 
         self.load()
 
@@ -191,7 +207,7 @@ class KeyHandler:
             for raw_line in f:
                 stripped = raw_line.strip()
 
-                if re.match(r'^#\s*----\s*(map|cube|mask)', stripped, re.IGNORECASE):
+                if re.match(r"^#\s*----\s*(map|cube|mask)", stripped, re.IGNORECASE):
                     in_table = True
                     continue
 
@@ -238,18 +254,22 @@ class KeyHandler:
         cfg.read_string(ini_text)
 
         paths = dict(cfg["paths"]) if "paths" in cfg else {}
-        meta  = dict(cfg["meta"])  if "meta"  in cfg else {}
+        meta = dict(cfg["meta"]) if "meta" in cfg else {}
 
         def _get_path(key, fallback):
             if key in paths:
                 return paths[key]
-            LOG.warning(f"[paths] {key} not set in config.txt; using default: {fallback}")
+            LOG.warning(
+                f"[paths] {key} not set in config.txt; using default: {fallback}"
+            )
             return fallback
 
         def _get_meta(key, fallback):
             if key in meta:
                 return meta[key]
-            LOG.warning(f"[meta] {key} not set in config.txt; using default: {fallback!r}")
+            LOG.warning(
+                f"[meta] {key} not set in config.txt; using default: {fallback!r}"
+            )
             return fallback
 
         # Resolve all paths relative to the directory containing config.txt.
@@ -257,19 +277,23 @@ class KeyHandler:
         # this is safe even when conf_path itself is given as a relative path.
         base = self.conf_path.resolve().parent
 
-        self.meta["data_dir"]  = str(base / _get_path("data_dir", "data/"))
-        self.meta["out_dir"]   = str(base / _get_path("out_dir", "output/"))
+        self.meta["data_dir"] = str(base / _get_path("data_dir", "data/"))
+        self.meta["out_dir"] = str(base / _get_path("out_dir", "output/"))
         # geom_file and hfs_file intentionally fall back to a default path
         # next to config.txt without a warning: this is documented behavior
         # (geom_file is required regardless and will raise its own error if
         # missing; hfs_file is optional and its "fallback" already depends
         # on whether the default file happens to exist, not just on whether
         # the key was set).
-        self.meta["geom_file"] = str(base / paths.get("geom_file", "keys/target_definitions.txt"))
-        self.meta["hfs_file"]  = str(base / paths.get("hfs_file", "")) if paths.get("hfs_file") else None
+        self.meta["geom_file"] = str(
+            base / paths.get("geom_file", "keys/target_definitions.txt")
+        )
+        self.meta["hfs_file"] = (
+            str(base / paths.get("hfs_file", "")) if paths.get("hfs_file") else None
+        )
 
-        self.meta["user"]      = _get_meta("user",     "Unknown user")
-        self.meta["comments"]  = _get_meta("comments", "")
+        self.meta["user"] = _get_meta("user", "Unknown user")
+        self.meta["comments"] = _get_meta("comments", "")
 
         # Store the absolute project root so _load_sources_and_tables can
         # resolve relative map_dir / line_dir entries to absolute paths.
@@ -353,41 +377,59 @@ class KeyHandler:
             return str(fallback)
 
         # Resolution
-        self.meta["target_res"]       = float(_get("resolution", "target_res",       27.0))
-        self.meta["resolution"]       =       _get("resolution", "resolution",       "angular")
+        self.meta["target_res"] = float(_get("resolution", "target_res", 27.0))
+        self.meta["resolution"] = _get("resolution", "resolution", "angular")
         self.meta["pixels_per_beam"] = float(_get("resolution", "pixels_per_beam", 2.0))
-        self.meta["max_rad"]          =       _get("resolution", "max_rad",          "auto")
-        self.meta["NAXIS_shuff"]      = int(float(_get("resolution", "NAXIS_shuff",  200)))
-        self.meta["CDELT_SHUFF"]      = float(_get("resolution", "CDELT_SHUFF",      4000.0))
+        self.meta["max_rad"] = _get("resolution", "max_rad", "auto")
+        self.meta["NAXIS_shuff"] = int(float(_get("resolution", "NAXIS_shuff", 200)))
+        self.meta["CDELT_SHUFF"] = float(_get("resolution", "CDELT_SHUFF", 4000.0))
 
         # Masking
-        self.meta["ref_line"]           =       _get("masking", "ref_line",           "first")
-        self.meta["SN_processing"]      = [float(x) for x in _get("masking", "SN_processing", "2,4").split(",")]
-        self.meta["strict_mask"]        =       _get("masking", "strict_mask",        "false").lower() == "true"
-        self.meta["use_input_mask"]     =       _get("masking", "use_input_mask",     "false").lower() == "true"
-        self.meta["use_fixed_vel_mask"] =       _get("masking", "use_fixed_vel_mask", "false").lower() == "true"
-        self.meta["use_hfs_lines"]      =       _get("masking", "use_hfs_lines",      "false").lower() == "true"
-        self.meta["mom_thresh"]         = float(_get("masking", "mom_thresh",         5.0))
-        self.meta["conseq_channels"]    = int(float(_get("masking", "conseq_channels", 3)))
-        self.meta["mom2_method"]        =       _get("masking", "mom2_method",        "fwhm")
+        self.meta["ref_line"] = _get("masking", "ref_line", "first")
+        self.meta["SN_processing"] = [
+            float(x) for x in _get("masking", "SN_processing", "2,4").split(",")
+        ]
+        self.meta["strict_mask"] = (
+            _get("masking", "strict_mask", "false").lower() == "true"
+        )
+        self.meta["use_input_mask"] = (
+            _get("masking", "use_input_mask", "false").lower() == "true"
+        )
+        self.meta["use_fixed_vel_mask"] = (
+            _get("masking", "use_fixed_vel_mask", "false").lower() == "true"
+        )
+        self.meta["use_hfs_lines"] = (
+            _get("masking", "use_hfs_lines", "false").lower() == "true"
+        )
+        self.meta["mom_thresh"] = float(_get("masking", "mom_thresh", 5.0))
+        self.meta["conseq_channels"] = int(float(_get("masking", "conseq_channels", 3)))
+        self.meta["mom2_method"] = _get("masking", "mom2_method", "fwhm")
 
         # Output
-        self.meta["save_fits"]        =       _get("output", "save_fits",        "false").lower() == "true"
-        self.meta["save_mom_maps"]    =       _get("output", "save_mom_maps",    "true").lower()  == "true"
-        self.meta["save_maps"]        =       _get("output", "save_maps",        "true").lower()  == "true"
-        self.meta["save_mask"]        =       _get("output", "save_mask",        "false").lower() == "true"
-        self.meta["folder_savefits"]  =       _get("output", "folder_savefits",  "./saved_fits_files/")
+        self.meta["save_fits"] = _get("output", "save_fits", "false").lower() == "true"
+        self.meta["save_mom_maps"] = (
+            _get("output", "save_mom_maps", "true").lower() == "true"
+        )
+        self.meta["save_maps"] = _get("output", "save_maps", "true").lower() == "true"
+        self.meta["save_mask"] = _get("output", "save_mask", "false").lower() == "true"
+        self.meta["folder_savefits"] = _get(
+            "output", "folder_savefits", "./saved_fits_files/"
+        )
 
         # Spectral smoothing
-        self.meta["spec_smooth"]        = _get("spectral", "spec_smooth",        "default")
-        self.meta["spec_smooth_method"] = _get("spectral", "spec_smooth_method", "binned")
+        self.meta["spec_smooth"] = _get("spectral", "spec_smooth", "default")
+        self.meta["spec_smooth_method"] = _get(
+            "spectral", "spec_smooth_method", "binned"
+        )
 
         # Structure creation
-        self.meta["structure_creation"] = _get("structure", "structure_creation", "default")
+        self.meta["structure_creation"] = _get(
+            "structure", "structure_creation", "default"
+        )
         # fname_fill is an optional, rarely-used override (only relevant
         # when structure_creation = "fill"), so its fallback to "" is
         # expected for most users and not worth a warning.
-        self.meta["fname_fill"]         = _get("structure", "fname_fill", "", warn=False)
+        self.meta["fname_fill"] = _get("structure", "fname_fill", "", warn=False)
 
     def _load_target_definitions(self):
         """
@@ -417,8 +459,11 @@ class KeyHandler:
         # field (e.g. "ngc5194,  202.4696,\t47.1952"). A regex separator
         # consumes the comma plus any surrounding whitespace in one go.
         self.source_table = pd.read_csv(
-            geom_path, sep=r"\s*,\s*", engine="python",
-            names=TARGET_COLUMNS, comment="#",
+            geom_path,
+            sep=r"\s*,\s*",
+            engine="python",
+            names=TARGET_COLUMNS,
+            comment="#",
         )
 
     def _load_sources_and_tables(self):
@@ -500,12 +545,15 @@ class KeyHandler:
                 low = line.lower()
 
                 # Update the current section based on divider comments
-                if "---- map"  in low and line.startswith("#"):
-                    section = "maps";  continue
+                if "---- map" in low and line.startswith("#"):
+                    section = "maps"
+                    continue
                 if "---- cube" in low and line.startswith("#"):
-                    section = "cubes"; continue
+                    section = "cubes"
+                    continue
                 if "---- mask" in low and line.startswith("#"):
-                    section = "mask";  continue
+                    section = "mask"
+                    continue
 
                 # Skip all other comments and ini-style [section]/key=value lines
                 if line.startswith("#") or line.startswith("["):
@@ -518,18 +566,18 @@ class KeyHandler:
                 if section == "maps" and len(parts) >= 4:
                     while len(parts) < len(MAP_COLUMNS):
                         parts.append("")
-                    map_rows.append(parts[:len(MAP_COLUMNS)])
+                    map_rows.append(parts[: len(MAP_COLUMNS)])
 
                 elif section == "cubes" and len(parts) >= 4:
                     while len(parts) < len(CUBE_COLUMNS):
                         parts.append("")
-                    cube_rows.append(parts[:len(CUBE_COLUMNS)])
+                    cube_rows.append(parts[: len(CUBE_COLUMNS)])
 
                 elif section == "mask" and len(parts) >= 3:
                     mask_rows.append(parts)
 
         # Build DataFrames
-        self.maps  = pd.DataFrame(map_rows,  columns=MAP_COLUMNS)
+        self.maps = pd.DataFrame(map_rows, columns=MAP_COLUMNS)
         self.cubes = pd.DataFrame(cube_rows, columns=CUBE_COLUMNS)
 
         # ------------------------------------------------------------------
@@ -548,10 +596,16 @@ class KeyHandler:
             )
 
         # Build mask DataFrame with the appropriate column set
-        cols = MASK_COLUMNS_VEL if self.meta.get("use_fixed_vel_mask") else MASK_COLUMNS_FILE
+        cols = (
+            MASK_COLUMNS_VEL
+            if self.meta.get("use_fixed_vel_mask")
+            else MASK_COLUMNS_FILE
+        )
         if mask_rows:
             padded = [r + [""] * max(0, len(cols) - len(r)) for r in mask_rows]
-            self.input_mask = pd.DataFrame([r[:len(cols)] for r in padded], columns=cols)
+            self.input_mask = pd.DataFrame(
+                [r[: len(cols)] for r in padded], columns=cols
+            )
         else:
             self.input_mask = pd.DataFrame(columns=cols)
 
@@ -577,8 +631,11 @@ class KeyHandler:
         # Comma-separated, but tolerant of stray spaces/tabs around each
         # field — see the matching comment in _load_target_definitions.
         self.hfs_data = pd.read_csv(
-            hfs_path, sep=r"\s*,\s*", engine="python",
-            names=HFS_COLUMNS, comment="#",
+            hfs_path,
+            sep=r"\s*,\s*",
+            engine="python",
+            names=HFS_COLUMNS,
+            comment="#",
         )
 
     # ------------------------------------------------------------------
@@ -600,7 +657,7 @@ class KeyHandler:
         - overlay_file is set
         """
         issues = []
-        if self.maps  is None or len(self.maps)  == 0:
+        if self.maps is None or len(self.maps) == 0:
             issues.append("No maps defined in config.txt.")
         if self.cubes is None or len(self.cubes) == 0:
             issues.append("No cubes defined in config.txt.")
@@ -615,7 +672,7 @@ class KeyHandler:
         return len(issues) == 0
 
     def __repr__(self):
-        n_maps  = len(self.maps)  if self.maps  is not None else 0
+        n_maps = len(self.maps) if self.maps is not None else 0
         n_cubes = len(self.cubes) if self.cubes is not None else 0
         return (
             f"KeyHandler(conf_path='{self.conf_path}', "

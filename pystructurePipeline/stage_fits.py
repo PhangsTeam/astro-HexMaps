@@ -82,15 +82,17 @@ from pystructurePipeline.pystructureLogger import get_logger
 LOG = get_logger("FITS")
 
 
-
 # ============================================================================
 # Grid helpers
 # ============================================================================
 
-def sample_to_hdr(in_data: Union[np.ndarray, Sequence[float]],
-                  ra_samp: Union[np.ndarray, Sequence[float]],
-                  dec_samp: Union[np.ndarray, Sequence[float]],
-                  in_hdr: fits.Header) -> np.ndarray:
+
+def sample_to_hdr(
+    in_data: Union[np.ndarray, Sequence[float]],
+    ra_samp: Union[np.ndarray, Sequence[float]],
+    dec_samp: Union[np.ndarray, Sequence[float]],
+    in_hdr: fits.Header,
+) -> np.ndarray:
     """
     Regrid hex-sampled 1-D data onto a 2-D rectangular pixel grid.
 
@@ -113,7 +115,7 @@ def sample_to_hdr(in_data: Union[np.ndarray, Sequence[float]],
     y_axis = np.arange(in_hdr["NAXIS2"])
     grid_x, grid_y = np.meshgrid(x_axis, y_axis)
 
-    wcs          = WCS(in_hdr)
+    wcs = WCS(in_hdr)
     pixel_coords = wcs.all_world2pix(np.column_stack((ra_samp, dec_samp)), 0)
     return griddata(pixel_coords, in_data, (grid_x, grid_y), method="nearest")
 
@@ -143,20 +145,20 @@ def resample_hdr(hdr_ov, target_res):
     wcs_new.wcs.cunit = ["deg", "deg"]
     wcs_new.wcs.ctype = ["RA---TAN", "DEC--TAN"]
 
-    delta_px = target_res / 3600.0 / 3.0   # 3 pixels per beam FWHM
+    delta_px = target_res / 3600.0 / 3.0  # 3 pixels per beam FWHM
     wcs_new.wcs.cdelt = [-delta_px, delta_px]
 
     xaxis_n = int(np.round(hdr_ov["NAXIS1"] * abs(hdr_ov["CDELT1"]) / delta_px))
     yaxis_n = int(np.round(hdr_ov["NAXIS2"] * abs(hdr_ov["CDELT2"]) / delta_px))
     wcs_new.array_shape = [xaxis_n, yaxis_n]
 
-    hdr_new          = wcs_new.to_header()
-    hdr_new["NAXIS"]  = 2
+    hdr_new = wcs_new.to_header()
+    hdr_new["NAXIS"] = 2
     hdr_new["NAXIS1"] = xaxis_n
     hdr_new["NAXIS2"] = yaxis_n
-    hdr_new["BMAJ"]   = target_res / 3600.0
-    hdr_new["BMIN"]   = target_res / 3600.0
-    hdr_new["BPA"]    = 0.0
+    hdr_new["BMAJ"] = target_res / 3600.0
+    hdr_new["BMIN"] = target_res / 3600.0
+    hdr_new["BPA"] = 0.0
     return hdr_new
 
 
@@ -170,8 +172,10 @@ def resample_hdr(hdr_ov, target_res):
 # PPV grid instead of sampling at hex-grid points first.
 # ============================================================================
 
-def get_convolved_ppv_cube(source, line_name, line_dir, line_ext, target_res_as,
-                           ov_hdr, fits_dir, log=None):
+
+def get_convolved_ppv_cube(
+    source, line_name, line_dir, line_ext, target_res_as, ov_hdr, fits_dir, log=None
+):
     """
     Obtain a convolved PPV cube for *line_name*, aligned to the overlay WCS.
 
@@ -214,7 +218,9 @@ def get_convolved_ppv_cube(source, line_name, line_dir, line_ext, target_res_as,
     log.info(f"Convolving raw input from scratch: {raw_path}")
     if not os.path.exists(raw_path):
         log.error(f"Raw input cube not found for line: {line_name}: {raw_path}")
-        raise FileNotFoundError(f"Raw input cube not found for line: {line_name}: {raw_path}")
+        raise FileNotFoundError(
+            f"Raw input cube not found for line: {line_name}: {raw_path}"
+        )
 
     data, hdr = fits.getdata(raw_path, header=True)
     data, hdr = convolve_cube_to_target(data, hdr, target_res_as, log=log)
@@ -250,11 +256,11 @@ def convolve_cube_to_target(data, hdr, target_res_as, log=None):
         return data, hdr
 
     data, hdr_out = conv_with_gauss(
-        in_data     = data,
-        in_hdr      = hdr,
-        target_beam = target_res_as * np.array([1.0, 1.0, 0.0]),
-        quiet       = True,
-        log         = log,
+        in_data=data,
+        in_hdr=hdr,
+        target_beam=target_res_as * np.array([1.0, 1.0, 0.0]),
+        quiet=True,
+        log=log,
     )
     return data, hdr_out
 
@@ -283,16 +289,27 @@ def reproject_cube_to_overlay(data, hdr, ov_hdr, log=None):
     log = log or LOG
     trg_hdr = copy.deepcopy(ov_hdr)
     trg_hdr, _ = _ensure_ms(trg_hdr)
-    hdr, data  = _ensure_ms(copy.copy(hdr), data)
+    hdr, data = _ensure_ms(copy.copy(hdr), data)
 
     _harmonize_restfreq(hdr, trg_hdr)
     data, _ = reproject_interp((data, hdr), trg_hdr, order="nearest-neighbor")
     return data, trg_hdr
 
 
-def save_to_fits(ra, dec, hdr_in, ov_slice, key, filename,
-                 this_source, this_data, line, folder, target_res,
-                 out_nan_mask=None):
+def save_to_fits(
+    ra,
+    dec,
+    hdr_in,
+    ov_slice,
+    key,
+    filename,
+    this_source,
+    this_data,
+    line,
+    folder,
+    target_res,
+    out_nan_mask=None,
+):
     """
     Regrid one table column and write it to a FITS file.
 
@@ -319,7 +336,7 @@ def save_to_fits(ra, dec, hdr_in, ov_slice, key, filename,
     if col_name not in this_data.colnames:
         return
 
-    data_in  = copy.deepcopy(this_data[col_name])
+    data_in = copy.deepcopy(this_data[col_name])
     map_cart = sample_to_hdr(data_in, ra, dec, hdr_in)
 
     # Apply footprint mask (NaN outside the observed area)
@@ -338,7 +355,8 @@ def save_to_fits(ra, dec, hdr_in, ov_slice, key, filename,
     if out_nan_mask is not None:
         if output_hdr is not hdr_in:
             nan_repr, _ = reproject_interp(
-                (out_nan_mask.astype(float), hdr_in), output_hdr,
+                (out_nan_mask.astype(float), hdr_in),
+                output_hdr,
                 order="nearest-neighbor",
             )
             nan_mask_out = nan_repr > 0.5
@@ -375,32 +393,37 @@ def construct_mask_ppv(ref_cube, SN_processing):
     # Two-pass global MAD to estimate the noise floor (identical to the
     # hex-grid version, just over the whole cube instead of the whole table)
     rms = median_absolute_deviation(ref_cube, axis=None, ignore_nan=True)
-    rms = median_absolute_deviation(ref_cube[np.where(ref_cube < 3 * rms)], ignore_nan=True)
+    rms = median_absolute_deviation(
+        ref_cube[np.where(ref_cube < 3 * rms)], ignore_nan=True
+    )
 
     # Per-pixel noise: MAD of channels below the global 3-sigma threshold.
     # axis=0 is the spectral axis here (vs axis=1 for the hex-grid table).
-    mask_rough  = ref_cube < 3 * rms
+    mask_rough = ref_cube < 3 * rms
     masked_cube = np.where(mask_rough, ref_cube, np.nan)
-    med_mask    = np.nanmedian(masked_cube, axis=0)
-    mad_mask    = np.nanmedian(np.abs(masked_cube - med_mask[None, :, :]), axis=0)
+    med_mask = np.nanmedian(masked_cube, axis=0)
+    mad_mask = np.nanmedian(np.abs(masked_cube - med_mask[None, :, :]), axis=0)
 
-    low_thresh  = SN_processing[0] * mad_mask[None, :, :]
+    low_thresh = SN_processing[0] * mad_mask[None, :, :]
     high_thresh = SN_processing[1] * mad_mask[None, :, :]
 
     # Initial high-S/N mask: channel above high_thresh with adjacent support.
     # np.roll along axis=0 (spectral) replaces axis=1 from the hex-grid version.
-    mask     = (ref_cube > high_thresh).astype(int)
+    mask = (ref_cube > high_thresh).astype(int)
     low_mask = (ref_cube > low_thresh).astype(int)
     mask = mask & (np.roll(mask, 1, 0) | np.roll(mask, -1, 0))
 
     # Require >= 3 of 3 consecutive channels to suppress single-channel spikes
-    mask     = ((mask     + np.roll(mask,     1, 0) + np.roll(mask,     -1, 0)) >= 3).astype(int)
-    low_mask = ((low_mask + np.roll(low_mask, 1, 0) + np.roll(low_mask, -1, 0)) >= 3).astype(int)
+    mask = ((mask + np.roll(mask, 1, 0) + np.roll(mask, -1, 0)) >= 3).astype(int)
+    low_mask = (
+        (low_mask + np.roll(low_mask, 1, 0) + np.roll(low_mask, -1, 0)) >= 3
+    ).astype(int)
 
     # Dilate high-S/N core into low-S/N wings (5 passes)
     for _ in range(5):
-        mask = (((mask + np.roll(mask, 1, 0) + np.roll(mask, -1, 0)) >= 1).astype(int)
-                * low_mask)
+        mask = ((mask + np.roll(mask, 1, 0) + np.roll(mask, -1, 0)) >= 1).astype(
+            int
+        ) * low_mask
 
     # Grow mask edge by 2 channels to ensure full line coverage
     for _ in range(2):
@@ -444,7 +467,7 @@ def apply_strict_mask_ppv(mask, min_pixels=5):
             continue
         sizes = np.bincount(labels.ravel())
         small_labels = np.where(sizes < min_pixels)[0]
-        small_labels = small_labels[small_labels != 0]   # never touch background
+        small_labels = small_labels[small_labels != 0]  # never touch background
         if len(small_labels):
             mask[ch][np.isin(labels, small_labels)] = 0
     return mask
@@ -474,15 +497,19 @@ def build_hfs_mask_ppv(mask, line_name, hfs_data, delta_v_kms):
     if line_name not in lines_hfs:
         return None
 
-    idx_cols  = hfs_data["hfs_name"] == line_name
-    restfreqs = [f * au.Unit(str(u)) for f, u in
-                 zip(hfs_data["hfs_ref_freq"][idx_cols], hfs_data["unit"][idx_cols])]
-    hfs_freqs = [f * au.Unit(str(u)) for f, u in
-                 zip(hfs_data["hfs_freq"][idx_cols],     hfs_data["unit"][idx_cols])]
+    idx_cols = hfs_data["hfs_name"] == line_name
+    restfreqs = [
+        f * au.Unit(str(u))
+        for f, u in zip(hfs_data["hfs_ref_freq"][idx_cols], hfs_data["unit"][idx_cols])
+    ]
+    hfs_freqs = [
+        f * au.Unit(str(u))
+        for f, u in zip(hfs_data["hfs_freq"][idx_cols], hfs_data["unit"][idx_cols])
+    ]
 
     mask_hfs = mask.copy()
     for freq, restfreq in zip(hfs_freqs, restfreqs):
-        v_shift  = freq.to(au.km / au.s, equivalencies=au.doppler_radio(restfreq))
+        v_shift = freq.to(au.km / au.s, equivalencies=au.doppler_radio(restfreq))
         shift_ch = int(np.rint(v_shift.value / delta_v_kms))
 
         mask_shift = np.zeros_like(mask, dtype=float)
@@ -546,7 +573,7 @@ def external_mask_ppv(mask_file, ov_hdr, log=None):
     """
     log = log or LOG
     data, hdr = fits.getdata(mask_file, header=True)
-    is_cube   = (data.ndim == 3)
+    is_cube = data.ndim == 3
 
     trg_hdr = copy.deepcopy(ov_hdr)
     if not is_cube:
@@ -627,7 +654,7 @@ def save_ppv_mask_to_fits(mask, ov_hdr, source, filename, folder, out_nan_mask=N
 
     Output filename: {source}_{filename}.fits
     """
-    hdr_out  = copy.copy(ov_hdr)
+    hdr_out = copy.copy(ov_hdr)
     data_out = np.asarray(mask, dtype=float).copy()
     if out_nan_mask is not None:
         data_out[:, out_nan_mask] = np.nan
@@ -681,27 +708,31 @@ def build_edge_mask(ov_footprint, ov_hdr, target_res_as):
                 spatial dimension of any mask to remove convolution-edge pixels
     """
     # Trim radius in pixels
-    pix_scale_as = abs(ov_hdr["CDELT1"]) * 3600.0          # arcsec/pixel
+    pix_scale_as = abs(ov_hdr["CDELT1"]) * 3600.0  # arcsec/pixel
     trim_radius_pix = int(np.round((target_res_as / 2.0) / pix_scale_as, 0))
 
     if trim_radius_pix <= 0:
         LOG.warning("Edge trim radius is <= 0 pixels; no edge removal applied.")
         return ov_footprint.astype(float)
 
-    LOG.info(f"Removing {trim_radius_pix} pixel edge border "
-             f"(= half beam = {target_res_as/2:.1f} arcsec at "
-             f"{pix_scale_as:.2f} arcsec/px).")
+    LOG.info(
+        f"Removing {trim_radius_pix} pixel edge border "
+        f"(= half beam = {target_res_as/2:.1f} arcsec at "
+        f"{pix_scale_as:.2f} arcsec/px)."
+    )
 
     # Circular structuring element for isotropic erosion of the non-NaN blob
     from skimage.morphology import disk
+
     structure = disk(trim_radius_pix)
 
     eroded = binary_erosion(ov_footprint, structure=structure)
     return eroded.astype(float)
 
 
-def run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder,
-                    save_mask=False):
+def run_moments_ppv(
+    source, meta, cubes, input_mask, hfs_data, params, folder, save_mask=False
+):
     """
     Compute and write PPV-native moment maps for every cube of *source*.
 
@@ -733,41 +764,50 @@ def run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder,
                 every line whose HFS-extended mask actually differs from
                 the combined mask.
     """
-    use_input_mask     = meta.get("use_input_mask",     False)
+    use_input_mask = meta.get("use_input_mask", False)
     use_fixed_vel_mask = meta.get("use_fixed_vel_mask", False)
-    use_mask           = use_input_mask or use_fixed_vel_mask
+    use_mask = use_input_mask or use_fixed_vel_mask
     if input_mask is None:
         input_mask = []
-    use_hfs_lines      = meta.get("use_hfs_lines",      False)
-    strict_mask        = meta.get("strict_mask",        False)
-    ref_line_method    = meta.get("ref_line",           "first")
-    SN_processing      = meta.get("SN_processing",      [2, 4])
-    mom_calc           = [meta.get("mom_thresh",        5),
-                          meta.get("conseq_channels",   3),
-                          meta.get("mom2_method",       "fwhm")]
-    target_res_as       = _resolve_target_res(params, meta)
-    data_dir            = meta.get("data_dir", "data/")
+    use_hfs_lines = meta.get("use_hfs_lines", False)
+    strict_mask = meta.get("strict_mask", False)
+    ref_line_method = meta.get("ref_line", "first")
+    SN_processing = meta.get("SN_processing", [2, 4])
+    mom_calc = [
+        meta.get("mom_thresh", 5),
+        meta.get("conseq_channels", 3),
+        meta.get("mom2_method", "fwhm"),
+    ]
+    target_res_as = _resolve_target_res(params, meta)
+    data_dir = meta.get("data_dir", "data/")
 
     line_names = [str(l) for l in cubes["line_name"]]
-    n_lines    = len(line_names)
+    n_lines = len(line_names)
 
-    ref_line = (ref_line_method.upper()
-                if ref_line_method in line_names
-                else line_names[0].upper())
+    ref_line = (
+        ref_line_method.upper()
+        if ref_line_method in line_names
+        else line_names[0].upper()
+    )
 
     # ------------------------------------------------------------------
     # Load the overlay cube to get the reference WCS/spectral axis.
     # ------------------------------------------------------------------
-    overlay_file  = meta.get("overlay_file", "")
-    overlay_fname = (os.path.join(data_dir, overlay_file) if source in overlay_file
-                     else os.path.join(data_dir, source + overlay_file))
+    overlay_file = meta.get("overlay_file", "")
+    overlay_fname = (
+        os.path.join(data_dir, overlay_file)
+        if source in overlay_file
+        else os.path.join(data_dir, source + overlay_file)
+    )
     if not os.path.exists(overlay_fname):
         LOG.error(f"Overlay file not found: {overlay_fname}")
         raise FileNotFoundError(f"Overlay file not found: {overlay_fname}")
     ov_data, ov_hdr = fits.getdata(overlay_fname, header=True)
     ov_hdr, _ = _ensure_ms(copy.copy(ov_hdr))
 
-    delta_v_kms = (ov_hdr["CDELT3"] * au.Unit(ov_hdr.get("CUNIT3", "m/s"))).to(au.km / au.s).value
+    delta_v_kms = (
+        (ov_hdr["CDELT3"] * au.Unit(ov_hdr.get("CUNIT3", "m/s"))).to(au.km / au.s).value
+    )
     vaxis = (_get_vaxis(ov_hdr) * au.Unit(ov_hdr.get("CUNIT3", "m/s"))).to(au.km / au.s)
 
     # ------------------------------------------------------------------
@@ -778,14 +818,24 @@ def run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder,
     for _, row in cubes.iterrows():
         name = str(row["line_name"])
         data, _ = get_convolved_ppv_cube(
-            source, name, str(row["line_dir"]), str(row["line_ext"]),
-            target_res_as, ov_hdr, folder, log=LOG,
+            source,
+            name,
+            str(row["line_dir"]),
+            str(row["line_ext"]),
+            target_res_as,
+            ov_hdr,
+            folder,
+            log=LOG,
         )
         cube_data[name.upper()] = data * au.Unit(str(row["line_unit"]))
 
     if ref_line.upper() not in cube_data:
-        LOG.error(f"Reference line {ref_line} not found among loaded cubes for {source}.")
-        raise FileNotFoundError(f"Reference line {ref_line} not found among loaded cubes for {source}.")
+        LOG.error(
+            f"Reference line {ref_line} not found among loaded cubes for {source}."
+        )
+        raise FileNotFoundError(
+            f"Reference line {ref_line} not found among loaded cubes for {source}."
+        )
 
     # ------------------------------------------------------------------
     # Step 1: constrain every convolved cube to the overlay's valid-pixel
@@ -795,7 +845,7 @@ def run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder,
     # erosion reflects the actual data coverage, not just the reprojected
     # grid extent, and propagates NaN correctly through to the moments.
     # ------------------------------------------------------------------
-    ov_footprint = np.any(np.isfinite(ov_data), axis=0)   # (ny, nx) bool
+    ov_footprint = np.any(np.isfinite(ov_data), axis=0)  # (ny, nx) bool
     for name in cube_data:
         cube_val = cube_data[name].value.copy()
         cube_val[:, ~ov_footprint] = np.nan
@@ -820,11 +870,12 @@ def run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder,
             raise ValueError("use_mask is True but no mask defined in config.txt.")
 
         if use_fixed_vel_mask:
-            mask_unit  = input_mask["mask_unit"].iloc[0]
+            mask_unit = input_mask["mask_unit"].iloc[0]
             mask_start = float(input_mask["mask_start"].iloc[0]) * au.Unit(mask_unit)
-            mask_end   = float(input_mask["mask_end"].iloc[0])   * au.Unit(mask_unit)
-            mask = fixed_velocity_mask_ppv(cube_data[ref_line].shape, ov_hdr,
-                                           mask_start, mask_end, mask_unit)
+            mask_end = float(input_mask["mask_end"].iloc[0]) * au.Unit(mask_unit)
+            mask = fixed_velocity_mask_ppv(
+                cube_data[ref_line].shape, ov_hdr, mask_start, mask_end, mask_unit
+            )
             LOG.info(f"Fixed velocity mask applied ({mask_start} to {mask_end}).")
         else:
             mask_file = os.path.join(
@@ -845,26 +896,28 @@ def run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder,
         elif isinstance(ref_line_method, int):
             n_mask = min(n_lines, ref_line_method)
         else:
-            n_mask = 0   # "first": only the reference line
+            n_mask = 0  # "first": only the reference line
 
         for n_mask_i in range(1, n_mask + 1):
             line_i = line_names[n_mask_i].upper()
             if line_i not in cube_data:
                 continue
             mask_i = construct_mask_ppv(cube_data[line_i].value, SN_processing)
-            mask = ((mask.astype(int) | mask_i.astype(int)))
+            mask = mask.astype(int) | mask_i.astype(int)
             LOG.info(f"Combined PPV mask includes {line_i}.")
 
         if ref_line_method == "ref+HI":
             if "HI" in cube_data:
                 mask_hi = construct_mask_ppv(cube_data["HI"].value, SN_processing)
-                mask = (mask.astype(int) | mask_hi.astype(int))
+                mask = mask.astype(int) | mask_hi.astype(int)
                 LOG.info("ref+HI mask: combined reference line and HI masks.")
             else:
                 LOG.warning("HI not found among loaded cubes; ignoring ref+HI option.")
 
         if strict_mask:
-            LOG.info("Applying strict spatial mask filter (connected-component, PPV grid).")
+            LOG.info(
+                "Applying strict spatial mask filter (connected-component, PPV grid)."
+            )
             mask = apply_strict_mask_ppv(mask.astype(int))
 
     # ------------------------------------------------------------------
@@ -885,16 +938,18 @@ def run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder,
     # share the same NaN pattern as the moment maps. The regrid stage already
     # applied ov_footprint, but the edge-strip erosion only happens here.
     for _, row in cubes.iterrows():
-        cube_fits_path = os.path.join(folder,
-            f"{source}_{row['line_name']}_{target_res_as}as.fits")
+        cube_fits_path = os.path.join(
+            folder, f"{source}_{row['line_name']}_{target_res_as}as.fits"
+        )
         if os.path.exists(cube_fits_path):
             data_c, hdr_c = fits.getdata(cube_fits_path, header=True)
             data_c[:, out_nan_mask] = np.nan
             fits.writeto(cube_fits_path, data=data_c, header=hdr_c, overwrite=True)
 
     if save_mask:
-        save_ppv_mask_to_fits(mask, ov_hdr, source, "mask", folder,
-                              out_nan_mask=out_nan_mask)
+        save_ppv_mask_to_fits(
+            mask, ov_hdr, source, "mask", folder, out_nan_mask=out_nan_mask
+        )
         LOG.info(f"PPV mask cube written to: {folder}")
 
     # ------------------------------------------------------------------
@@ -912,28 +967,38 @@ def run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder,
                 active_mask = mask_hfs
                 LOG.info(f"Using HFS-extended PPV mask for {line_name}.")
                 if save_mask and not np.array_equal(mask_hfs, mask):
-                    save_ppv_mask_to_fits(mask_hfs, ov_hdr, source,
-                                         f"mask_{line_name.lower()}", folder,
-                                         out_nan_mask=out_nan_mask)
+                    save_ppv_mask_to_fits(
+                        mask_hfs,
+                        ov_hdr,
+                        source,
+                        f"mask_{line_name.lower()}",
+                        folder,
+                        out_nan_mask=out_nan_mask,
+                    )
                     LOG.info(f"PPV mask cube for {line_name} written to: {folder}")
 
-        mom_maps = get_mom_maps_ppv(cube_data[line_name.upper()], active_mask, vaxis, mom_calc)
+        mom_maps = get_mom_maps_ppv(
+            cube_data[line_name.upper()], active_mask, vaxis, mom_calc
+        )
 
-        ov_hdr_2d  = twod_head(ov_hdr)
-        line_desc  = str(row["line_desc"])
-        line_unit  = str(row["line_unit"])
+        ov_hdr_2d = twod_head(ov_hdr)
+        line_desc = str(row["line_desc"])
+        line_unit = str(row["line_unit"])
 
         quantities = {
-            "mom0":  (mom_maps["mom0"],     "K km/s" if line_unit == "K" else f"{line_unit} km/s"),
+            "mom0": (
+                mom_maps["mom0"],
+                "K km/s" if line_unit == "K" else f"{line_unit} km/s",
+            ),
             "emom0": (mom_maps["mom0_err"], None),
-            "mom1":  (mom_maps["mom1"],     "km/s"),
+            "mom1": (mom_maps["mom1"], "km/s"),
             "emom1": (mom_maps["mom1_err"], "km/s"),
-            "mom2":  (mom_maps["mom2"],     "km/s"),
+            "mom2": (mom_maps["mom2"], "km/s"),
             "emom2": (mom_maps["mom2_err"], "km/s"),
-            "tpeak": (mom_maps["tpeak"],    line_unit),
-            "rms":   (mom_maps["rms"],      line_unit),
-            "ew":    (mom_maps["ew"],       "km/s"),
-            "eew":   (mom_maps["ew_err"],   "km/s"),
+            "tpeak": (mom_maps["tpeak"], line_unit),
+            "rms": (mom_maps["rms"], line_unit),
+            "ew": (mom_maps["ew"], "km/s"),
+            "eew": (mom_maps["ew_err"], "km/s"),
         }
 
         # out_nan_mask was computed once above, from ov_footprint & edge_mask.
@@ -943,7 +1008,11 @@ def run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder,
                 hdr_out["BUNIT"] = bunit
             hdr_out["LINE"] = line_name
             fname_fits = os.path.join(folder, f"{source}_{line_name}_{quantity}.fits")
-            data_out = arr.value.copy() if hasattr(arr, "value") else np.asarray(arr, dtype=float).copy()
+            data_out = (
+                arr.value.copy()
+                if hasattr(arr, "value")
+                else np.asarray(arr, dtype=float).copy()
+            )
             data_out[out_nan_mask] = np.nan
             fits.writeto(fname_fits, data=data_out, header=hdr_out, overwrite=True)
 
@@ -985,11 +1054,11 @@ def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data
     hfs_data   : pd.DataFrame or None, optional — hyperfine data from KeyHandler
                 (required if use_hfs_lines is set)
     """
-    save_mom_maps    = meta.get("save_mom_maps",    True)
-    save_maps        = meta.get("save_maps",        True)
-    save_mask        = meta.get("save_mask",        False)
-    folder           = meta.get("folder_savefits",  "./saved_fits_files/")
-    target_res_as    = _resolve_target_res(params, meta)
+    save_mom_maps = meta.get("save_mom_maps", True)
+    save_maps = meta.get("save_maps", True)
+    save_mask = meta.get("save_mask", False)
+    folder = meta.get("folder_savefits", "./saved_fits_files/")
+    target_res_as = _resolve_target_res(params, meta)
     pixels_per_beam = meta.get("pixels_per_beam", 2.0)
 
     if not (save_mom_maps or save_maps or save_mask):
@@ -1001,17 +1070,21 @@ def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data
     # ------------------------------------------------------------------
     # Load overlay cube to get the reference WCS and footprint mask
     # ------------------------------------------------------------------
-    data_dir     = meta.get("data_dir", "data/")
+    data_dir = meta.get("data_dir", "data/")
     overlay_file = meta.get("overlay_file", "")
     from os import path as _path
-    overlay_fname = (_path.join(data_dir, overlay_file) if source in overlay_file
-                     else _path.join(data_dir, source + overlay_file))
+
+    overlay_fname = (
+        _path.join(data_dir, overlay_file)
+        if source in overlay_file
+        else _path.join(data_dir, source + overlay_file)
+    )
 
     ov_cube, ov_hdr = fits.getdata(overlay_fname, header=True)
 
     # Build the overlay footprint: True wherever at least one spectral channel
     # is finite. Used as the authoritative NaN/valid mask for all output files.
-    ov_footprint = np.any(np.isfinite(ov_cube), axis=0)   # (ny, nx) bool
+    ov_footprint = np.any(np.isfinite(ov_cube), axis=0)  # (ny, nx) bool
     # Float version (1.0 / NaN) for save_to_fits, which multiplies it into
     # the 2D regridded array.
     ov_slice = ov_footprint.astype(float)
@@ -1019,8 +1092,8 @@ def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data
     ov_hdr_2d = twod_head(ov_hdr)
 
     this_data = Table.read(fname)
-    ra_deg    = this_data["ra_deg"]
-    dec_deg   = this_data["dec_deg"]
+    ra_deg = this_data["ra_deg"]
+    dec_deg = this_data["dec_deg"]
 
     # ------------------------------------------------------------------
     # Moment maps — PPV-native, NOT from the hex-grid .ecsv table.
@@ -1029,14 +1102,24 @@ def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data
     # plain array inside run_moments_ppv.
     # ------------------------------------------------------------------
     if save_mom_maps:
-        run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder,
-                        save_mask=save_mask)
+        run_moments_ppv(
+            source,
+            meta,
+            cubes,
+            input_mask,
+            hfs_data,
+            params,
+            folder,
+            save_mask=save_mask,
+        )
         LOG.info(f"Moment map FITS files written to: {folder}")
     elif save_mask:
-        LOG.warning(f"save_mask is True but save_mom_maps is False for {source}; "
-                   "the PPV mask is only built while computing moments, so no "
-                   "mask FITS file(s) will be written. Set save_mom_maps = true "
-                   "to enable mask output.")
+        LOG.warning(
+            f"save_mask is True but save_mom_maps is False for {source}; "
+            "the PPV mask is only built while computing moments, so no "
+            "mask FITS file(s) will be written. Set save_mom_maps = true "
+            "to enable mask output."
+        )
 
     # ------------------------------------------------------------------
     # 2D map images
@@ -1047,8 +1130,34 @@ def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data
         _edge = build_edge_mask(ov_footprint, ov_hdr, target_res_as)
         _out_nan = ~(ov_footprint & _edge.astype(bool))
         for map_name in maps["map_name"]:
-            save_to_fits(ra_deg, dec_deg, ov_hdr_2d, ov_slice, "MAP_",  "map",  source, this_data, map_name, folder, target_res_as, out_nan_mask=_out_nan)
-            save_to_fits(ra_deg, dec_deg, ov_hdr_2d, ov_slice, "EMAP_", "emap", source, this_data, map_name, folder, target_res_as, out_nan_mask=_out_nan)
+            save_to_fits(
+                ra_deg,
+                dec_deg,
+                ov_hdr_2d,
+                ov_slice,
+                "MAP_",
+                "map",
+                source,
+                this_data,
+                map_name,
+                folder,
+                target_res_as,
+                out_nan_mask=_out_nan,
+            )
+            save_to_fits(
+                ra_deg,
+                dec_deg,
+                ov_hdr_2d,
+                ov_slice,
+                "EMAP_",
+                "emap",
+                source,
+                this_data,
+                map_name,
+                folder,
+                target_res_as,
+                out_nan_mask=_out_nan,
+            )
         LOG.info(f"2D map FITS files written to: {folder}")
 
 

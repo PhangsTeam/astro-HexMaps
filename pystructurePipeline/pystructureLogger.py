@@ -51,8 +51,8 @@ import datetime
 # directly after the stage/level name; any extra space needed for alignment
 # is added *after* the bracket. Update these if a longer stage name or level
 # name is introduced.
-_STAGE_COL_WIDTH = len("Products") + 2 + 1   # "[Products]" + 2 spaces
-_LEVEL_COL_WIDTH = len("WARNING")  + 2 + 1   # "[WARNING]"  + 2 spaces
+_STAGE_COL_WIDTH = len("Products") + 2 + 1  # "[Products]" + 2 spaces
+_LEVEL_COL_WIDTH = len("WARNING") + 2 + 1  # "[WARNING]"  + 2 spaces
 
 
 class PipelineLogger:
@@ -74,16 +74,15 @@ class PipelineLogger:
     """
 
     def __init__(self):
-        self.verbose  = True
+        self.verbose = True
         self.log_file = None
-        self.records  = []
+        self.records = []
 
     # ------------------------------------------------------------------
     # Configuration
     # ------------------------------------------------------------------
 
-    def configure(self, verbose: bool = True, log_file: str = None,
-                  reset: bool = True):
+    def configure(self, verbose: bool = True, log_file: str = None, reset: bool = True):
         """
         Configure global logging behaviour.
 
@@ -96,15 +95,19 @@ class PipelineLogger:
         reset    : bool — if True (default), clear any previously recorded
                    messages from a prior run.
         """
-        self.verbose  = verbose
+        self.verbose = verbose
         self.log_file = log_file
         if reset:
             self.records = []
         if self.log_file:
-            os.makedirs(os.path.dirname(os.path.abspath(self.log_file)) or ".", exist_ok=True)
+            os.makedirs(
+                os.path.dirname(os.path.abspath(self.log_file)) or ".", exist_ok=True
+            )
             with open(self.log_file, "w") as f:
-                f.write(f"pyStructure log started at "
-                        f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(
+                    f"pyStructure log started at "
+                    f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                )
 
     # ------------------------------------------------------------------
     # Core logging
@@ -122,9 +125,14 @@ class PipelineLogger:
         """
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         timestamp_day = datetime.datetime.now().strftime("%H:%M:%S")
-        self.records.append({
-            "time": timestamp, "stage": stage, "level": level, "message": message,
-        })
+        self.records.append(
+            {
+                "time": timestamp,
+                "stage": stage,
+                "level": level,
+                "message": message,
+            }
+        )
 
         stage_field = f"[{stage}]".ljust(_STAGE_COL_WIDTH)
         level_field = f"[{level}]".ljust(_LEVEL_COL_WIDTH)
@@ -214,7 +222,7 @@ class StageLogger:
 
     def __init__(self, parent: PipelineLogger, stage: str):
         self._parent = parent
-        self._stage  = stage
+        self._stage = stage
 
     def info(self, message: str):
         """Log an INFO-level message for this stage."""
