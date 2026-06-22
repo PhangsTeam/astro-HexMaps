@@ -778,7 +778,6 @@ def run_moments_ppv(
         meta.get("conseq_channels", 3),
         meta.get("mom2_method", "fwhm"),
     ]
-    target_res_as = _resolve_target_res(params, meta)
     data_dir = meta.get("data_dir", "data/")
 
     line_names = [str(l) for l in cubes["line_name"]]
@@ -804,6 +803,10 @@ def run_moments_ppv(
         raise FileNotFoundError(f"Overlay file not found: {overlay_fname}")
     ov_data, ov_hdr = fits.getdata(overlay_fname, header=True)
     ov_hdr, _ = _ensure_ms(copy.copy(ov_hdr))
+
+    # Resolve target resolution now that ov_hdr is available (needed for
+    # native mode, which reads BMAJ/BMIN directly from the overlay header).
+    target_res_as = _resolve_target_res(params, meta, ov_hdr=ov_hdr)
 
     delta_v_kms = (
         (ov_hdr["CDELT3"] * au.Unit(ov_hdr.get("CUNIT3", "m/s"))).to(au.km / au.s).value
@@ -1058,7 +1061,6 @@ def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data
     save_maps = meta.get("save_maps", True)
     save_mask = meta.get("save_mask", False)
     folder = meta.get("folder_savefits", "./saved_fits_files/")
-    target_res_as = _resolve_target_res(params, meta)
     pixels_per_beam = meta.get("pixels_per_beam", 2.0)
 
     if not (save_mom_maps or save_maps or save_mask):
@@ -1081,6 +1083,10 @@ def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data
     )
 
     ov_cube, ov_hdr = fits.getdata(overlay_fname, header=True)
+
+    # Resolve target resolution now that ov_hdr is available (needed for
+    # native mode, which reads BMAJ/BMIN directly from the overlay header).
+    target_res_as = _resolve_target_res(params, meta, ov_hdr=ov_hdr)
 
     # Build the overlay footprint: True wherever at least one spectral channel
     # is finite. Used as the authoritative NaN/valid mask for all output files.
@@ -1161,16 +1167,45 @@ def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data
         LOG.info(f"2D map FITS files written to: {folder}")
 
 
-def _resolve_target_res(params, meta):
+def _resolve_target_res(params, meta, ov_hdr=None):
     """
     Convert the configured target resolution to arcseconds.
 
     In physical mode, converts the target resolution from parsecs to
     arcseconds using the source distance stored in *params*.
+
+    In native mode, reads the beam size directly from *ov_hdr* (BMAJ/BMIN)
+    and ignores the ``target_res`` parameter entirely — matching the
+    behaviour of stage_regrid.run_sampling. *ov_hdr* must be supplied when
+    native mode may be in use; if it is None and the mode is native, falls
+    back to ``target_res`` with a warning.
     """
     resolution = meta.get("resolution", "angular")
     target_res = float(meta.get("target_res", 27.0))
+
+    if resolution == "native":
+        if ov_hdr is not None:
+            native_as = max(
+                ov_hdr.get("BMIN", 0.0), ov_hdr.get("BMAJ", 0.0)
+            ) * 3600.0
+            if native_as > 0:
+                LOG.info(f"Native resolution: {native_as:.1f} arcsec.")
+                return native_as
+        LOG.warning(
+            "Native resolution requested but no overlay header supplied "
+            "or BMAJ/BMIN missing; falling back to target_res = "
+            f"{target_res} arcsec."
+        )
+        return target_res
+
     if resolution == "physical":
         dist_mpc = params.get("dist_mpc", 1.0)
-        return 3600.0 * 180.0 / np.pi * 1e-6 * target_res / dist_mpc
+        target_res_as = 3600.0 * 180.0 / np.pi * 1e-6 * target_res / dist_mpc
+        LOG.info(
+            f"Physical resolution: {target_res} pc at {dist_mpc} Mpc "
+            f"= {target_res_as:.1f} arcsec."
+        )
+        return target_res_as
+
+    # angular (default)
     return target_res
