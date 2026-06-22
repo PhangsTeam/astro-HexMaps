@@ -4,7 +4,7 @@
 # column 4: unit (astropy.units readable)
 # Comma-separated; spaces and tabs around each comma are ignored.
 #-------------------------------------------------------------
-# line,     ref_freq,       hfs_freq,       unit,
+# line,     ref_freq,       hfs_freq,       unit
 hcn10,	    88.6316023,	    88.6304156,	    GHz
 hcn10,      88.6316023,     88.6318475,     GHz
 hcn10,      88.6316023,     88.6339357,     GHz
