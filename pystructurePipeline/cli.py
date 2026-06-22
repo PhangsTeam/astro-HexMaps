@@ -21,6 +21,7 @@ import argparse
 import sys
 
 ALL_STAGES = ["regrid", "products", "fits"]
+DATABASE_STAGES = ["regrid", "products"]
 
 
 def parse_args(argv=None):
@@ -118,7 +119,7 @@ def main(argv=None):
         print(f"[ERROR]    Could not import pystructurePipeline: {exc}")
         sys.exit(1)
 
-    stages = args.stages if args.stages else ALL_STAGES
+    stages = args.stages if args.stages else DATABASE_STAGES
     handler = PipelineHandler(conf_path=args.conf, verbose=not args.quiet,
                               log_file=args.log_file)
 

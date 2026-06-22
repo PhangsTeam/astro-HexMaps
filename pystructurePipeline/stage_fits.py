@@ -682,7 +682,7 @@ def build_edge_mask(ov_footprint, ov_hdr, target_res_as):
     """
     # Trim radius in pixels
     pix_scale_as = abs(ov_hdr["CDELT1"]) * 3600.0          # arcsec/pixel
-    trim_radius_pix = int(np.floor((target_res_as / 2.0) / pix_scale_as))
+    trim_radius_pix = int(np.round((target_res_as / 2.0) / pix_scale_as, 0))
 
     if trim_radius_pix <= 0:
         LOG.warning("Edge trim radius is <= 0 pixels; no edge removal applied.")
