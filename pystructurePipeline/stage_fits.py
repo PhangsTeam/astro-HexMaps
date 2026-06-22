@@ -21,7 +21,16 @@ For each cube, the pipeline:
      filter (here implemented as 2-D connected-component labelling per
      channel, the rectangular-grid equivalent of the hex-grid distance-based
      filter), HFS mask extension, and the use_input_mask / use_fixed_vel_mask
-     external-mask options.
+     external-mask options. Before masking, two additional steps constrain
+     the valid pixel area:
+       a. Overlay footprint masking: pixels where the overlay cube has no
+          finite values along the entire velocity axis (outside the observed
+          area) are set to NaN in all convolved cubes, so the footprint for
+          edge erosion reflects actual data coverage, not just the
+          reprojected grid extent.
+       b. Edge erosion: the footprint is eroded by half a beam width
+          (FWHM / 2) using a circular structuring element to remove
+          convolution-artefact pixels at the map boundary.
   3. Computes moments on the masked PPV cube by reshaping it to
      (n_pix, n_chan) and calling utils_table.get_mom_maps — the exact same
      function used by the hex-grid path — then reshaping the results back to
@@ -60,7 +69,7 @@ from astropy.wcs import WCS
 from astropy.table import Table
 from astropy.stats import median_absolute_deviation
 from scipy.interpolate import griddata
-from scipy.ndimage import label
+from scipy.ndimage import label, binary_erosion
 from reproject import reproject_interp
 from typing import Sequence, Union
 
@@ -282,27 +291,31 @@ def reproject_cube_to_overlay(data, hdr, ov_hdr, log=None):
 
 
 def save_to_fits(ra, dec, hdr_in, ov_slice, key, filename,
-                 this_source, this_data, line, folder, target_res):
+                 this_source, this_data, line, folder, target_res,
+                 out_nan_mask=None):
     """
     Regrid one table column and write it to a FITS file.
 
-    Silently skips if the requested column does not exist in *this_data*
-    (e.g. when EMOM0 has not been computed because all pixels are undetected).
+    Silently skips if the requested column does not exist in *this_data*.
 
     Parameters
     ----------
-    ra, dec    : arrays       — hex-grid RA/Dec (degrees)
-    hdr_in     : FITS Header  — 2-D overlay header (pixel grid definition)
-    ov_slice   : np.ndarray   — footprint mask (1.0 inside mapped area, NaN outside)
-    key        : str          — column prefix, e.g. "MOM0", "TPEAK", "MAP_"
-    filename   : str          — quantity label used in the output filename, e.g. "mom0"
-    this_source: str          — source name
-    this_data  : Table        — the PyStructure table
-    line       : str          — line/map name, e.g. "12CO21" or "SPIRE250"
-    folder     : str          — output directory
-    target_res : float        — target beam FWHM in arcseconds (for header)
+    ra, dec      : arrays       — hex-grid RA/Dec (degrees)
+    hdr_in       : FITS Header  — 2-D overlay header (pixel grid definition)
+    ov_slice     : np.ndarray   — footprint mask (1.0 inside mapped area, NaN outside)
+    key          : str          — column prefix, e.g. "MAP_", "EMAP_"
+    filename     : str          — quantity label in the output filename, e.g. "map"
+    this_source  : str          — source name
+    this_data    : Table        — the PyStructure table
+    line         : str          — line/map name, e.g. "12CO21" or "SPIRE250"
+    folder       : str          — output directory
+    target_res   : float        — target beam FWHM in arcseconds (for header)
+    out_nan_mask : np.ndarray (ny, nx) bool, optional — if supplied, pixels where
+                  out_nan_mask is True are set to NaN after all regridding. When
+                  the output has been resampled to a coarser grid, out_nan_mask
+                  is reprojected onto the output grid first (nearest-neighbour).
     """
-    col_name = f"{key}_{line.upper()}"
+    col_name = f"{key}{line.upper()}"
     if col_name not in this_data.colnames:
         return
 
@@ -314,13 +327,27 @@ def save_to_fits(ra, dec, hdr_in, ov_slice, key, filename,
 
     # Resample to a coarser grid if the overlay pixel scale is finer than the beam
     native_beam_as = 3600.0 * min(hdr_in.get("BMAJ", 1e6), hdr_in.get("BMIN", 1e6))
+    output_hdr = hdr_in
     if native_beam_as < 0.99 * target_res:
         hdr_repr = resample_hdr(hdr_in, target_res)
         map_cart, _ = reproject_interp((map_cart, hdr_in), hdr_repr)
-        hdr_in = hdr_repr
+        output_hdr = hdr_repr
+
+    # Apply the combined NaN mask (footprint + edge strip). When the output
+    # has been resampled to a coarser grid, reproject out_nan_mask first.
+    if out_nan_mask is not None:
+        if output_hdr is not hdr_in:
+            nan_repr, _ = reproject_interp(
+                (out_nan_mask.astype(float), hdr_in), output_hdr,
+                order="nearest-neighbor",
+            )
+            nan_mask_out = nan_repr > 0.5
+        else:
+            nan_mask_out = out_nan_mask
+        map_cart = np.where(nan_mask_out, np.nan, map_cart)
 
     fname_fits = os.path.join(folder, f"{this_source}_{line}_{filename}.fits")
-    fits.writeto(fname_fits, data=map_cart, header=hdr_in, overwrite=True)
+    fits.writeto(fname_fits, data=map_cart, header=output_hdr, overwrite=True)
 
 
 def construct_mask_ppv(ref_cube, SN_processing):
@@ -575,31 +602,102 @@ def get_mom_maps_ppv(cube, mask, vaxis, mom_calc):
     return mom_maps
 
 
-def save_ppv_mask_to_fits(mask, ov_hdr, source, filename, folder):
+def save_ppv_mask_to_fits(mask, ov_hdr, source, filename, folder, out_nan_mask=None):
     """
     Write a PPV-native velocity-integration mask to a 3-D FITS cube.
 
     Unlike the hex-grid path's mask regridding (which used to reproject a
-    SPEC_MASK* table column onto the overlay grid), the mask here is already a plain numpy array on
-    the overlay's native PPV grid — produced directly by construct_mask_ppv
-    / build_hfs_mask_ppv / fixed_velocity_mask_ppv / external_mask_ppv — so
-    no resampling or re-binarization is needed; it is written out as-is.
+    SPEC_MASK* table column onto the overlay grid), the mask here is already
+    a plain numpy array on the overlay's native PPV grid — produced directly
+    by construct_mask_ppv / build_hfs_mask_ppv / fixed_velocity_mask_ppv /
+    external_mask_ppv — so no resampling or re-binarization is needed.
 
     Parameters
     ----------
-    mask     : np.ndarray (n_chan, ny, nx) — 0/1 mask array
-    ov_hdr   : FITS Header (3-D) — overlay header; supplies both the spatial
-              WCS and the spectral axis for the output cube
-    source   : str — source name
-    filename : str — quantity label used in the output filename, e.g. "mask"
-              or "mask_12co21"
-    folder   : str — output directory
+    mask         : np.ndarray (n_chan, ny, nx) — 0/1 mask array
+    ov_hdr       : FITS Header (3-D) — overlay header; supplies both the spatial
+                  WCS and the spectral axis for the output cube
+    source       : str — source name
+    filename     : str — quantity label used in the output filename, e.g. "mask"
+                  or "mask_12co21"
+    folder       : str — output directory
+    out_nan_mask : np.ndarray (ny, nx) bool, optional — if supplied, pixels
+                  where out_nan_mask is True are set to NaN across all channels,
+                  matching the NaN pattern of the moment maps and convolved cubes.
 
     Output filename: {source}_{filename}.fits
     """
-    hdr_out = copy.copy(ov_hdr)
+    hdr_out  = copy.copy(ov_hdr)
+    data_out = np.asarray(mask, dtype=float).copy()
+    if out_nan_mask is not None:
+        data_out[:, out_nan_mask] = np.nan
     fname_fits = os.path.join(folder, f"{source}_{filename}.fits")
-    fits.writeto(fname_fits, data=np.asarray(mask, dtype=float), header=hdr_out, overwrite=True)
+    fits.writeto(fname_fits, data=data_out, header=hdr_out, overwrite=True)
+
+
+def build_edge_mask(ov_footprint, ov_hdr, target_res_as):
+    """
+    Build a 2-D spatial edge mask by eroding the observed non-NaN footprint
+    by half a beam width.
+
+    Convolution near the edge of the observed area is unreliable: the beam
+    extends beyond the data boundary and the convolved values are computed
+    from only a partial beam footprint, which systematically under- or
+    over-estimates the true brightness. Removing a border of half a beam
+    width (FWHM / 2) in pixels eliminates the worst-affected region.
+
+    The footprint to erode is the *non-NaN area* of the overlay cube —
+    the irregular blob of pixels where the overlay actually has data — not
+    the rectangular reprojected grid extent (which includes pixels filled in
+    by interpolation beyond the true observed boundary). Eroding the true
+    non-NaN blob means the edge-removal correctly follows the shape of the
+    observed field, including any holes or concavities.
+
+    The algorithm:
+      1. Accept *ov_footprint*: a 2-D bool array, True where the overlay has
+         at least one finite value along the velocity axis.
+      2. Compute the trim radius in pixels: floor((target_res_as / 2) /
+         pixel_scale). Uses floor to be conservative (never removes more
+         than half a beam).
+      3. Erode *ov_footprint* using a circular structuring element of that
+         radius via scipy.ndimage.binary_erosion. A circular (rather than
+         square) kernel gives isotropic edge removal matching the shape of
+         the Gaussian PSF.
+      4. Return the eroded footprint as a float array (1 inside, 0 on edges).
+
+    Parameters
+    ----------
+    ov_footprint  : np.ndarray (ny, nx) bool — True where the overlay has
+                   at least one finite value along the velocity axis.
+                   Derived in the caller as
+                   ``np.any(np.isfinite(ov_data), axis=0)``.
+    ov_hdr        : FITS Header (3-D) — overlay header; provides CDELT1 for the
+                   pixel scale used to convert target_res_as to pixels
+    target_res_as : float — target beam FWHM in arcseconds
+
+    Returns
+    -------
+    edge_mask : np.ndarray (ny, nx) — float 0/1 array; multiply into the
+                spatial dimension of any mask to remove convolution-edge pixels
+    """
+    # Trim radius in pixels
+    pix_scale_as = abs(ov_hdr["CDELT1"]) * 3600.0          # arcsec/pixel
+    trim_radius_pix = int(np.floor((target_res_as / 2.0) / pix_scale_as))
+
+    if trim_radius_pix <= 0:
+        LOG.warning("Edge trim radius is <= 0 pixels; no edge removal applied.")
+        return ov_footprint.astype(float)
+
+    LOG.info(f"Removing {trim_radius_pix} pixel edge border "
+             f"(= half beam = {target_res_as/2:.1f} arcsec at "
+             f"{pix_scale_as:.2f} arcsec/px).")
+
+    # Circular structuring element for isotropic erosion of the non-NaN blob
+    from skimage.morphology import disk
+    structure = disk(trim_radius_pix)
+
+    eroded = binary_erosion(ov_footprint, structure=structure)
+    return eroded.astype(float)
 
 
 def run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder,
@@ -666,7 +764,7 @@ def run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder,
     if not os.path.exists(overlay_fname):
         LOG.error(f"Overlay file not found: {overlay_fname}")
         raise FileNotFoundError(f"Overlay file not found: {overlay_fname}")
-    _, ov_hdr = fits.getdata(overlay_fname, header=True)
+    ov_data, ov_hdr = fits.getdata(overlay_fname, header=True)
     ov_hdr, _ = _ensure_ms(copy.copy(ov_hdr))
 
     delta_v_kms = (ov_hdr["CDELT3"] * au.Unit(ov_hdr.get("CUNIT3", "m/s"))).to(au.km / au.s).value
@@ -688,6 +786,30 @@ def run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder,
     if ref_line.upper() not in cube_data:
         LOG.error(f"Reference line {ref_line} not found among loaded cubes for {source}.")
         raise FileNotFoundError(f"Reference line {ref_line} not found among loaded cubes for {source}.")
+
+    # ------------------------------------------------------------------
+    # Step 1: constrain every convolved cube to the overlay's valid-pixel
+    # footprint. Pixels where the overlay has no finite values along the
+    # entire velocity axis (i.e. outside the observed area) are set to NaN
+    # in all convolved cubes. This ensures the footprint used for edge
+    # erosion reflects the actual data coverage, not just the reprojected
+    # grid extent, and propagates NaN correctly through to the moments.
+    # ------------------------------------------------------------------
+    ov_footprint = np.any(np.isfinite(ov_data), axis=0)   # (ny, nx) bool
+    for name in cube_data:
+        cube_val = cube_data[name].value.copy()
+        cube_val[:, ~ov_footprint] = np.nan
+        cube_data[name] = cube_val * cube_data[name].unit
+
+    # ------------------------------------------------------------------
+    # Step 2: build a 2-D edge mask by eroding the *overlay's* non-NaN
+    # blob (ov_footprint) by half a beam width. Using the overlay footprint
+    # directly — rather than deriving a footprint from the convolved cube —
+    # ensures the erosion follows the true irregular observed boundary,
+    # including any concavities, rather than the rectangular reprojected
+    # grid extent.
+    # ------------------------------------------------------------------
+    edge_mask = build_edge_mask(ov_footprint, ov_hdr, target_res_as)
 
     # ------------------------------------------------------------------
     # Mask construction — mirrors stage_products.run_products exactly.
@@ -745,8 +867,34 @@ def run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder,
             LOG.info("Applying strict spatial mask filter (connected-component, PPV grid).")
             mask = apply_strict_mask_ppv(mask.astype(int))
 
+    # ------------------------------------------------------------------
+    # Apply edge trimming: zero out the half-beam border of the footprint
+    # across all channels. This removes convolution-edge artefacts from
+    # both the moments and the saved mask FITS file.
+    # edge_mask is (ny, nx), broadcast across all channels via None axis.
+    # ------------------------------------------------------------------
+    mask = (np.asarray(mask) * edge_mask[None, :, :]).astype(int)
+
+    # Combined output NaN mask: True wherever the overlay has no data OR
+    # the pixel lies in the eroded edge strip. Applied consistently to all
+    # output files (moment maps, PPV mask cubes, and saved convolved cubes)
+    # so every pipeline output shares the same NaN pattern.
+    out_nan_mask = ~(ov_footprint & edge_mask.astype(bool))
+
+    # Apply out_nan_mask to any saved convolved cube files on disk so they
+    # share the same NaN pattern as the moment maps. The regrid stage already
+    # applied ov_footprint, but the edge-strip erosion only happens here.
+    for _, row in cubes.iterrows():
+        cube_fits_path = os.path.join(folder,
+            f"{source}_{row['line_name']}_{target_res_as}as.fits")
+        if os.path.exists(cube_fits_path):
+            data_c, hdr_c = fits.getdata(cube_fits_path, header=True)
+            data_c[:, out_nan_mask] = np.nan
+            fits.writeto(cube_fits_path, data=data_c, header=hdr_c, overwrite=True)
+
     if save_mask:
-        save_ppv_mask_to_fits(mask, ov_hdr, source, "mask", folder)
+        save_ppv_mask_to_fits(mask, ov_hdr, source, "mask", folder,
+                              out_nan_mask=out_nan_mask)
         LOG.info(f"PPV mask cube written to: {folder}")
 
     # ------------------------------------------------------------------
@@ -765,7 +913,8 @@ def run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder,
                 LOG.info(f"Using HFS-extended PPV mask for {line_name}.")
                 if save_mask and not np.array_equal(mask_hfs, mask):
                     save_ppv_mask_to_fits(mask_hfs, ov_hdr, source,
-                                         f"mask_{line_name.lower()}", folder)
+                                         f"mask_{line_name.lower()}", folder,
+                                         out_nan_mask=out_nan_mask)
                     LOG.info(f"PPV mask cube for {line_name} written to: {folder}")
 
         mom_maps = get_mom_maps_ppv(cube_data[line_name.upper()], active_mask, vaxis, mom_calc)
@@ -786,13 +935,16 @@ def run_moments_ppv(source, meta, cubes, input_mask, hfs_data, params, folder,
             "ew":    (mom_maps["ew"],       "km/s"),
             "eew":   (mom_maps["ew_err"],   "km/s"),
         }
+
+        # out_nan_mask was computed once above, from ov_footprint & edge_mask.
         for quantity, (arr, bunit) in quantities.items():
             hdr_out = copy.copy(ov_hdr_2d)
             if bunit:
                 hdr_out["BUNIT"] = bunit
             hdr_out["LINE"] = line_name
             fname_fits = os.path.join(folder, f"{source}_{line_name}_{quantity}.fits")
-            data_out = arr.value if hasattr(arr, "value") else arr
+            data_out = arr.value.copy() if hasattr(arr, "value") else np.asarray(arr, dtype=float).copy()
+            data_out[out_nan_mask] = np.nan
             fits.writeto(fname_fits, data=data_out, header=hdr_out, overwrite=True)
 
         LOG.info(f"Compute moment maps and write to file for line: {line_name}.")
@@ -857,10 +1009,13 @@ def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data
 
     ov_cube, ov_hdr = fits.getdata(overlay_fname, header=True)
 
-    # Build a binary footprint mask from the middle channel of the overlay cube.
-    # Pixels outside the observed area are set to NaN after gridding.
-    ov_slice = ov_cube[ov_hdr["NAXIS3"] // 2, :, :].copy()
-    ov_slice[np.isfinite(ov_slice)] = 1.0
+    # Build the overlay footprint: True wherever at least one spectral channel
+    # is finite. Used as the authoritative NaN/valid mask for all output files.
+    ov_footprint = np.any(np.isfinite(ov_cube), axis=0)   # (ny, nx) bool
+    # Float version (1.0 / NaN) for save_to_fits, which multiplies it into
+    # the 2D regridded array.
+    ov_slice = ov_footprint.astype(float)
+    ov_slice[~ov_footprint] = np.nan
     ov_hdr_2d = twod_head(ov_hdr)
 
     this_data = Table.read(fname)
@@ -887,9 +1042,13 @@ def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data
     # 2D map images
     # ------------------------------------------------------------------
     if save_maps:
+        # Compute the same NaN mask used for moment maps so all output files
+        # share a consistent NaN pattern (overlay footprint + edge strip).
+        _edge = build_edge_mask(ov_footprint, ov_hdr, target_res_as)
+        _out_nan = ~(ov_footprint & _edge.astype(bool))
         for map_name in maps["map_name"]:
-            save_to_fits(ra_deg, dec_deg, ov_hdr_2d, ov_slice, "MAP_",  "map",  source, this_data, map_name, folder, target_res_as)
-            save_to_fits(ra_deg, dec_deg, ov_hdr_2d, ov_slice, "EMAP_", "emap", source, this_data, map_name, folder, target_res_as)
+            save_to_fits(ra_deg, dec_deg, ov_hdr_2d, ov_slice, "MAP_",  "map",  source, this_data, map_name, folder, target_res_as, out_nan_mask=_out_nan)
+            save_to_fits(ra_deg, dec_deg, ov_hdr_2d, ov_slice, "EMAP_", "emap", source, this_data, map_name, folder, target_res_as, out_nan_mask=_out_nan)
         LOG.info(f"2D map FITS files written to: {folder}")
 
 

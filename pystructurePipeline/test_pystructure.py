@@ -367,6 +367,100 @@ class TestFitsUtils:
 
 class TestStageFits:
 
+    def test_build_edge_mask_erodes_footprint(self):
+        """
+        build_edge_mask must return a 2-D float array smaller than the input
+        footprint, eroded by the expected number of pixels on all sides.
+        """
+        from pystructurePipeline.stage_fits import build_edge_mask
+        from astropy.io import fits
+
+        # Full 30x30 observed footprint
+        ov_footprint = np.ones((30, 30), dtype=bool)
+        hdr = fits.Header()
+        hdr["CDELT1"] = -1.0 / 3600.0   # 1 arcsec/pixel
+
+        # target_res = 10 arcsec -> trim radius = floor(10/2 / 1) = 5 pixels
+        edge_mask = build_edge_mask(ov_footprint, hdr, target_res_as=10.0)
+        assert edge_mask.shape == (30, 30)
+        # Centre must be kept, corners must be removed
+        assert edge_mask[15, 15] == 1.0
+        assert edge_mask[0, 0] == 0.0
+        assert edge_mask[29, 29] == 0.0
+        # Total kept pixels must be strictly fewer than full 30x30
+        assert edge_mask.sum() < 30 * 30
+
+    def test_build_edge_mask_zero_radius_returns_footprint(self):
+        """
+        When the pixel scale is coarser than half the beam (trim radius < 1),
+        no trimming is applied and the full footprint is returned.
+        """
+        from pystructurePipeline.stage_fits import build_edge_mask
+        from astropy.io import fits
+
+        ov_footprint = np.ones((10, 10), dtype=bool)
+        hdr = fits.Header()
+        hdr["CDELT1"] = -10.0 / 3600.0  # 10 arcsec/pixel — half beam is < 1 px
+
+        edge_mask = build_edge_mask(ov_footprint, hdr, target_res_as=10.0)
+        assert edge_mask.sum() == 100   # full footprint returned
+
+    def test_build_edge_mask_erodes_non_rectangular_blob(self):
+        """
+        build_edge_mask must erode the irregular non-NaN blob defined by
+        ov_footprint, not a rectangular grid extent. A circular island
+        of observed pixels should be eroded at its own boundary.
+        """
+        from pystructurePipeline.stage_fits import build_edge_mask
+        from astropy.io import fits
+
+        ny, nx = 20, 20
+        # Circular island: observed area is a disc of radius 8 at centre
+        y, x = np.ogrid[:ny, :nx]
+        ov_footprint = ((y - 10)**2 + (x - 10)**2) < 8**2
+
+        hdr = fits.Header()
+        hdr["CDELT1"] = -1.0 / 3600.0   # 1 arcsec/pixel
+
+        # Erode by 2 pixels
+        edge_mask = build_edge_mask(ov_footprint, hdr, target_res_as=4.0)
+
+        # Pixels outside the overlay footprint must never be in the edge mask
+        assert np.all(edge_mask[~ov_footprint] == 0.0)
+        # Centre of the disc (far from boundary) must be kept
+        assert edge_mask[10, 10] == 1.0
+        # Pixels on the disc boundary must be removed by erosion
+        assert edge_mask[2, 10] == 0.0   # top of disc
+
+    def test_overlay_footprint_constrains_erosion(self):
+        """
+        Passing an ov_footprint that is smaller than the full grid (as in
+        the real pipeline, where the overlay has NaN outside the observed
+        area) must constrain the edge mask to that footprint. Pixels outside
+        the overlay footprint must be 0, and the eroded boundary must follow
+        the overlay footprint boundary, not the full grid boundary.
+        """
+        from pystructurePipeline.stage_fits import build_edge_mask
+        from astropy.io import fits
+
+        ny, nx = 20, 20
+        # Only the centre 10x10 block is observed
+        ov_footprint = np.zeros((ny, nx), dtype=bool)
+        ov_footprint[5:15, 5:15] = True
+
+        hdr = fits.Header()
+        hdr["CDELT1"] = -1.0 / 3600.0
+        # Erode by 2 pixels (target_res=4 arcsec at 1 arcsec/px)
+        edge_mask = build_edge_mask(ov_footprint, hdr, target_res_as=4.0)
+
+        # Outside overlay footprint: must be zero
+        assert np.all(edge_mask[~ov_footprint] == 0.0)
+        # Well inside the centre block: must be kept
+        assert edge_mask[10, 10] == 1.0
+        # Pixels at the overlay footprint boundary must be removed by erosion
+        assert edge_mask[5, 10] == 0.0
+        assert edge_mask[14, 10] == 0.0
+
     def test_save_ppv_mask_to_fits_writes_cube_as_is(self, tmp_path):
         """
         save_ppv_mask_to_fits writes a plain numpy mask array directly,

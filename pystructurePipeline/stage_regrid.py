@@ -818,6 +818,31 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
     os.makedirs(meta.get("out_dir", "output/"), exist_ok=True)
     this_data.write(fname, format="ascii.ecsv", overwrite=True)
     LOG.info(f"Database written to: {fname}")
+
+    # ------------------------------------------------------------------
+    # Apply overlay footprint NaN mask to all saved convolved cubes so
+    # they share the same NaN pattern as the moment maps and PPV mask.
+    # Pixels where the overlay has no finite data along the full velocity
+    # axis are set to NaN, removing values that reproject_interp filled
+    # in beyond the true observed boundary.
+    # ------------------------------------------------------------------
+    if save_fits:
+        overlay_file  = meta.get("overlay_file", "")
+        overlay_fname = (path.join(data_dir, overlay_file) if source in overlay_file
+                         else path.join(data_dir, source + overlay_file))
+        if path.exists(overlay_fname):
+            ov_cube_fp = fits.getdata(overlay_fname)
+            ov_footprint_2d = np.any(np.isfinite(ov_cube_fp), axis=0)
+            for _, cube in cubes.iterrows():
+                cube_fits_path = path.join(
+                    fits_dir, f"{source}_{cube['line_name']}_{target_res_as}as.fits"
+                )
+                if path.exists(cube_fits_path):
+                    data_c, hdr_c = fits.getdata(cube_fits_path, header=True)
+                    data_c[:, ~ov_footprint_2d] = np.nan
+                    fits.writeto(cube_fits_path, data=data_c, header=hdr_c, overwrite=True)
+            LOG.info("Overlay footprint NaN mask applied to saved convolved cubes.")
+
     return fname
 
 
