@@ -334,8 +334,25 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
     # ------------------------------------------------------------------
     # The mask is True wherever at least one spectral channel is finite.
     # This clips the grid to the mapped area without relying on a separate mask file.
-    mask     = np.sum(np.isfinite(ov_cube), axis=0) >= 1
-    mask_hdr = twod_head(ov_hdr)
+    ov_footprint = np.sum(np.isfinite(ov_cube), axis=0) >= 1
+    mask_hdr     = twod_head(ov_hdr)
+
+    # Apply the same half-beam edge erosion used for the FITS output files
+    # so that the hex grid and the FITS products share the same effective
+    # footprint — hex points in the edge strip (where convolution artefacts
+    # arise because the beam extends beyond the observed area) are excluded.
+    pix_scale_as    = abs(ov_hdr["CDELT1"]) * 3600.0
+    trim_radius_pix = int(np.floor((target_res_as / 2.0) / pix_scale_as))
+    if trim_radius_pix > 0:
+        from skimage.morphology import disk as _disk
+        from scipy.ndimage import binary_erosion as _binary_erosion
+        mask = _binary_erosion(ov_footprint, structure=_disk(trim_radius_pix))
+        LOG.info(f"Hex grid footprint eroded by {trim_radius_pix} px "
+                 f"(half beam = {target_res_as/2:.1f} arcsec); "
+                 f"{mask.sum()} of {ov_footprint.sum()} pixels retained.")
+    else:
+        mask = ov_footprint
+        LOG.warning("Edge trim radius is <= 0 pixels; no hex grid edge removal applied.")
 
     pixels_per_beam = meta.get("pixels_per_beam", 2.0)
     max_rad          = meta.get("max_rad", "auto")
