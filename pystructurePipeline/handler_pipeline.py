@@ -40,6 +40,7 @@ Command-line (after pip install)::
 """
 
 import os
+import numpy as np
 from pathlib import Path
 from datetime import date
 
@@ -282,28 +283,33 @@ class PipelineHandler:
         """
         Build the .ecsv output filename for *source*.
 
-        The filename encodes the source name, resolution and units, and the
-        current date so that successive runs do not silently overwrite each
-        other (unless structure_creation = "default").
+        After stage_regrid runs:
+          ``meta["target_res"]``    → always arcseconds
+          ``meta["target_res_pc"]`` → always parsecs
+
+        The filename suffix uses parsecs for physical mode and arcseconds
+        for angular/native mode, matching the unit that is most meaningful
+        to the user for each mode.
 
         Examples
         --------
-        angular mode, 27 arcsec → ngc5194_data_struct_27as_2025_06_01.ecsv
-        physical mode, 100 pc   → ngc5194_data_struct_100pc_2025_06_01.ecsv
+        angular 27 arcsec  → ngc5194_hexforge_27p0as_2025_06_01.ecsv
+        physical 100 pc    → ngc5194_hexforge_100pc_2025_06_01.ecsv
+        native 12.8 arcsec → ngc5194_hexforge_12p8as_2025_06_01.ecsv
         """
         meta = self.key_handler.meta
         out_dir = meta.get("out_dir", "output/")
         resolution = meta.get("resolution", "angular")
-        target_res = meta.get("target_res", 27.0)
 
-        suffix = (
-            str(int(target_res)) + "as"
-            if resolution == "angular"
-            else str(int(target_res)) + "pc" if resolution == "physical" else "native"
-        )
+        if resolution == "physical":
+            target_res = meta.get("target_res_pc", meta.get("target_res", 27.0))
+            suffix = str(int(np.round(float(target_res), 0))).replace(".", "p") + "pc"
+        else:
+            target_res = meta.get("target_res", 27.0)
+            suffix = str(np.round(float(target_res), 1)).replace(".", "p") + "as"
 
         date_str = date.today().strftime("%Y_%m_%d")
-        fname = os.path.join(out_dir, f"{source}_data_struct_{suffix}_{date_str}.ecsv")
+        fname = os.path.join(out_dir, f"{source}_hexforge_{suffix}_{date_str}.ecsv")
 
         # In archive mode, bump the version number if the file already exists
         if "archive" in meta.get("structure_creation", "") and os.path.exists(fname):

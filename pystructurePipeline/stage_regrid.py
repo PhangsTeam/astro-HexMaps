@@ -340,6 +340,15 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
         target_res_as = float(target_res)
         LOG.info(f"Angular resolution: {target_res_as:.1f} arcsec.")
 
+    # Write resolved values back into meta:
+    #   meta["target_res"]    → always arcseconds (single source of truth for math)
+    #   meta["target_res_pc"] → always parsecs (for display/filenames/physical analysis)
+    # Both are computed from target_res_as and the source distance (dist_mpc).
+    dist_mpc = params.get("dist_mpc", 1.0)
+    target_res_pc = target_res_as / 3600.0 * np.pi / 180.0 * dist_mpc * 1e6
+    meta["target_res"] = target_res_as
+    meta["target_res_pc"] = target_res_pc
+
     # ------------------------------------------------------------------
     # Build the footprint mask and generate the hex grid
     # ------------------------------------------------------------------
@@ -566,14 +575,11 @@ def sample_at_res(
             out_hdr["BMIN"] = target_res_as / 3600.0
             out_hdr["LINE"] = line_name
 
-            resolution = meta.get("resolution", "angular")
-            target_res = meta.get("target_res", 27.0)
-            print(target_res)
             out_dir = meta.get("out_dir", "output/")
             suffix = (
-                str(np.round(target_res, 1)).replace(".", "p") + "pc"
-                if resolution == "physical"
-                else str(np.round(target_res, 1)).replace(".", "p") + "as"
+                str(int(np.round(meta.get("target_res_pc"), 0))).replace(".", "p") + "pc"
+                if meta.get("resolution", "angular") == "physical"
+                else str(np.round(meta.get("target_res"), 1)).replace(".", "p") + "as"
             )
             path_save_fits = path.join(
                 dir_save_fits, f"{source}_{line_name}_{suffix}.fits"
@@ -992,13 +998,11 @@ def _build_fname(source, meta):
 
     Encodes source name, resolution (value + unit suffix), and today's date.
     """
-    resolution = meta.get("resolution", "angular")
-    target_res = meta.get("target_res", 27.0)
     out_dir = meta.get("out_dir", "output/")
     suffix = (
-        str(np.round(target_res, 1)).replace(".", "p") + "pc"
-        if resolution == "physical"
-        else str(np.round(target_res, 1)).replace(".", "p") + "as"
+        str(int(np.round(meta.get("target_res_pc"), 0))).replace(".", "p") + "pc"
+        if meta.get("resolution", "angular") == "physical"
+        else str(np.round(meta.get("target_res"), 1)).replace(".", "p") + "as"
     )
     date_str = date.today().strftime("%Y_%m_%d")
     return os.path.join(out_dir, f"{source}_hexforge_{suffix}_{date_str}.ecsv")

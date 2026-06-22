@@ -116,6 +116,73 @@ class TestKeyHandler:
         assert kh.meta["target_res"] == 45.0
         assert kh.meta["save_fits"] is True
 
+    def test_target_res_written_back_after_resolution_block(self, tmp_path):
+        """
+        run_sampling must populate two keys in meta for all three modes:
+
+          meta["target_res"]    → always arcseconds (single source of truth for math)
+          meta["target_res_pc"] → always parsecs (for display/filenames in physical mode)
+
+        For angular and native modes meta["target_res"] stays in arcseconds;
+        for physical mode it is converted from the config parsec value.
+        """
+        import numpy as np
+        from astropy.io import fits
+        from pystructurePipeline.stage_regrid import run_sampling
+
+        # Minimal 3-D overlay cube with known BMAJ = 30 arcsec
+        ny, nx, nv = 10, 10, 5
+        cube = np.ones((nv, ny, nx))
+        hdr = fits.Header()
+        hdr["NAXIS"] = 3
+        hdr["NAXIS1"], hdr["NAXIS2"], hdr["NAXIS3"] = nx, ny, nv
+        hdr["CTYPE1"], hdr["CTYPE2"], hdr["CTYPE3"] = "RA---TAN", "DEC--TAN", "VELO"
+        hdr["CRVAL1"], hdr["CRVAL2"], hdr["CRVAL3"] = 10.0, 20.0, 0.0
+        hdr["CDELT1"], hdr["CDELT2"], hdr["CDELT3"] = -0.002, 0.002, 1000.0
+        hdr["CRPIX1"], hdr["CRPIX2"], hdr["CRPIX3"] = 5, 5, 1
+        hdr["CUNIT3"] = "m/s"
+        hdr["BMAJ"] = 30.0 / 3600.0
+        hdr["BMIN"] = 30.0 / 3600.0
+        fits.writeto(str(tmp_path / "testsrc_12co21.fits"), cube, hdr)
+
+        base_meta = {
+            "data_dir":        str(tmp_path),
+            "out_dir":         str(tmp_path),
+            "overlay_file":    "_12co21.fits",
+            "pixels_per_beam": 2.0,
+            "max_rad":         "auto",
+        }
+        dist_mpc = 10.0
+        params = {
+            "ra_ctr":    10.0,
+            "dec_ctr":   20.0,
+            "dist_mpc":  dist_mpc,
+            "incl_deg":  0.0,
+            "posang_deg": 0.0,
+            "r25":       0.05,
+        }
+
+        # angular: target_res in arcsec; target_res_pc computed from distance
+        meta = {**base_meta, "resolution": "angular", "target_res": 27.0}
+        run_sampling("testsrc", params, meta)
+        assert meta["target_res"] == 27.0
+        expected_pc = 27.0 / 3600.0 * np.pi / 180.0 * dist_mpc * 1e6
+        assert abs(meta["target_res_pc"] - expected_pc) < 0.01
+
+        # physical: target_res converted to arcsec; target_res_pc from distance
+        meta = {**base_meta, "resolution": "physical", "target_res": 100.0}
+        run_sampling("testsrc", params, meta)
+        expected_as = 3600.0 * 180.0 / np.pi * 1e-6 * 100.0 / dist_mpc
+        assert abs(meta["target_res"] - expected_as) < 0.01    # now in arcsec
+        assert abs(meta["target_res_pc"] - expected_as / 3600.0 * np.pi / 180.0 * dist_mpc * 1e6) < 0.01
+
+        # native: target_res = BMAJ = 30 arcsec; target_res_pc from distance
+        meta = {**base_meta, "resolution": "native", "target_res": 99.0}
+        run_sampling("testsrc", params, meta)
+        assert meta["target_res"] == 30.0
+        expected_pc_nat = 30.0 / 3600.0 * np.pi / 180.0 * dist_mpc * 1e6
+        assert abs(meta["target_res_pc"] - expected_pc_nat) < 0.01
+
     def test_fallback_use_logs_warning(self, tmp_path, capsys):
         """
         Whenever a [resolution]/[masking]/[spectral]/[output]/[structure]

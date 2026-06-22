@@ -174,7 +174,7 @@ def resample_hdr(hdr_ov, target_res):
 
 
 def get_convolved_ppv_cube(
-    source, line_name, line_dir, line_ext, target_res_as, ov_hdr, fits_dir, log=None
+    source, line_name, line_dir, line_ext, meta, ov_hdr, fits_dir, log=None
 ):
     """
     Obtain a convolved PPV cube for *line_name*, aligned to the overlay WCS.
@@ -195,7 +195,7 @@ def get_convolved_ppv_cube(
     line_name     : str   — cube name, e.g. "12co21"
     line_dir      : str   — directory containing the raw input cube
     line_ext      : str   — filename extension of the raw input cube
-    target_res_as : float — target beam FWHM in arcseconds
+    meta          : dict — from KeyHandler.meta
     ov_hdr        : FITS Header — overlay header (3-D) defining the target WCS
     fits_dir      : str   — directory to look for the stage_regrid save_fits output
     log           : StageLogger, optional
@@ -207,7 +207,12 @@ def get_convolved_ppv_cube(
     """
     log = log or LOG
 
-    cached_path = os.path.join(fits_dir, f"{source}_{line_name}_{target_res_as:.1f}as.fits")
+    suffix = (
+        str(int(np.round(meta.get("target_res_pc"), 0))).replace(".", "p") + "pc"
+        if meta.get("resolution", "angular") == "physical"
+        else str(np.round(meta.get("target_res"), 1)).replace(".", "p") + "as"
+    )
+    cached_path = os.path.join(fits_dir, f"{source}_{line_name}_{suffix}.fits")
     if os.path.exists(cached_path):
         log.info(f"Using existing convolved cube for line: {line_name}: {cached_path}")
         return fits.getdata(cached_path, header=True)
@@ -223,7 +228,7 @@ def get_convolved_ppv_cube(
         )
 
     data, hdr = fits.getdata(raw_path, header=True)
-    data, hdr = convolve_cube_to_target(data, hdr, target_res_as, log=log)
+    data, hdr = convolve_cube_to_target(data, hdr, meta.get("target_res", 27.0), log=log)
     data, hdr = reproject_cube_to_overlay(data, hdr, ov_hdr, log=log)
     return data, hdr
 
@@ -307,7 +312,7 @@ def save_to_fits(
     this_data,
     line,
     folder,
-    target_res,
+    meta,
     out_nan_mask=None,
 ):
     """
@@ -326,7 +331,6 @@ def save_to_fits(
     this_data    : Table        — the PyStructure table
     line         : str          — line/map name, e.g. "12CO21" or "SPIRE250"
     folder       : str          — output directory
-    target_res   : float        — target beam FWHM in arcseconds (for header)
     out_nan_mask : np.ndarray (ny, nx) bool, optional — if supplied, pixels where
                   out_nan_mask is True are set to NaN after all regridding. When
                   the output has been resampled to a coarser grid, out_nan_mask
@@ -344,6 +348,7 @@ def save_to_fits(
 
     # Resample to a coarser grid if the overlay pixel scale is finer than the beam
     native_beam_as = 3600.0 * min(hdr_in.get("BMAJ", 1e6), hdr_in.get("BMIN", 1e6))
+    target_res = meta.get("target_res", 27.0)
     output_hdr = hdr_in
     if native_beam_as < 0.99 * target_res:
         hdr_repr = resample_hdr(hdr_in, target_res)
@@ -364,7 +369,12 @@ def save_to_fits(
             nan_mask_out = out_nan_mask
         map_cart = np.where(nan_mask_out, np.nan, map_cart)
 
-    fname_fits = os.path.join(folder, f"{this_source}_{line}{filename}.fits")
+    suffix = (
+        str(int(np.round(meta.get("target_res_pc"), 0))).replace(".", "p") + "pc"
+        if meta.get("resolution", "angular") == "physical"
+        else str(np.round(meta.get("target_res"), 1)).replace(".", "p") + "as"
+    )
+    fname_fits = os.path.join(folder, f"{this_source}_{line}_{suffix}{filename}.fits")
     fits.writeto(fname_fits, data=map_cart, header=output_hdr, overwrite=True)
 
 
@@ -825,7 +835,7 @@ def run_moments_ppv(
             name,
             str(row["line_dir"]),
             str(row["line_ext"]),
-            target_res_as,
+            meta,
             ov_hdr,
             folder,
             log=LOG,
@@ -951,9 +961,14 @@ def run_moments_ppv(
 
     if save_mask:
         save_ppv_mask_to_fits(
-            mask, ov_hdr, source, "mask", folder, out_nan_mask=out_nan_mask
+            mask, 
+            ov_hdr, 
+            source, 
+            "mask", 
+            folder, 
+            out_nan_mask=out_nan_mask
         )
-        LOG.info(f"PPV mask cube written to: {folder}")
+        LOG.info(f"PPV mask cube written to: {os.path.join(folder, f"{source}_mask.fits")}")
 
     # ------------------------------------------------------------------
     # Compute and write moments for every line.
@@ -970,15 +985,16 @@ def run_moments_ppv(
                 active_mask = mask_hfs
                 LOG.info(f"Using HFS-extended PPV mask for {line_name}.")
                 if save_mask and not np.array_equal(mask_hfs, mask):
+                    hfs_mask_name = f"mask_{line_name.lower()}"
                     save_ppv_mask_to_fits(
                         mask_hfs,
                         ov_hdr,
                         source,
-                        f"mask_{line_name.lower()}",
+                        hfs_mask_name,
                         folder,
                         out_nan_mask=out_nan_mask,
                     )
-                    LOG.info(f"PPV mask cube for {line_name} written to: {folder}")
+                    LOG.info(f"PPV mask cube for {line_name} written to: {os.path.join(folder, f"{source}_{hfs_mask_name}.fits")}")
 
         mom_maps = get_mom_maps_ppv(
             cube_data[line_name.upper()], active_mask, vaxis, mom_calc
@@ -1010,7 +1026,12 @@ def run_moments_ppv(
             if bunit:
                 hdr_out["BUNIT"] = bunit
             hdr_out["LINE"] = line_name
-            fname_fits = os.path.join(folder, f"{source}_{line_name}_{quantity}.fits")
+            suffix = (
+                str(int(np.round(meta.get("target_res_pc"), 0))).replace(".", "p") + "pc"
+                if meta.get("resolution", "angular") == "physical"
+                else str(np.round(meta.get("target_res"), 1)).replace(".", "p") + "as"
+            )
+            fname_fits = os.path.join(folder, f"{source}_{line_name}_{suffix}_{quantity}.fits")
             data_out = (
                 arr.value.copy()
                 if hasattr(arr, "value")
@@ -1068,6 +1089,38 @@ def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data
         return
 
     os.makedirs(folder, exist_ok=True)
+
+    # ------------------------------------------------------------------
+    # Determine target resolution in arcseconds
+    # ------------------------------------------------------------------
+    resolution = meta.get("resolution", "angular")
+    target_res = meta.get("target_res", 27.0)
+
+    if resolution == "native":
+        # Use the native beam of the overlay cube
+        target_res_as = max(ov_hdr.get("BMIN", 0), ov_hdr.get("BMAJ", 0)) * 3600.0
+        LOG.info(f"Native resolution: {target_res_as:.1f} arcsec.")
+    elif resolution == "physical":
+        # Convert target_res (parsecs) to arcseconds using the source distance
+        dist_mpc = params.get("dist_mpc", 1.0)
+        target_res_as = 3600.0 * 180.0 / np.pi * 1e-6 * float(target_res) / dist_mpc
+        LOG.info(
+            f"Physical resolution: {target_res} pc "
+            f"= {target_res_as:.1f} arcsec at {dist_mpc} Mpc."
+        )
+    else:
+        # Angular: use target_res directly in arcseconds
+        target_res_as = float(target_res)
+        LOG.info(f"Angular resolution: {target_res_as:.1f} arcsec.")
+
+    # Write resolved values back into meta:
+    #   meta["target_res"]    → always arcseconds (single source of truth for math)
+    #   meta["target_res_pc"] → always parsecs (for display/filenames/physical analysis)
+    # Both are computed from target_res_as and the source distance (dist_mpc).
+    dist_mpc = params.get("dist_mpc", 1.0)
+    target_res_pc = target_res_as / 3600.0 * np.pi / 180.0 * dist_mpc * 1e6
+    meta["target_res"] = target_res_as
+    meta["target_res_pc"] = target_res_pc
 
     # ------------------------------------------------------------------
     # Load overlay cube to get the reference WCS and footprint mask
@@ -1147,7 +1200,7 @@ def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data
                 this_data,
                 map_name,
                 folder,
-                target_res_as,
+                meta,
                 out_nan_mask=_out_nan,
             )
             save_to_fits(
@@ -1161,7 +1214,7 @@ def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data
                 this_data,
                 map_name,
                 folder,
-                target_res_as,
+                meta,
                 out_nan_mask=_out_nan,
             )
         LOG.info(f"2D map FITS files written to: {folder}")
@@ -1169,43 +1222,16 @@ def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data
 
 def _resolve_target_res(params, meta, ov_hdr=None):
     """
-    Convert the configured target resolution to arcseconds.
+    Return the target resolution in arcseconds from *meta*.
 
-    In physical mode, converts the target resolution from parsecs to
-    arcseconds using the source distance stored in *params*.
+    After ``stage_regrid.run_sampling`` runs, ``meta["target_res"]`` always
+    holds the resolved arcsecond value regardless of the original
+    ``resolution`` mode (angular / physical / native).
 
-    In native mode, reads the beam size directly from *ov_hdr* (BMAJ/BMIN)
-    and ignores the ``target_res`` parameter entirely — matching the
-    behaviour of stage_regrid.run_sampling. *ov_hdr* must be supplied when
-    native mode may be in use; if it is None and the mode is native, falls
-    back to ``target_res`` with a warning.
+    The corresponding parsec value is in ``meta["target_res_pc"]``.
+
+    The *params* and *ov_hdr* arguments are kept for call-site compatibility
+    but are no longer used here; all resolution conversion happens once in
+    ``run_sampling`` and the arcsecond result is stored in ``meta["target_res"]``.
     """
-    resolution = meta.get("resolution", "angular")
-    target_res = float(meta.get("target_res", 27.0))
-
-    if resolution == "native":
-        if ov_hdr is not None:
-            native_as = max(
-                ov_hdr.get("BMIN", 0.0), ov_hdr.get("BMAJ", 0.0)
-            ) * 3600.0
-            if native_as > 0:
-                LOG.info(f"Native resolution: {native_as:.1f} arcsec.")
-                return native_as
-        LOG.warning(
-            "Native resolution requested but no overlay header supplied "
-            "or BMAJ/BMIN missing; falling back to target_res = "
-            f"{target_res} arcsec."
-        )
-        return target_res
-
-    if resolution == "physical":
-        dist_mpc = params.get("dist_mpc", 1.0)
-        target_res_as = 3600.0 * 180.0 / np.pi * 1e-6 * target_res / dist_mpc
-        LOG.info(
-            f"Physical resolution: {target_res} pc at {dist_mpc} Mpc "
-            f"= {target_res_as:.1f} arcsec."
-        )
-        return target_res_as
-
-    # angular (default)
-    return target_res
+    return float(meta.get("target_res", 27.0))
