@@ -207,7 +207,7 @@ def get_convolved_ppv_cube(
     """
     log = log or LOG
 
-    cached_path = os.path.join(fits_dir, f"{source}_{line_name}_{target_res_as}as.fits")
+    cached_path = os.path.join(fits_dir, f"{source}_{line_name}_{target_res_as:.1f}as.fits")
     if os.path.exists(cached_path):
         log.info(f"Using existing convolved cube for line: {line_name}: {cached_path}")
         return fits.getdata(cached_path, header=True)
@@ -364,7 +364,7 @@ def save_to_fits(
             nan_mask_out = out_nan_mask
         map_cart = np.where(nan_mask_out, np.nan, map_cart)
 
-    fname_fits = os.path.join(folder, f"{this_source}_{line}_{filename}.fits")
+    fname_fits = os.path.join(folder, f"{this_source}_{line}{filename}.fits")
     fits.writeto(fname_fits, data=map_cart, header=output_hdr, overwrite=True)
 
 
@@ -1142,7 +1142,7 @@ def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data
                 ov_hdr_2d,
                 ov_slice,
                 "MAP_",
-                "map",
+                "",
                 source,
                 this_data,
                 map_name,
@@ -1156,7 +1156,7 @@ def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data
                 ov_hdr_2d,
                 ov_slice,
                 "EMAP_",
-                "emap",
+                "_err",
                 source,
                 this_data,
                 map_name,

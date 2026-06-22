@@ -411,13 +411,14 @@ def sample_at_res(
     in_data,
     ra_samp,
     dec_samp,
+    meta,
     in_hdr=None,
     target_res_as=None,
     target_hdr=None,
     line_name="",
     source="",
     save_fits=False,
-    path_save_fits="",
+    dir_save_fits="",
     perbeam=False,
     spec_smooth=("default", "binned"),
     unc=False,
@@ -450,7 +451,7 @@ def sample_at_res(
     line_name     : str               — label for optional FITS output
     source        : str               — source name for optional FITS output
     save_fits     : bool              — write the convolved intermediate FITS
-    path_save_fits: str               — directory for intermediate FITS output
+    dir_save_fits : str               — directory for intermediate FITS output
     perbeam       : bool              — correct for beam area change (use for
                                         maps in Jy/beam or K units)
     spec_smooth   : (mode, method)    — spectral smoothing parameters
@@ -497,7 +498,7 @@ def sample_at_res(
         )
         hdr_out = copy.copy(hdr)
     elif hdr["BMAJ"] < 0.99 * target_res_as / 3600.0:
-        LOG.info(f"Convolving {line_name} to {round(target_res_as, 2)} arcsec.")
+        LOG.info(f"Convolving {line_name} to {round(target_res_as, 1)} arcsec.")
         data, hdr_out = conv_with_gauss(
             in_data=data,
             in_hdr=hdr,
@@ -557,17 +558,28 @@ def sample_at_res(
                     new_vaxis[0] + (trg_hdr["CRPIX3"] - 1) * trg_hdr["CDELT3"]
                 )
 
-        data, _ = reproject_interp((data, hdr_out), trg_hdr, order="nearest-neighbor")
+        data, _ = reproject_interp((data, hdr_out), trg_hdr, order="bilinear")
 
         if save_fits:
             out_hdr = copy.copy(trg_hdr)
             out_hdr["BMAJ"] = target_res_as / 3600.0
             out_hdr["BMIN"] = target_res_as / 3600.0
             out_hdr["LINE"] = line_name
+
+            resolution = meta.get("resolution", "angular")
+            target_res = meta.get("target_res", 27.0)
+            print(target_res)
+            out_dir = meta.get("out_dir", "output/")
+            suffix = (
+                str(np.round(target_res, 1)).replace(".", "p") + "pc"
+                if resolution == "physical"
+                else str(np.round(target_res, 1)).replace(".", "p") + "as"
+            )
+            path_save_fits = path.join(
+                dir_save_fits, f"{source}_{line_name}_{suffix}.fits"
+            )
             fits.writeto(
-                path.join(
-                    path_save_fits, f"{source}_{line_name}_{target_res_as}as.fits"
-                ),
+                path_save_fits,
                 data=data,
                 header=out_hdr,
                 overwrite=True,
@@ -780,12 +792,11 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
             map_file,
             samp_ra,
             samp_dec,
+            meta,
             target_res_as=target_res_as,
             target_hdr=ov_hdr,
             line_name=map_entry["map_name"],
             source=source,
-            path_save_fits=fits_dir,
-            save_fits=save_fits,
             perbeam=perbeam,
         )
         this_data["MAP_" + map_entry["map_name"].upper()] = Column(
@@ -804,6 +815,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
                     uc_file,
                     samp_ra,
                     samp_dec,
+                    meta,
                     target_res_as=target_res_as,
                     target_hdr=ov_hdr,
                     line_name=f"{map_entry["map_name"]}_err",
@@ -835,11 +847,12 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
             cube_file,
             samp_ra,
             samp_dec,
+            meta,
             target_res_as=target_res_as,
             target_hdr=ov_hdr,
             line_name=cube["line_name"],
             source=source,
-            path_save_fits=fits_dir,
+            dir_save_fits=fits_dir,
             save_fits=save_fits,
         )
         this_data["SPEC_" + cube["line_name"].upper()] = Column(
@@ -857,6 +870,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
                     b2d_file,
                     samp_ra,
                     samp_dec,
+                    meta,
                     target_res_as=target_res_as,
                     target_hdr=ov_hdr,
                 )
@@ -875,6 +889,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
                     uc_file,
                     samp_ra,
                     samp_dec,
+                    meta,
                     target_res_as=target_res_as,
                     target_hdr=ov_hdr,
                     unc=True,
@@ -981,12 +996,12 @@ def _build_fname(source, meta):
     target_res = meta.get("target_res", 27.0)
     out_dir = meta.get("out_dir", "output/")
     suffix = (
-        str(int(target_res)) + "as"
-        if resolution == "angular"
-        else str(int(target_res)) + "pc" if resolution == "physical" else "native"
+        str(np.round(target_res, 1)).replace(".", "p") + "pc"
+        if resolution == "physical"
+        else str(np.round(target_res, 1)).replace(".", "p") + "as"
     )
     date_str = date.today().strftime("%Y_%m_%d")
-    return os.path.join(out_dir, f"{source}_data_struct_{suffix}_{date_str}.ecsv")
+    return os.path.join(out_dir, f"{source}_hexforge_{suffix}_{date_str}.ecsv")
 
 
 def _init_table(
