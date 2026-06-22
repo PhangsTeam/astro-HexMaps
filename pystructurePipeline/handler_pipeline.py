@@ -28,14 +28,14 @@ Programmatic (from Python)::
 
     from pystructurePipeline import PipelineHandler
     handler = PipelineHandler(conf_path="config.txt")
-    handler.run_all()                              # all stages, all sources
+    handler.run_all()                              # regrid + products (default), all sources
     handler.run_stages(["regrid", "products"])     # subset of stages
     handler.run_stages(["regrid"], targets=["ngc5194"])  # subset of sources
 
 Command-line (after pip install)::
 
     pystructure --conf config.txt
-    pystructure --conf config.txt --stages regrid
+    pystructure --conf config.txt --stages regrid products fits
     pystructure --conf config.txt --targets ngc5194 ngc5457
 """
 
@@ -48,12 +48,12 @@ from pystructurePipeline.handler_sources import SourceHandler
 from pystructurePipeline.pystructureLogger import get_logger, logger
 
 ALL_STAGES = ["regrid", "products", "fits"]
+DATABASE_STAGES = ["regrid", "products"]  # default: omits the optional fits stage
 
 # Two loggers bookend a run: "Loading" covers configuration/setup before the
-# regrid stage begins, and "Return" covers the run summary after the output
-# (FITS) stage completes. Per-stage progress messages are logged by the stage
-# modules themselves (stage_regrid -> "Regrid", stage_products -> "Products",
-# stage_fits -> "FITS").
+# regrid stage begins, and "Return" covers the run summary. Per-stage progress
+# messages are logged by the stage modules themselves (stage_regrid -> "Regrid",
+# stage_products -> "Products", stage_fits -> "FITS").
 LOG_LOADING = get_logger("Loading")
 LOG_RETURN = get_logger("Return")
 
@@ -118,7 +118,14 @@ class PipelineHandler:
 
     def run_all(self, targets: list = None):
         """
-        Run all four pipeline stages in order for the given sources.
+        Run the default pipeline stages (regrid + products) for the given sources.
+
+        The ``fits`` stage is intentionally excluded from the default run
+        because it is optional — it produces FITS moment maps and band images
+        as a convenience output, but the primary pipeline deliverable is the
+        .ecsv database written by the products stage.  To include FITS output,
+        call ``run_stages(["regrid", "products", "fits"])`` explicitly, or pass
+        ``--stages regrid products fits`` on the command line.
 
         Parameters
         ----------
@@ -126,16 +133,16 @@ class PipelineHandler:
             Restrict to these source names.  Defaults to all sources in
             config.txt.
         """
-        self.run_stages(ALL_STAGES, targets=targets)
+        self.run_stages(DATABASE_STAGES, targets=targets)
 
     def run_stages(self, stages: list, targets: list = None):
         """
         Run a specified subset of pipeline stages.
 
         Stages are always executed in the canonical order (regrid
-        → spectra → output) regardless of the order they appear in *stages*.
+        → products → fits) regardless of the order they appear in *stages*.
         This means you can safely pass ["products", "regrid"] and the regrid
-        stage will still run before spectra.
+        stage will still run before products.
 
         Parameters
         ----------
@@ -164,6 +171,12 @@ class PipelineHandler:
         self.run_success = {s: True for s in source_list}
 
         LOG_LOADING.info(f"Running stages: {ordered}")
+
+        if "fits" not in ordered:
+            LOG_LOADING.info(
+                "The 'fits' stage is not included in the current run. "
+                "To enable FITS output, add 'fits' to your stage list."
+            )
 
         for source in source_list:
             LOG_LOADING.info(f"--- Processing source: {source} ---")

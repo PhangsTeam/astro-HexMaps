@@ -25,9 +25,12 @@ CONF_PATH = "config.txt"
 #   "regrid"    – generate the hexagonal sampling grid, convolve and sample
 #                 bands / cubes, write the .ecsv table
 #   "products"  – process spectra, compute moments, write shuffled spectra
-#   "fits"      – write FITS moment maps and band maps
-# Set to None to run ALL stages.
-STAGES = None  # e.g. ["regrid", "products"]
+#   "fits"      – (optional) write FITS moment maps and band images
+#
+# Default: run regrid + products only. The fits stage is optional — it
+# produces convenient FITS images but the primary deliverable is the .ecsv
+# database. Set STAGES = ["regrid", "products", "fits"] to include it.
+STAGES = None  # runs regrid + products (default); add "fits" for FITS output
 
 # Sources to process. Must match entries in keys/target_definitions.txt.
 # Set to None to process all sources defined in config.txt [sources].
@@ -40,6 +43,8 @@ TARGETS = None  # e.g. ["ngc5194", "ngc5457"]
 handler = pys.PipelineHandler(conf_path=CONF_PATH)
 
 if STAGES is None:
+    # run_all() executes the default stages (regrid + products).
+    # To include FITS output: set STAGES = ["regrid", "products", "fits"]
     handler.run_all(targets=TARGETS)
 else:
     handler.run_stages(stages=STAGES, targets=TARGETS)

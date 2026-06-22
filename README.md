@@ -69,11 +69,11 @@ and are usually shared across many projects, so they're kept separate.
 # Edit and run the script in your working directory
 python run_pystructure.py
 
-# Or use the CLI directly
+# Or use the CLI directly (runs regrid + products by default)
 pystructure --conf config.txt
 
-# Specific stages only
-pystructure --conf config.txt --stages regrid products
+# Include the optional fits stage (FITS moment maps and band images)
+pystructure --conf config.txt --stages regrid products fits
 
 # Single source
 pystructure --conf config.txt --targets ngc5194
@@ -88,9 +88,12 @@ pystructure --conf config.txt --log_file pystructure_run.log
 import pystructurePipeline as pys
 
 handler = pys.PipelineHandler(conf_path="config.txt")
-handler.run_all()
+handler.run_all()  # default: regrid + products only
 
-# Or selectively
+# Include the optional fits stage
+handler.run_stages(["regrid", "products", "fits"])
+
+# Or a specific subset
 handler.run_stages(["regrid", "products"], targets=["ngc5194"])
 ```
 
@@ -158,13 +161,18 @@ PyStructure/                      <- git repo - install this with pip
 The pipeline is organized into three stages, always executed in this order
 regardless of the order you list them in:
 
-| Stage | Module | Description |
-|-------|--------|-------------|
-| `regrid` | `stage_regrid.py` | Generate the hexagonal sampling grid from the overlay cube, then convolve and sample maps & cubes onto it; write the PyStructure `.ecsv` |
-| `products` | `stage_products.py` | Build the S/N mask, compute moment maps (mom0/1/2, Tpeak, rms, EW), and shuffled spectra for every line |
-| `fits` | `stage_fits.py` | Regrid the moment maps and 2D maps back onto a rectangular pixel grid and write FITS files |
+| Stage | Module | Default | Description |
+|-------|--------|---------|-------------|
+| `regrid` | `stage_regrid.py` | ✓ | Generate the hexagonal sampling grid from the overlay cube, then convolve and sample maps & cubes onto it; write the PyStructure `.ecsv` |
+| `products` | `stage_products.py` | ✓ | Build the S/N mask, compute moment maps (mom0/1/2, Tpeak, rms, EW), and shuffled spectra for every line |
+| `fits` | `stage_fits.py` | — optional | Compute PPV-native moment maps directly on the convolved cubes and write FITS files (moment maps, band images, mask cubes) |
 
-Run a subset of stages with `--stages` (CLI) or `run_stages([...])` (Python).
+The default run (`run_all()` / `pystructure --conf config.txt`) executes only
+**regrid** and **products** — the primary pipeline deliverable is the `.ecsv`
+database. The `fits` stage is an optional bonus that produces convenient FITS
+images; enable it explicitly with `--stages regrid products fits` or
+`run_stages(["regrid", "products", "fits"])`.
+
 The hexagonal sampling grid generation, previously a separate `sampling`
 stage, is now an internal step of `regrid`.
 

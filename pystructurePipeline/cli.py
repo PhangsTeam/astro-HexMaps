@@ -62,7 +62,10 @@ def parse_args(argv=None):
         nargs="+",
         choices=ALL_STAGES,
         default=None,
-        help=(f"Pipeline stage(s) to run: {', '.join(ALL_STAGES)}. Default: all."),
+        help=(
+            f"Pipeline stage(s) to run: {', '.join(ALL_STAGES)}. "
+            f"Default: {' '.join(DATABASE_STAGES)} (fits is optional and not run by default)."
+        ),
     )
     parser.add_argument(
         "--targets",

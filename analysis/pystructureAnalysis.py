@@ -118,7 +118,7 @@ class pystructureAnalysis:
         line: str,
         quantity: str = "MOM0",
         s: int = 100,
-        cmap: str = "RdYlBu_r",
+        cmap: str = "viridis",
         stretch: str = "lin",
         center: str = None,
         ax=None,
