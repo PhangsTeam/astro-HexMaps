@@ -1,8 +1,20 @@
 import numpy as np
 
-def get_mom_maps(spec_cube, mask, vaxis, mom_calc =[3, 3,"fwhm"]):
+def get_mom_maps(spec_cube, mask, vaxis, mom_calc=[3, 3, "fwhm"], noise_mask=None):
     """
-    Function to compute moment maps
+    Function to compute moment maps.
+
+    :param spec_cube: 2D array (n_pts, n_chan) of spectral data with astropy units.
+    :param mask: 2D array (n_pts, n_chan) velocity-integration mask (1 = signal channels).
+    :param vaxis: 1D velocity axis array with astropy units.
+    :param mom_calc: list [SNthresh, conseq_channels, mom2_method].
+    :param noise_mask: optional 2D boolean/int array (n_pts, n_chan) or 1D (n_chan,) boolean
+                       array marking channels to use for RMS estimation.  When provided,
+                       the RMS is computed from those channels only (instead of all
+                       off-signal channels, i.e. mask==0).  A 1D array is broadcast
+                       across all spatial points.  If None (default), the original
+                       behaviour is preserved: RMS is estimated from all channels where
+                       mask==0 and spectrum!=0.
     """
 
     # --- strip units ONCE ---
@@ -11,6 +23,20 @@ def get_mom_maps(spec_cube, mask, vaxis, mom_calc =[3, 3,"fwhm"]):
     dv        = abs(v_vals[0] - v_vals[1])      # scalar
     spec_unit = spec_cube.unit
     v_unit    = vaxis.unit
+
+    # --- pre-process noise_mask ---
+    if noise_mask is not None:
+        # strip astropy units if present
+        if hasattr(noise_mask, 'value'):
+            noise_mask_vals = noise_mask.value
+        else:
+            noise_mask_vals = np.asarray(noise_mask)
+        # broadcast 1D mask to 2D (n_pts, n_chan)
+        if noise_mask_vals.ndim == 1:
+            noise_mask_vals = np.broadcast_to(noise_mask_vals, spec_vals.shape)
+        noise_mask_vals = noise_mask_vals.astype(bool)
+    else:
+        noise_mask_vals = None
 
     # --- set up output maps WITH units ---
     mom_maps = {}
@@ -54,7 +80,14 @@ def get_mom_maps(spec_cube, mask, vaxis, mom_calc =[3, 3,"fwhm"]):
             continue
 
         # ---------------- RMS ----------------
-        rms = np.nanstd(spectrum[np.logical_and(mask_m == 0, spectrum != 0)])
+        if noise_mask_vals is not None:
+            # Use the explicitly defined noise velocity window(s)
+            noise_sel = noise_mask_vals[m]
+            rms_data = spectrum[np.logical_and(noise_sel, spectrum != 0)]
+        else:
+            # Default: use all off-signal (mask==0) channels
+            rms_data = spectrum[np.logical_and(mask_m == 0, spectrum != 0)]
+        rms = np.nanstd(rms_data) if len(rms_data) > 0 else np.nan
         mom_maps["rms"][m] = rms * spec_unit
 
         # ---------------- Tpeak ----------------

@@ -82,10 +82,15 @@ def process_spectra(source_list,
                     hfs_data = None,
                     use_hfs_lines = False,
                     mom_calc = [3, 3, "fwhm"],
-                    just_source = None
+                    just_source = None,
+                    use_noise_vel_ranges = False,
                     ):
     """
-    :param lines_data:   Pandas DataFrame which is the cubes_list.txt
+    :param lines_data:        Pandas DataFrame which is the cubes_list.txt.
+    :param use_noise_vel_ranges: If True, read the SPEC_NOISE_MASK column from the
+                                 database and pass it to get_mom_maps so that the RMS
+                                 is estimated only over the explicitly defined noise
+                                 velocity window(s) rather than all off-signal channels.
     """
     
     n_sources = len(source_list)
@@ -317,6 +322,14 @@ def process_spectra(source_list,
         print(f'{"[INFO]":<10}', 'Done with mask. Computing moments.')
 
         #-------------------------------------------------------------------
+        # Load noise mask (if noise velocity ranges were specified)
+        #-------------------------------------------------------------------
+        noise_mask = None
+        if use_noise_vel_ranges and 'SPEC_NOISE_MASK' in this_data.keys():
+            noise_mask = this_data['SPEC_NOISE_MASK']
+            print(f'{"[INFO]":<10}', 'Using explicit noise velocity window(s) for RMS estimation.')
+
+        #-------------------------------------------------------------------
         # Apply the mask to all lines and shuffle them
         #-------------------------------------------------------------------
         n_chan_new = 200 # LN: not used (remove?)
@@ -354,11 +367,11 @@ def process_spectra(source_list,
             if use_hfs_lines:
                 if line_name in lines_hfs:
                     mask_hfs = this_data[f'SPEC_MASK_{line_name.upper()}']* au.Unit(1)
-                    mom_maps = get_mom_maps(this_spec, mask_hfs, this_vaxis, mom_calc)
+                    mom_maps = get_mom_maps(this_spec, mask_hfs, this_vaxis, mom_calc, noise_mask=noise_mask)
                 else:
-                    mom_maps = get_mom_maps(this_spec, mask, this_vaxis, mom_calc)
+                    mom_maps = get_mom_maps(this_spec, mask, this_vaxis, mom_calc, noise_mask=noise_mask)
             else:
-                mom_maps = get_mom_maps(this_spec, mask, this_vaxis, mom_calc)
+                mom_maps = get_mom_maps(this_spec, mask, this_vaxis, mom_calc, noise_mask=noise_mask)
 
             # Save in structure
             line_desc = lines_data["line_desc"][jj]

@@ -277,7 +277,20 @@ def create_database(just_source=None, quiet=False, conf=False):
         mask_columns = ["mask_name", "mask_desc", "mask_start", "mask_end", "mask_unit"]
     else:
         mask_columns = ["mask_name", "mask_desc", "mask_ext", "mask_dir"]
-    input_mask = pd.read_csv(mask_file, names = mask_columns, sep=r'[,\s]{2,20}', comment="#")
+    input_mask_all = pd.read_csv(mask_file, names = mask_columns, sep=r'[,\s]{2,20}', comment="#")
+
+    # When use_fixed_vel_mask is True, separate signal mask rows (row 0) from
+    # optional noise velocity range rows (subsequent rows tagged 'noise_vel').
+    if use_fixed_vel_mask and len(input_mask_all) > 0:
+        input_mask = input_mask_all.iloc[[0]].reset_index(drop=True)
+        if 'use_noise_vel_ranges' in globals() and use_noise_vel_ranges:
+            noise_vel_ranges = input_mask_all.iloc[1:].reset_index(drop=True)
+        else:
+            noise_vel_ranges = pd.DataFrame()
+    else:
+        input_mask = input_mask_all
+        noise_vel_ranges = pd.DataFrame()
+
     if len(input_mask) == 0:
         if quiet == False:
             print(f'{"[INFO]":<10}', f'No mask provided; will be constructed from prior line(s).')
@@ -287,6 +300,8 @@ def create_database(just_source=None, quiet=False, conf=False):
                 print(f'{"[INFO]":<10}', f'Input mask loaded into structure; will be used for products.')
             elif use_fixed_vel_mask:
                 print(f'{"[INFO]":<10}', f'Fixed velocity window mask loaded into structure; will be used for products.')
+                if len(noise_vel_ranges) > 0:
+                    print(f'{"[INFO]":<10}', f'{len(noise_vel_ranges)} noise velocity range(s) loaded; will be used for RMS estimation.')
             else:
                 print(f'{"[INFO]":<10}', f'Input mask loaded into structure; will NOT be used for products.')
 
@@ -724,6 +739,21 @@ def create_database(just_source=None, quiet=False, conf=False):
                 mask_vel = (vaxis >= mask_start) & (vaxis <= mask_end)  # create boolean mask for velocity channels within the specified window
                 this_spec[:, mask_vel] = 1  # set values inside fixed velocity window to 1 (True)
 
+                # build noise mask from additional noise velocity range(s) if provided
+                if 'use_noise_vel_ranges' in globals() and use_noise_vel_ranges and len(noise_vel_ranges) > 0:
+                    noise_spec = np.zeros((n_pts, n_chan))
+                    for _, noise_row in noise_vel_ranges.iterrows():
+                        noise_unit = noise_row["mask_unit"]
+                        noise_start = float(noise_row["mask_start"]) * au.Unit(noise_unit)
+                        noise_end   = float(noise_row["mask_end"])   * au.Unit(noise_unit)
+                        vaxis_noise = vaxis.to(au.Unit(noise_unit))
+                        noise_chan = (vaxis_noise >= noise_start) & (vaxis_noise <= noise_end)
+                        noise_spec[:, noise_chan] = 1
+                        print(f'{"[INFO]":<10}', f'Adding noise velocity range: {noise_start} to {noise_end}.')
+                    # store noise mask in the database
+                    this_data['SPEC_NOISE_MASK'] = Column(noise_spec, unit=au.dimensionless_unscaled,
+                                                          description='Noise velocity window mask (channels used for RMS estimation)')
+
             else:
                 # assign mask file
                 this_mask_file = input_mask["mask_dir"][0] + this_source + input_mask["mask_ext"][0]
@@ -775,6 +805,8 @@ def create_database(just_source=None, quiet=False, conf=False):
     else:
         use_mask = False
 
+    _use_noise_vel_ranges = 'use_noise_vel_ranges' in globals() and use_noise_vel_ranges and use_fixed_vel_mask
+
     process_spectra(source_list,
                     cubes,
                     fnames,
@@ -788,6 +820,7 @@ def create_database(just_source=None, quiet=False, conf=False):
                     hfs_data,
                     use_hfs_lines,
                     [mom_thresh,conseq_channels,mom2_method],
+                    use_noise_vel_ranges=_use_noise_vel_ranges,
                     )
   
     if save_mom_maps | save_band_maps:
