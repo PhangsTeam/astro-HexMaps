@@ -121,48 +121,6 @@ def sample_to_hdr(
     return griddata(pixel_coords, in_data, (grid_x, grid_y), method="nearest")
 
 
-def resample_hdr(hdr_ov, target_res):
-    """
-    Build a new 2-D WCS header with a pixel scale of target_res / 3 arcsec/px.
-
-    The reference pixel is placed at the bottom-left corner of the overlay
-    footprint.  The output grid size is computed so that it covers the same
-    sky area as the input overlay at the new (coarser) pixel scale.
-
-    Parameters
-    ----------
-    hdr_ov     : FITS Header — 2-D overlay header
-    target_res : float       — target beam FWHM in arcseconds
-
-    Returns
-    -------
-    hdr_new : FITS Header — 2-D WCS header for the output FITS image
-    """
-    wcs_new = WCS(naxis=2)
-    wcs_new.wcs.crpix = [1, 1]
-    wcs_ov = WCS(hdr_ov)
-    ra_ref, dec_ref = wcs_ov.all_pix2world(0, 0, 0)
-    wcs_new.wcs.crval = [ra_ref, dec_ref]
-    wcs_new.wcs.cunit = ["deg", "deg"]
-    wcs_new.wcs.ctype = ["RA---TAN", "DEC--TAN"]
-
-    delta_px = target_res / 3600.0 / 3.0  # 3 pixels per beam FWHM
-    wcs_new.wcs.cdelt = [-delta_px, delta_px]
-
-    xaxis_n = int(np.round(hdr_ov["NAXIS1"] * abs(hdr_ov["CDELT1"]) / delta_px))
-    yaxis_n = int(np.round(hdr_ov["NAXIS2"] * abs(hdr_ov["CDELT2"]) / delta_px))
-    wcs_new.array_shape = [xaxis_n, yaxis_n]
-
-    hdr_new = wcs_new.to_header()
-    hdr_new["NAXIS"] = 2
-    hdr_new["NAXIS1"] = xaxis_n
-    hdr_new["NAXIS2"] = yaxis_n
-    hdr_new["BMAJ"] = target_res / 3600.0
-    hdr_new["BMIN"] = target_res / 3600.0
-    hdr_new["BPA"] = 0.0
-    return hdr_new
-
-
 # ============================================================================
 # PPV-native pipeline: convolution, reprojection, masking, moments
 #
@@ -328,9 +286,8 @@ def save_to_fits(
     line         : str          — line/map name, e.g. "12CO21" or "SPIRE250"
     folder       : str          — output directory
     out_nan_mask : np.ndarray (ny, nx) bool, optional — if supplied, pixels where
-                  out_nan_mask is True are set to NaN after all regridding. When
-                  the output has been resampled to a coarser grid, out_nan_mask
-                  is reprojected onto the output grid first (nearest-neighbour).
+                  out_nan_mask is True are set to NaN after regridding, giving
+                  the same NaN pattern as the moment maps and convolved cubes.
     """
     col_name = f"{key}{line.upper()}"
     if col_name not in this_data.colnames:
@@ -342,32 +299,13 @@ def save_to_fits(
     # Apply footprint mask (NaN outside the observed area)
     map_cart = ov_slice * map_cart
 
-    # Resample to a coarser grid if the overlay pixel scale is finer than the beam
-    native_beam_as = 3600.0 * min(hdr_in.get("BMAJ", 1e6), hdr_in.get("BMIN", 1e6))
-    target_res = meta.get("target_res", 27.0)
-    output_hdr = hdr_in
-    if native_beam_as < 0.99 * target_res:
-        hdr_repr = resample_hdr(hdr_in, target_res)
-        map_cart, _ = reproject_cube((map_cart, hdr_in), hdr_repr)
-        output_hdr = hdr_repr
-
-    # Apply the combined NaN mask (footprint + edge strip). When the output
-    # has been resampled to a coarser grid, reproject out_nan_mask first.
+    # Apply the combined NaN mask (footprint + edge strip)
     if out_nan_mask is not None:
-        if output_hdr is not hdr_in:
-            nan_repr, _ = reproject_cube(
-                (out_nan_mask.astype(float), hdr_in),
-                output_hdr,
-                order="nearest-neighbor",
-            )
-            nan_mask_out = nan_repr > 0.5
-        else:
-            nan_mask_out = out_nan_mask
-        map_cart = np.where(nan_mask_out, np.nan, map_cart)
+        map_cart = np.where(out_nan_mask, np.nan, map_cart)
 
-    res_suffix  = meta.get("res_suffix", "27p0as")
+    res_suffix = meta.get("res_suffix", "27p0as")
     fname_fits = os.path.join(folder, f"{this_source}_{line}_{res_suffix}{filename}.fits")
-    fits.writeto(fname_fits, data=map_cart, header=output_hdr, overwrite=True)
+    fits.writeto(fname_fits, data=map_cart, header=hdr_in, overwrite=True)
 
 
 def construct_mask_ppv(ref_cube, SN_processing):
