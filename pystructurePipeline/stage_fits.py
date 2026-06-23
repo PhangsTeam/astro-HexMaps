@@ -70,12 +70,12 @@ from astropy.table import Table
 from astropy.stats import median_absolute_deviation
 from scipy.interpolate import griddata
 from scipy.ndimage import label, binary_erosion
-from reproject import reproject_interp
+# from reproject import reproject_interp
 from datetime import date
 from typing import Sequence, Union
 
-from pystructurePipeline.utils_fits import twod_head, conv_with_gauss
-from pystructurePipeline.stage_regrid import _harmonize_restfreq, _ensure_ms, _get_vaxis
+from pystructurePipeline.utils_fits import twod_head, conv_with_gauss, reproject_cube
+from pystructurePipeline.stage_regrid import _ensure_ms, _get_vaxis
 from pystructurePipeline.utils_table import get_mom_maps
 
 from pystructurePipeline.pystructureLogger import get_logger
@@ -293,8 +293,7 @@ def reproject_cube_to_overlay(data, hdr, ov_hdr, log=None):
     trg_hdr, _ = _ensure_ms(trg_hdr)
     hdr, data = _ensure_ms(copy.copy(hdr), data)
 
-    _harmonize_restfreq(hdr, trg_hdr)
-    data, _ = reproject_interp((data, hdr), trg_hdr, order="nearest-neighbor")
+    data, _ = reproject_cube((data, hdr), trg_hdr, order="bilinear")
     return data, trg_hdr
 
 
@@ -349,14 +348,14 @@ def save_to_fits(
     output_hdr = hdr_in
     if native_beam_as < 0.99 * target_res:
         hdr_repr = resample_hdr(hdr_in, target_res)
-        map_cart, _ = reproject_interp((map_cart, hdr_in), hdr_repr)
+        map_cart, _ = reproject_cube((map_cart, hdr_in), hdr_repr)
         output_hdr = hdr_repr
 
     # Apply the combined NaN mask (footprint + edge strip). When the output
     # has been resampled to a coarser grid, reproject out_nan_mask first.
     if out_nan_mask is not None:
         if output_hdr is not hdr_in:
-            nan_repr, _ = reproject_interp(
+            nan_repr, _ = reproject_cube(
                 (out_nan_mask.astype(float), hdr_in),
                 output_hdr,
                 order="nearest-neighbor",
@@ -583,8 +582,7 @@ def external_mask_ppv(mask_file, ov_hdr, log=None):
         trg_hdr = twod_head(trg_hdr)
 
     hdr_out = copy.copy(hdr)
-    _harmonize_restfreq(hdr_out, trg_hdr)
-    data, _ = reproject_interp((data, hdr_out), trg_hdr, order="nearest-neighbor")
+    data, _ = reproject_cube((data, hdr_out), trg_hdr, order="nearest-neighbor")
 
     if not is_cube:
         data = np.broadcast_to(data, (ov_hdr["NAXIS3"], *data.shape)).copy()

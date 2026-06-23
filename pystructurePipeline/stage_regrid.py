@@ -52,6 +52,7 @@ from pystructurePipeline.utils_fits import (
     conv_with_gauss,
     deproject,
     make_sampling_points,
+    reproject_cube,
 )
 
 from pystructurePipeline.pystructureLogger import get_logger
@@ -81,18 +82,9 @@ def _ensure_ms(hdr, data=None):
     """
     Ensure the velocity axis is in m/s and monotonically increasing.
 
-    Some FITS cubes store velocities in km/s (CDELT3 < 200) or have a
-    decreasing velocity axis (CDELT3 < 0).  Both need to be normalised so
-    that the reprojection and shuffle steps work correctly.
-
     Modifies the header in place.  If *data* is provided and the axis needs
     flipping, the data array is also flipped along axis 0 and returned.
     """
-    # Convert km/s → m/s
-    if abs(hdr["CDELT3"]) < 200:
-        hdr["CDELT3"] *= 1000
-        hdr["CRVAL3"] *= 1000
-        hdr["CUNIT3"] = "m/s"
 
     # Flip decreasing axis
     if data is not None and hdr["CDELT3"] < 0:
@@ -104,46 +96,65 @@ def _ensure_ms(hdr, data=None):
 
     return hdr, data
 
+# def _fix_gildas_header(hdr):
+#     """Fix common GILDAS/CLASS FITS header issues for astropy compatibility."""
+#     hdr = hdr.copy()
+    
+#     # Fix 1: GLS -> SFL (affects both cubes)
+#     for key in ['CTYPE1', 'CTYPE2']:
+#         if 'GLS' in hdr.get(key, ''):
+#             hdr[key] = hdr[key].replace('GLS', 'SFL')
+    
+#     # Fix 2: CRPIX3 = 0 (only source cube, but check both)
+#     if hdr.get('CRPIX3', 1) == 0.0:
+#         hdr['CRVAL3'] = hdr['CRVAL3'] + hdr['CDELT3']
+#         hdr['CRPIX3'] = 1.0
+    
+#     return hdr
 
-def _harmonize_restfreq(hdr_in, hdr_target):
-    """
-    Ensure both headers carry a consistent RESTFRQ before reprojection.
+# def _harmonize_restfreq(hdr_in, hdr_target):
+#     """
+#     Ensure both headers carry a consistent RESTFRQ before reprojection.
 
-    astropy's WCS spectral machinery needs RESTFRQ to be present to construct
-    the spectral coordinate transform — even when both axes are simple linear
-    velocity scales in m/s and the actual CTYPE3 convention (e.g. "VRAD" vs
-    "VELO-LSR") would not otherwise matter. If RESTFRQ is missing from either
-    header, reproject_interp silently returns an all-NaN array with an empty
-    footprint for the spectral axis, with no warning or error raised.
+#     astropy's WCS spectral machinery needs RESTFRQ to be present to construct
+#     the spectral coordinate transform — even when both axes are simple linear
+#     velocity scales in m/s and the actual CTYPE3 convention (e.g. "VRAD" vs
+#     "VELO-LSR") would not otherwise matter. If RESTFRQ is missing from either
+#     header, reproject_interp silently returns an all-NaN array with an empty
+#     footprint for the spectral axis, with no warning or error raised.
 
-    This previously was handled by removing RESTFRQ from both headers
-    entirely, which avoided an astropy "latest version" issue with stale
-    RESTFRQ values but reintroduces the all-NaN failure whenever the two
-    cubes use different CTYPE3 conventions (a common situation when combining
-    cubes from different surveys/pipelines).
+#     This previously was handled by removing RESTFRQ from both headers
+#     entirely, which avoided an astropy "latest version" issue with stale
+#     RESTFRQ values but reintroduces the all-NaN failure whenever the two
+#     cubes use different CTYPE3 conventions (a common situation when combining
+#     cubes from different surveys/pipelines).
 
-    The fix: if either header has a RESTFRQ, copy that value to both headers
-    (preferring the input cube's own value if both have one). The small
-    radio/optical velocity-convention difference this introduces is of order
-    (v/c)^2 — many orders of magnitude below the channel width — and is
-    negligible since PyStructure's own velocity axis (CRVAL3/CDELT3/CRPIX3 in
-    m/s) is used for all scientific calculations, not the WCS spectral
-    transform. Only if NEITHER header has a RESTFRQ is it removed from both,
-    as before.
+#     The fix: if either header has a RESTFRQ, copy that value to both headers
+#     (preferring the input cube's own value if both have one). The small
+#     radio/optical velocity-convention difference this introduces is of order
+#     (v/c)^2 — many orders of magnitude below the channel width — and is
+#     negligible since PyStructure's own velocity axis (CRVAL3/CDELT3/CRPIX3 in
+#     m/s) is used for all scientific calculations, not the WCS spectral
+#     transform. Only if NEITHER header has a RESTFRQ is it removed from both,
+#     as before.
 
-    Parameters
-    ----------
-    hdr_in     : FITS Header — input cube header (modified in place)
-    hdr_target : FITS Header — target/overlay header (modified in place)
-    """
-    restfreq = hdr_in.get("RESTFRQ") or hdr_target.get("RESTFRQ")
-    if restfreq:
-        hdr_in["RESTFRQ"] = restfreq
-        hdr_target["RESTFRQ"] = restfreq
-    else:
-        for h in (hdr_in, hdr_target):
-                h.remove("RESTF*", ignore_missing=True)
+#     Parameters
+#     ----------
+#     hdr_in     : FITS Header — input cube header (modified in place)
+#     hdr_target : FITS Header — target/overlay header (modified in place)
+#     """
+#     hdr_in = hdr_in.copy()
+#     hdr_target = hdr_target.copy()
 
+#     restfreq = hdr_in.get("RESTFRQ") or hdr_target.get("RESTFRQ")
+#     if restfreq:
+#         hdr_in["RESTFRQ"] = restfreq
+#         hdr_target["RESTFRQ"] = restfreq
+#     else:
+#         for h in (hdr_in, hdr_target):
+#                 h.remove("RESTF*", ignore_missing=True)
+
+#     return hdr_in, hdr_target
 
 # ============================================================================
 # Spectral smoothing
@@ -521,9 +532,14 @@ def sample_at_res(
     # Reprojection onto the overlay WCS
     # ------------------------------------------------------------------
     if trg_hdr is not None:
-        # Harmonize RESTFRQ between the two headers (see _harmonize_restfreq
-        # for why this is needed rather than simply removing it from both).
-        _harmonize_restfreq(hdr_out, trg_hdr)
+
+        # # Fix common GILDAS/CLASS FITS header issues for astropy compatibility
+        # hdr_out = _fix_gildas_header(hdr_out)
+        # trg_hdr = _fix_gildas_header(trg_hdr)
+
+        # # Harmonize RESTFRQ between the two headers (see _harmonize_restfreq
+        # # for why this is needed rather than simply removing it from both).
+        # hdr_out, trg_hdr = _harmonize_restfreq(hdr_out, trg_hdr)
 
         # Adjust target spectral axis if spectral smoothing changed the channel width
         if isinstance(spec_smooth[0], (int, float)) and spec_smooth[0] != "default":
@@ -536,7 +552,11 @@ def sample_at_res(
                     new_vaxis[0] + (trg_hdr["CRPIX3"] - 1) * trg_hdr["CDELT3"]
                 )
 
-        data, _ = reproject_interp((data, hdr_out), trg_hdr, order="bilinear")
+        # Reproject the data onto the target header using bilinear interpolation
+        if is_cube:
+            data, _ = reproject_cube((data, hdr_out), trg_hdr, order="bilinear")
+        else:
+            data, _ = reproject_interp((data, hdr_out), trg_hdr, order="bilinear")
 
         if save_fits:
             out_hdr = copy.copy(trg_hdr)
@@ -630,8 +650,11 @@ def sample_mask(in_data, ra_samp, dec_samp, in_hdr=None, target_hdr=None):
         hdr_out = copy.copy(hdr)
         # Harmonize RESTFRQ between the two headers (see _harmonize_restfreq
         # for why this is needed rather than simply removing it from both).
-        _harmonize_restfreq(hdr_out, trg_hdr)
-        data, _ = reproject_interp((data, hdr_out), trg_hdr, order="nearest-neighbor")
+        # hdr_out, trg_hdr = _harmonize_restfreq(hdr_out, trg_hdr)
+        if is_cube:
+            data, _ = reproject_cube((data, hdr_out), trg_hdr, order="nearest-neighbor")
+        else:
+            data, _ = reproject_interp((data, hdr_out), trg_hdr, order="nearest-neighbor")
 
     wcs_t = WCS(trg_hdr)
     if is_cube:
