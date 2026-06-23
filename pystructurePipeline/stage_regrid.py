@@ -136,12 +136,12 @@ def _harmonize_restfreq(hdr_in, hdr_target):
     hdr_in     : FITS Header — input cube header (modified in place)
     hdr_target : FITS Header — target/overlay header (modified in place)
     """
-    restfreq = hdr_in.get("RESTFRQ") or hdr_target.get("RESTFRQ")
-    if restfreq:
-        hdr_in["RESTFRQ"] = restfreq
-        hdr_target["RESTFRQ"] = restfreq
-    else:
-        for h in (hdr_in, hdr_target):
+    # restfreq = hdr_in.get("RESTFRQ") or hdr_target.get("RESTFRQ")
+    # if restfreq:
+    #     hdr_in["RESTFRQ"] = restfreq
+    #     hdr_target["RESTFRQ"] = restfreq
+    # else:
+    for h in (hdr_in, hdr_target):
             h.remove("RESTF*", ignore_missing=True)
 
 
