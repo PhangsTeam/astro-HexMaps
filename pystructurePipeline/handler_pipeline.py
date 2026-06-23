@@ -173,7 +173,7 @@ class PipelineHandler:
 
         LOG_LOADING.info(f"Running stages: {ordered}")
 
-        if "fits" not in ordered:
+        if ordered == DATABASE_STAGES and "fits" not in ordered:
             LOG_LOADING.info(
                 "The 'fits' stage is not included in the current run. "
                 "To enable FITS output, add 'fits' to your stage list."
