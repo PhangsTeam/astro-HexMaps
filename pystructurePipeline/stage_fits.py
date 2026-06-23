@@ -71,6 +71,7 @@ from astropy.stats import median_absolute_deviation
 from scipy.interpolate import griddata
 from scipy.ndimage import label, binary_erosion
 from reproject import reproject_interp
+from datetime import date
 from typing import Sequence, Union
 
 from pystructurePipeline.utils_fits import twod_head, conv_with_gauss
@@ -207,12 +208,8 @@ def get_convolved_ppv_cube(
     """
     log = log or LOG
 
-    suffix = (
-        str(int(np.round(meta.get("target_res_pc"), 0))).replace(".", "p") + "pc"
-        if meta.get("resolution", "angular") == "physical"
-        else str(np.round(meta.get("target_res"), 1)).replace(".", "p") + "as"
-    )
-    cached_path = os.path.join(fits_dir, f"{source}_{line_name}_{suffix}.fits")
+    res_suffix  = meta.get("res_suffix", "27p0as")
+    cached_path = os.path.join(fits_dir, f"{source}_{line_name}_{res_suffix}.fits")
     if os.path.exists(cached_path):
         log.info(f"Using existing convolved cube for line: {line_name}: {cached_path}")
         return fits.getdata(cached_path, header=True)
@@ -369,12 +366,8 @@ def save_to_fits(
             nan_mask_out = out_nan_mask
         map_cart = np.where(nan_mask_out, np.nan, map_cart)
 
-    suffix = (
-        str(int(np.round(meta.get("target_res_pc"), 0))).replace(".", "p") + "pc"
-        if meta.get("resolution", "angular") == "physical"
-        else str(np.round(meta.get("target_res"), 1)).replace(".", "p") + "as"
-    )
-    fname_fits = os.path.join(folder, f"{this_source}_{line}_{suffix}{filename}.fits")
+    res_suffix  = meta.get("res_suffix", "27p0as")
+    fname_fits = os.path.join(folder, f"{this_source}_{line}_{res_suffix}{filename}.fits")
     fits.writeto(fname_fits, data=map_cart, header=output_hdr, overwrite=True)
 
 
@@ -1025,19 +1018,19 @@ def run_moments_ppv(
             hdr_out = copy.copy(ov_hdr_2d)
             if bunit:
                 hdr_out["BUNIT"] = bunit
-            hdr_out["LINE"] = line_name
-            suffix = (
-                str(int(np.round(meta.get("target_res_pc"), 0))).replace(".", "p") + "pc"
-                if meta.get("resolution", "angular") == "physical"
-                else str(np.round(meta.get("target_res"), 1)).replace(".", "p") + "as"
-            )
-            fname_fits = os.path.join(folder, f"{source}_{line_name}_{suffix}_{quantity}.fits")
+            hdr_out["LINE"] = meta.get("line_desc", line_desc)
+            hdr_out["BTYPE"] = quantity
+            res_suffix = meta.get("res_suffix", "27p0as")
+            fname_fits = os.path.join(folder, f"{source}_{line_name}_{res_suffix}_{quantity}.fits")
             data_out = (
                 arr.value.copy()
                 if hasattr(arr, "value")
                 else np.asarray(arr, dtype=float).copy()
             )
             data_out[out_nan_mask] = np.nan
+            hdr_out["COMMENT"] = 'Created with HexMaps pipeline stage_fits.py'
+            hdr_out["COMMENT"] = f'Author: {meta.get("user")}'
+            hdr_out["COMMENT"] = 'Created on: ' + date.today().strftime("%Y_%m_%d")
             fits.writeto(fname_fits, data=data_out, header=hdr_out, overwrite=True)
 
         LOG.info(f"Compute moment maps and write to file for line: {line_name}.")

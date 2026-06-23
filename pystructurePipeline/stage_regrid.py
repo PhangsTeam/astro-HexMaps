@@ -318,44 +318,13 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
         raise ValueError(f"4D overlay cube for {source}. " "Please provide a 3D cube.")
 
     # ------------------------------------------------------------------
-    # Determine target resolution in arcseconds
-    # ------------------------------------------------------------------
-    resolution = meta.get("resolution", "angular")
-    target_res = meta.get("target_res", 27.0)
-
-    if resolution == "native":
-        # Use the native beam of the overlay cube
-        target_res_as = max(ov_hdr.get("BMIN", 0), ov_hdr.get("BMAJ", 0)) * 3600.0
-        LOG.info(f"Native resolution: {target_res_as:.1f} arcsec.")
-    elif resolution == "physical":
-        # Convert target_res (parsecs) to arcseconds using the source distance
-        dist_mpc = params.get("dist_mpc", 1.0)
-        target_res_as = 3600.0 * 180.0 / np.pi * 1e-6 * float(target_res) / dist_mpc
-        LOG.info(
-            f"Physical resolution: {target_res} pc "
-            f"= {target_res_as:.1f} arcsec at {dist_mpc} Mpc."
-        )
-    else:
-        # Angular: use target_res directly in arcseconds
-        target_res_as = float(target_res)
-        LOG.info(f"Angular resolution: {target_res_as:.1f} arcsec.")
-
-    # Write resolved values back into meta:
-    #   meta["target_res"]    → always arcseconds (single source of truth for math)
-    #   meta["target_res_pc"] → always parsecs (for display/filenames/physical analysis)
-    # Both are computed from target_res_as and the source distance (dist_mpc).
-    dist_mpc = params.get("dist_mpc", 1.0)
-    target_res_pc = target_res_as / 3600.0 * np.pi / 180.0 * dist_mpc * 1e6
-    meta["target_res"] = target_res_as
-    meta["target_res_pc"] = target_res_pc
-
-    # ------------------------------------------------------------------
     # Build the footprint mask and generate the hex grid
     # ------------------------------------------------------------------
     # The mask is True wherever at least one spectral channel is finite.
     # This clips the grid to the mapped area without relying on a separate mask file.
     ov_footprint = np.sum(np.isfinite(ov_cube), axis=0) >= 1
     mask_hdr = twod_head(ov_hdr)
+    target_res_as = meta.get("target_res", 27.0)
 
     # Apply the same half-beam edge erosion used for the FITS output files
     # so that the hex grid and the FITS products share the same effective
@@ -382,7 +351,7 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
     pixels_per_beam = meta.get("pixels_per_beam", 2.0)
     max_rad = meta.get("max_rad", "auto")
     # Spacing in degrees: one beam FWHM divided by pixels_per_beam
-    spacing = target_res_as / 3600.0 / float(pixels_per_beam)
+    spacing = meta.get("target_res", 27.0) / 3600.0 / float(pixels_per_beam)
 
     samp_ra, samp_dec = make_sampling_points(
         ra_ctr=params["ra_ctr"],
@@ -574,15 +543,9 @@ def sample_at_res(
             out_hdr["BMAJ"] = target_res_as / 3600.0
             out_hdr["BMIN"] = target_res_as / 3600.0
             out_hdr["LINE"] = line_name
-
-            out_dir = meta.get("out_dir", "output/")
-            suffix = (
-                str(int(np.round(meta.get("target_res_pc"), 0))).replace(".", "p") + "pc"
-                if meta.get("resolution", "angular") == "physical"
-                else str(np.round(meta.get("target_res"), 1)).replace(".", "p") + "as"
-            )
+            res_suffix = meta.get("res_suffix", "27p0as")
             path_save_fits = path.join(
-                dir_save_fits, f"{source}_{line_name}_{suffix}.fits"
+                dir_save_fits, f"{source}_{line_name}_{res_suffix}.fits"
             )
             fits.writeto(
                 path_save_fits,
@@ -996,16 +959,14 @@ def _build_fname(source, meta):
     """
     Construct the output .ecsv filename.
 
-    Encodes source name, resolution (value + unit suffix), and today's date.
+    Encodes source name, resolution suffix, and today's date.
+    The resolution suffix is read from ``meta["res_suffix"]`` which is set
+    by handler_keys._resolve_resolution and kept current by run_sampling.
     """
-    out_dir = meta.get("out_dir", "output/")
-    suffix = (
-        str(int(np.round(meta.get("target_res_pc"), 0))).replace(".", "p") + "pc"
-        if meta.get("resolution", "angular") == "physical"
-        else str(np.round(meta.get("target_res"), 1)).replace(".", "p") + "as"
-    )
-    date_str = date.today().strftime("%Y_%m_%d")
-    return os.path.join(out_dir, f"{source}_hexforge_{suffix}_{date_str}.ecsv")
+    out_dir    = meta.get("out_dir", "output/")
+    res_suffix = meta.get("res_suffix", "27p0as")
+    date_str   = date.today().strftime("%Y_%m_%d")
+    return os.path.join(out_dir, f"{source}_hexforge_{res_suffix}_{date_str}.ecsv")
 
 
 def _init_table(

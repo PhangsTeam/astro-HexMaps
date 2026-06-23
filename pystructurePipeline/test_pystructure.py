@@ -73,6 +73,65 @@ class TestKeyHandler:
         assert len(kh.cubes) == 1
         assert kh.meta["target_res"] == 27.0
 
+    def test_resolve_resolution_sets_all_three_keys_angular(self, tmp_path):
+        """
+        After KeyHandler.load(), meta must contain target_res (arcsec),
+        target_res_pc (parsec), and res_suffix for all three modes.
+        Angular mode is the simplest case: no FITS file needed.
+        """
+        conf_path = self._write_minimal_config(tmp_path)
+        from pystructurePipeline.handler_keys import KeyHandler
+
+        kh = KeyHandler(str(conf_path))
+        assert kh.meta["target_res"] == 27.0       # arcsec
+        assert kh.meta["target_res_pc"] > 0         # parsec — positive
+        assert kh.meta["res_suffix"] == "27p0as"
+
+    def test_resolve_resolution_suffix_physical(self, tmp_path):
+        """Physical mode: res_suffix ends in 'pc'."""
+        conf_path = self._write_minimal_config(tmp_path)
+        conf_path.write_text(
+            conf_path.read_text()
+            .replace("resolution = angular", "resolution = physical")
+            .replace("target_res = 27.0", "target_res = 100.0")
+        )
+        from pystructurePipeline.handler_keys import KeyHandler
+
+        kh = KeyHandler(str(conf_path))
+        assert kh.meta["res_suffix"].endswith("pc")
+        assert kh.meta["target_res"] > 0            # converted to arcsec
+        assert kh.meta["target_res_pc"] == pytest.approx(100.0, rel=1e-3)
+
+    def test_find_output_fname_discovers_existing_file(self, tmp_path):
+        """
+        _find_output_fname must return the most recent existing .ecsv
+        rather than today's date when a matching file already exists.
+        """
+        import os
+        from pystructurePipeline.handler_pipeline import PipelineHandler
+
+        handler = PipelineHandler(conf_path=str(tmp_path / "config.txt"),
+                                  verbose=False) if False else None
+
+        conf_path = self._write_minimal_config(tmp_path)
+        from pystructurePipeline.handler_keys import KeyHandler
+
+        kh = KeyHandler(str(conf_path))
+        out_dir    = kh.meta["out_dir"]
+        res_suffix = kh.meta["res_suffix"]
+        os.makedirs(out_dir, exist_ok=True)
+
+        # Write a fake .ecsv with an older date
+        existing = os.path.join(out_dir, f"ngc5194_hexforge_{res_suffix}_2024_01_01.ecsv")
+        with open(existing, "w") as f:
+            f.write("# fake ecsv\n")
+
+        # _find_output_fname should discover this file without needing regrid
+        from pystructurePipeline.handler_pipeline import PipelineHandler
+        handler = PipelineHandler(conf_path=str(conf_path), verbose=False)
+        found = handler._find_output_fname("ngc5194")
+        assert found == existing
+
     def test_save_mask_defaults_false(self, tmp_path):
         """save_mask is not set in the minimal fixture, so it must default to False."""
         conf_path = self._write_minimal_config(tmp_path)
@@ -168,6 +227,7 @@ class TestKeyHandler:
         assert meta["target_res"] == 27.0
         expected_pc = 27.0 / 3600.0 * np.pi / 180.0 * dist_mpc * 1e6
         assert abs(meta["target_res_pc"] - expected_pc) < 0.01
+        assert meta["res_suffix"] == "27p0as"
 
         # physical: target_res converted to arcsec; target_res_pc from distance
         meta = {**base_meta, "resolution": "physical", "target_res": 100.0}
@@ -175,6 +235,7 @@ class TestKeyHandler:
         expected_as = 3600.0 * 180.0 / np.pi * 1e-6 * 100.0 / dist_mpc
         assert abs(meta["target_res"] - expected_as) < 0.01    # now in arcsec
         assert abs(meta["target_res_pc"] - expected_as / 3600.0 * np.pi / 180.0 * dist_mpc * 1e6) < 0.01
+        assert meta["res_suffix"] == "100pc"
 
         # native: target_res = BMAJ = 30 arcsec; target_res_pc from distance
         meta = {**base_meta, "resolution": "native", "target_res": 99.0}
@@ -182,6 +243,7 @@ class TestKeyHandler:
         assert meta["target_res"] == 30.0
         expected_pc_nat = 30.0 / 3600.0 * np.pi / 180.0 * dist_mpc * 1e6
         assert abs(meta["target_res_pc"] - expected_pc_nat) < 0.01
+        assert meta["res_suffix"] == "30p0as"
 
     def test_fallback_use_logs_warning(self, tmp_path, capsys):
         """
@@ -742,17 +804,15 @@ class TestStageFits:
         hdr = fits.Header()
         hdr["NAXIS"] = 3
         hdr["NAXIS1"], hdr["NAXIS2"], hdr["NAXIS3"] = 3, 3, 2
-        cached_path = tmp_path / "testsrc_co_27.0as.fits"
+        # Filename must match the suffix get_convolved_ppv_cube builds from meta
+        cached_path = tmp_path / "testsrc_co_27p0as.fits"
         fits.writeto(str(cached_path), cube, hdr)
 
+        meta = {"target_res": 27.0, "target_res_pc": 1000.0,
+                "resolution": "angular", "res_suffix": "27p0as"}
         data, _ = get_convolved_ppv_cube(
-            "testsrc",
-            "co",
-            "/nonexistent_dir",
-            ".fits",
-            27.0,
-            hdr,
-            str(tmp_path),
+            "testsrc", "co", "/nonexistent_dir", ".fits",
+            meta, hdr, str(tmp_path),
         )
         assert np.array_equal(data, cube)
 
@@ -764,15 +824,12 @@ class TestStageFits:
         hdr["NAXIS"] = 3
         hdr["NAXIS1"], hdr["NAXIS2"], hdr["NAXIS3"] = 3, 3, 2
 
+        meta = {"target_res": 27.0, "target_res_pc": 1000.0,
+                "resolution": "angular", "res_suffix": "27p0as"}
         with pytest.raises(FileNotFoundError):
             get_convolved_ppv_cube(
-                "testsrc",
-                "co",
-                str(tmp_path),
-                ".fits",
-                27.0,
-                hdr,
-                str(tmp_path),
+                "testsrc", "co", str(tmp_path), ".fits",
+                meta, hdr, str(tmp_path),
             )
 
 

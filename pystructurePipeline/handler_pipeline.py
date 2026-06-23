@@ -236,16 +236,18 @@ class PipelineHandler:
         """
         Dispatch the products stage for *source*.
 
-        Reads the .ecsv written by regrid, builds the S/N mask, computes
-        moment maps and shuffled spectra for every line, and overwrites the
-        .ecsv with the enriched table.
+        Reads the .ecsv written by regrid (discovers the most recent existing
+        file via _find_output_fname so products can run independently without
+        regrid in the same session), builds the S/N mask, computes moment
+        maps and shuffled spectra for every line, and overwrites the .ecsv
+        with the enriched table.
         """
         from pystructurePipeline.stage_products import run_products, LOG as PRODUCTS_LOG
 
         PRODUCTS_LOG.info(f"Create products for source: {source} ...")
         run_products(
             source=source,
-            fname=self._get_output_fname(source),
+            fname=self._find_output_fname(source),
             meta=self.key_handler.meta,
             cubes=self.key_handler.get_cubes(),
             input_mask=self.key_handler.get_input_mask(),
@@ -259,14 +261,16 @@ class PipelineHandler:
         Computes moment maps directly on the convolved PPV cubes (not the
         hex-grid .ecsv table), regrid the 2D map columns onto a rectangular
         pixel grid, and optionally writes the velocity-integration mask(s)
-        as FITS cubes — all into folder_savefits.
+        as FITS cubes — all into folder_savefits. Uses _find_output_fname
+        so the fits stage can run independently without regrid or products
+        in the same session.
         """
         from pystructurePipeline.stage_fits import run_fits, LOG as FITS_LOG
 
         FITS_LOG.info(f"Creating FITS files for source: {source} ...")
         run_fits(
             source=source,
-            fname=self._get_output_fname(source),
+            fname=self._find_output_fname(source),
             meta=self.key_handler.meta,
             maps=self.key_handler.get_maps(),
             cubes=self.key_handler.get_cubes(),
@@ -283,13 +287,9 @@ class PipelineHandler:
         """
         Build the .ecsv output filename for *source*.
 
-        After stage_regrid runs:
-          ``meta["target_res"]``    → always arcseconds
-          ``meta["target_res_pc"]`` → always parsecs
-
-        The filename suffix uses parsecs for physical mode and arcseconds
-        for angular/native mode, matching the unit that is most meaningful
-        to the user for each mode.
+        Reads ``meta["res_suffix"]`` — set by handler_keys._resolve_resolution
+        at config-load time and overwritten per-source by run_sampling —
+        so the suffix is always consistent with the resolution mode.
 
         Examples
         --------
@@ -297,29 +297,45 @@ class PipelineHandler:
         physical 100 pc    → ngc5194_hexforge_100pc_2025_06_01.ecsv
         native 12.8 arcsec → ngc5194_hexforge_12p8as_2025_06_01.ecsv
         """
-        meta = self.key_handler.meta
-        out_dir = meta.get("out_dir", "output/")
-        resolution = meta.get("resolution", "angular")
-
-        if resolution == "physical":
-            target_res = meta.get("target_res_pc", meta.get("target_res", 27.0))
-            suffix = str(int(np.round(float(target_res), 0))).replace(".", "p") + "pc"
-        else:
-            target_res = meta.get("target_res", 27.0)
-            suffix = str(np.round(float(target_res), 1)).replace(".", "p") + "as"
-
-        date_str = date.today().strftime("%Y_%m_%d")
-        fname = os.path.join(out_dir, f"{source}_hexforge_{suffix}_{date_str}.ecsv")
+        meta       = self.key_handler.meta
+        out_dir    = meta.get("out_dir", "output/")
+        res_suffix = meta.get("res_suffix", "27p0as")
+        date_str   = date.today().strftime("%Y_%m_%d")
+        fname      = os.path.join(
+            out_dir, f"{source}_hexforge_{res_suffix}_{date_str}.ecsv"
+        )
 
         # In archive mode, bump the version number if the file already exists
         if "archive" in meta.get("structure_creation", "") and os.path.exists(fname):
             version = 1
-            base = fname[:-5]
+            base    = fname[:-5]
             while os.path.exists(f"{base}_v{version}.ecsv"):
                 version += 1
             fname = f"{base}_v{version}.ecsv"
 
         return fname
+
+    def _find_output_fname(self, source: str) -> str:
+        """
+        Find the most recent existing .ecsv for *source*, or fall back to
+        ``_get_output_fname`` (today's date) if none exists yet.
+
+        Used by products and fits stages when running independently (without
+        regrid in the same session). Globs for
+        ``{source}_hexforge_{res_suffix}_*.ecsv`` in out_dir and returns
+        the most recently modified match, so re-running products or fits
+        after a prior regrid just works without needing to supply the date.
+        """
+        import glob
+        meta       = self.key_handler.meta
+        out_dir    = meta.get("out_dir", "output/")
+        res_suffix = meta.get("res_suffix", "27p0as")
+        pattern    = os.path.join(out_dir, f"{source}_hexforge_{res_suffix}_*.ecsv")
+        matches    = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
+        if matches:
+            LOG_LOADING.info(f"Found existing database for {source}: {matches[0]}")
+            return matches[0]
+        return self._get_output_fname(source)
 
     def _print_summary(self):
         """Print a per-source pass/fail summary after all stages complete."""

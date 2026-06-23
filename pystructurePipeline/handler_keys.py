@@ -34,6 +34,7 @@ reference tables you set up once and reuse (keys/).
 import os
 import re
 import configparser
+import numpy as np
 import pandas as pd
 from pathlib import Path
 
@@ -143,11 +144,15 @@ class KeyHandler:
         [resolution]/[masking]/[spectral]/[output]/[structure] are parsed
         before the [sources]/maps/cubes/mask tables so that masking flags
         (use_fixed_vel_mask etc.) are available when parsing the mask table.
+        _resolve_resolution runs last because it needs both overlay_file
+        (set by _load_sources_and_tables) and source distances (set by
+        _load_target_definitions).
         """
         self._load_paths_and_meta()
         self._load_settings()
         self._load_target_definitions()
         self._load_sources_and_tables()
+        self._resolve_resolution()
         self._load_hfs_key()
 
     def get_sources(self) -> list:
@@ -608,6 +613,117 @@ class KeyHandler:
             )
         else:
             self.input_mask = pd.DataFrame(columns=cols)
+
+    def _resolve_resolution(self):
+        """
+        Resolve the target resolution to arcseconds and parsecs, and compute
+        the filename suffix. Writes three keys into ``self.meta``:
+
+        ``target_res``
+            Always **arcseconds**. For angular/native mode this is the primary
+            working resolution; for physical mode it is converted from parsecs
+            using the first source's distance. For native mode the overlay FITS
+            header (BMAJ/BMIN) is read; if the overlay file is not yet
+            available a warning is logged and ``run_sampling`` will overwrite
+            with the correct value once the file can be opened.
+
+        ``target_res_pc``
+            Always **parsecs**. Derived from ``target_res`` and the first
+            source's distance (dist_mpc). Useful for physical-scale display
+            and filenames in physical mode.
+
+        ``res_suffix``
+            Single string used as the resolution part of all output filenames
+            and cached-cube filenames, e.g. ``"27p0as"``, ``"12p8as"``,
+            ``"100pc"``.  Every caller that needs a filename suffix must read
+            this key instead of recomputing it.
+
+        Called last in ``load()`` so that both ``overlay_file``
+        (from _load_sources_and_tables) and ``source_table`` (from
+        _load_target_definitions) are available.
+
+        ``run_sampling`` in stage_regrid overwrites all three keys with the
+        per-source-correct values (using the actual overlay header and the
+        correct source distance), so the values set here are a best estimate
+        available from config-load time onward.
+        """
+        resolution   = self.meta.get("resolution", "angular")
+        target_res   = float(self.meta.get("target_res", 27.0))
+
+        # First source's distance for physical mode and pc conversion.
+        if self.source_table is not None and len(self.source_table) > 0:
+            dist_mpc = float(self.source_table["dist_mpc"].iloc[0])
+        else:
+            dist_mpc = 1.0
+            LOG.warning(
+                "No sources in target_definitions; "
+                "using dist_mpc = 1.0 Mpc as placeholder."
+            )
+
+        if resolution == "physical":
+            target_res_as = 3600.0 * 180.0 / np.pi * 1e-6 * target_res / dist_mpc
+            LOG.info(
+                f"Physical resolution: {target_res:.1f} pc "
+                f"= {target_res_as:.1f} arcsec "
+                f"(first-source distance {dist_mpc:.2f} Mpc)."
+            )
+
+        elif resolution == "native":
+            # Try to read BMAJ/BMIN from the overlay FITS header.
+            data_dir     = self.meta.get("data_dir", "data/")
+            overlay_file = self.meta.get("overlay_file", "")
+            target_res_as = None
+
+            if overlay_file and self.source_table is not None:
+                for source in self.source_table["source"]:
+                    overlay_fname = (
+                        os.path.join(data_dir, overlay_file)
+                        if source in overlay_file
+                        else os.path.join(data_dir, source + overlay_file)
+                    )
+                    if os.path.exists(overlay_fname):
+                        try:
+                            from astropy.io import fits as _fits
+                            ov_hdr = _fits.getheader(overlay_fname)
+                            candidate = (
+                                max(ov_hdr.get("BMIN", 0), ov_hdr.get("BMAJ", 0))
+                                * 3600.0
+                            )
+                            if candidate > 0:
+                                target_res_as = candidate
+                                LOG.info(
+                                    f"Native resolution: {target_res_as:.1f} arcsec "
+                                    f"(read from {os.path.basename(overlay_fname)})."
+                                )
+                                break
+                        except Exception:
+                            pass
+
+            if target_res_as is None:
+                LOG.warning(
+                    "Native resolution: overlay FITS not readable at config-load time; "
+                    f"keeping placeholder target_res = {target_res:.1f} arcsec. "
+                    "run_sampling will overwrite with the correct value."
+                )
+                target_res_as = target_res  # placeholder
+
+        else:
+            # Angular: already in arcseconds
+            target_res_as = target_res
+            LOG.info(f"Angular resolution: {target_res_as:.1f} arcsec.")
+
+        # Parsec equivalent
+        target_res_pc = target_res_as / 3600.0 * np.pi / 180.0 * dist_mpc * 1e6
+
+        # Filename suffix — single source of truth used by all callers
+        if resolution == "physical":
+            res_suffix = str(int(round(target_res_pc))) + "pc"
+        else:
+            res_suffix = str(np.round(target_res_as, 1)).replace(".", "p") + "as"
+
+        self.meta["target_res"]    = target_res_as
+        self.meta["target_res_pc"] = target_res_pc
+        self.meta["res_suffix"]    = res_suffix
 
     def _load_hfs_key(self):
         """
