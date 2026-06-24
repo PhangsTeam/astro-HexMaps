@@ -3,12 +3,12 @@ HexMapsAnalysis: helper class for loading and analysing HexMaps .ecsv files.
 
 Usage
 -----
-    from hexmapsAnalysis import HexMapsAnalysis
+    from hexmaps_analysis import HexMapsAnalysis
 
-    ps = HexMapsAnalysis("Output/ngc5194_hexmaps_27as_2025_01_01.ecsv")
-    ps.quickplot_map("12CO21")
-    ps.quickplot_spectrum("12CO21")
-    ps.quickplot_shuffled_spectrum("12CO21")
+    hm = HexMapsAnalysis("Output/ngc5194_hexmaps_27as_2025_01_01.ecsv")
+    hm.quickplot_map("12CO21")
+    hm.quickplot_spectrum("12CO21")
+    hm.quickplot_shuffled_spectrum("12CO21")
 """
 
 __author__ = "J. den Brok & L. Neumann"
@@ -422,11 +422,11 @@ class HexMapsAnalysis:
 
         Examples
         --------
-        >>> db = HexMapsAnalysis("ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
-        >>> print(db.get_config())
+        >>> hm = HexMapsAnalysis("ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
+        >>> print(hm.get_config())
         # HexMaps configuration file
         ...
-        >>> db.get_config(save_to="recovered_config.txt")
+        >>> hm.get_config(save_to="recovered_config.txt")
         """
         raw = self.struct.meta.get("config_file", "")
         if not raw:
@@ -464,8 +464,8 @@ class HexMapsAnalysis:
 
         Examples
         --------
-        >>> db = HexMapsAnalysis("ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
-        >>> db.list_input_headers()
+        >>> hm = HexMapsAnalysis("ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
+        >>> hm.list_input_headers()
         ['12CO21', '12CO10', 'OVERLAY', 'SPIRE250']
         """
         prefix = "input_header_"
@@ -503,11 +503,11 @@ class HexMapsAnalysis:
 
         Examples
         --------
-        >>> db = HexMapsAnalysis("ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
-        >>> hdr = db.get_input_header("12CO21")
+        >>> hm = HexMapsAnalysis("ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
+        >>> hdr = hm.get_input_header("12CO21")
         >>> print(hdr["BMAJ"] * 3600, "arcsec")
         12.82 arcsec
-        >>> hdr_ov = db.get_input_header("OVERLAY")
+        >>> hdr_ov = hm.get_input_header("OVERLAY")
         >>> print(repr(hdr_ov))    # prints all header cards
         """
         from astropy.io import fits as _fits
