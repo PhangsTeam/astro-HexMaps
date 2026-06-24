@@ -307,6 +307,10 @@ class KeyHandler:
         self.meta["user"] = _get_meta("user", "Unknown user")
         self.meta["comments"] = _get_meta("comments", "")
 
+        # Store the absolute config file path so downstream code (e.g.
+        # run_regrid) can read and embed the config content in the .ecsv.
+        self.meta["conf_path"] = str(self.conf_path.resolve())
+
         # Store the absolute project root so _load_sources_and_tables can
         # resolve relative map_dir / line_dir entries to absolute paths.
         self.meta["_base"] = str(base)

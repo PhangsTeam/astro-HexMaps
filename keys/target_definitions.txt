@@ -1,5 +1,5 @@
 # =============================================================================
-# PyStructure target_definitions.txt
+# HexMaps target_definitions.txt
 # =============================================================================
 # Comma-separated table of source geometric parameters.
 # Spaces and tabs around each comma are ignored; so feel free to align

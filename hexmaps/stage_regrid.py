@@ -40,6 +40,7 @@ import warnings
 import numpy as np
 import pandas as pd
 from os import path
+from pathlib import Path
 from datetime import date
 from astropy.io import fits
 from astropy.wcs import WCS
@@ -1042,6 +1043,22 @@ def _init_table(
             "Source": source,
         }
     )
+
+    # Store the full config file content so the .ecsv is self-contained.
+    # Newlines are encoded as the two-character sequence "\\n" so the value
+    # survives the ECSV round-trip (astropy collapses literal newlines in
+    # metadata string values when reading back). Decode with:
+    #   content = table.meta["config_file"].replace("\\n", "\n")
+    conf_path = meta.get("conf_path", "")
+    config_file_content = ""
+    if conf_path and os.path.exists(conf_path):
+        try:
+            raw = Path(conf_path).read_text(encoding="utf-8")
+            # Encode newlines so the string is single-line in the ECSV header
+            config_file_content = raw.replace("\n", "\\n")
+        except Exception as e:
+            LOG.warning(f"Could not read config file for metadata: {e}")
+    this_data.meta["config_file"] = config_file_content
 
     # Sky coordinates
     this_data["ra_deg"] = Column(

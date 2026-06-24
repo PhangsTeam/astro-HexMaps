@@ -1,11 +1,11 @@
 """
-hexmaps_analysis: helper class for loading and analysing HexMaps .ecsv files.
+HexMapsAnalysis: helper class for loading and analysing HexMaps .ecsv files.
 
 Usage
 -----
-    from hexmaps_analysis import hexmaps_analysis
+    from hexmapsAnalysis import HexMapsAnalysis
 
-    ps = hexmaps_analysis("Output/ngc5194_hexmaps_27as_2025_01_01.ecsv")
+    ps = HexMapsAnalysis("Output/ngc5194_hexmaps_27as_2025_01_01.ecsv")
     ps.quickplot_map("12CO21")
     ps.quickplot_spectrum("12CO21")
     ps.quickplot_shuffled_spectrum("12CO21")
@@ -21,7 +21,7 @@ from astropy.coordinates import SkyCoord, FK5
 from astropy.table import Table
 
 
-class hexmaps_analysis:
+class HexMapsAnalysis:
     """
     Load and analyse a HexMaps .ecsv database.
 
@@ -398,8 +398,54 @@ class hexmaps_analysis:
             print(f"[INFO] 2D table saved to {fname}")
         return tbl
 
+    def get_config(self, save_to: str = None) -> str:
+        """
+        Return the config.txt content that was embedded in the .ecsv at
+        pipeline run time.
+
+        The content is stored in ``table.meta["config_file"]`` as a single
+        line with newlines encoded as the two-character sequence ``\\n``.
+        This method decodes that back to the original multi-line string.
+
+        Parameters
+        ----------
+        save_to : str, optional
+            If given, write the config content to this file path.  Useful
+            for inspecting or reproducing a previous pipeline run.
+
+        Returns
+        -------
+        str
+            The full content of the config.txt that was used to produce
+            this database, or an empty string if the metadata key is absent
+            (e.g. files produced by an older pipeline version).
+
+        Examples
+        --------
+        >>> db = HexMapsAnalysis("ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
+        >>> print(db.get_config())
+        # HexMaps configuration file
+        ...
+        >>> db.get_config(save_to="recovered_config.txt")
+        """
+        raw = self.struct.meta.get("config_file", "")
+        if not raw:
+            print("[WARNING] No config_file entry found in the database metadata. "
+                  "This file may have been produced by an older pipeline version.")
+            return ""
+
+        # Decode the newline escape used when storing in the ECSV header
+        content = raw.replace("\\n", "\n")
+
+        if save_to is not None:
+            from pathlib import Path
+            Path(save_to).write_text(content, encoding="utf-8")
+            print(f"[INFO] Config file written to {save_to}")
+
+        return content
+
     def __repr__(self):
         return (
-            f"hexmaps_analysis(source='{self.struct.meta.get('Source', '?')}', "
+            f"HexMapsAnalysis(source='{self.struct.meta.get('Source', '?')}', "
             f"n_pts={len(self.struct)}, lines={self.lines})"
         )

@@ -1,5 +1,5 @@
 """
-Tests for the PyStructure Pipeline package.
+Tests for the HexMaps Pipeline package.
 Run with:  pytest tests/ -v
 """
 
@@ -65,7 +65,7 @@ class TestKeyHandler:
 
     def test_load_basic(self, tmp_path):
         conf_path = self._write_minimal_config(tmp_path)
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
         assert kh.sources == ["ngc5194"]
@@ -80,7 +80,7 @@ class TestKeyHandler:
         Angular mode is the simplest case: no FITS file needed.
         """
         conf_path = self._write_minimal_config(tmp_path)
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
         assert kh.meta["target_res"] == 27.0       # arcsec
@@ -95,7 +95,7 @@ class TestKeyHandler:
             .replace("resolution = angular", "resolution = physical")
             .replace("target_res = 27.0", "target_res = 100.0")
         )
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
         assert kh.meta["res_suffix"].endswith("pc")
@@ -108,13 +108,13 @@ class TestKeyHandler:
         rather than today's date when a matching file already exists.
         """
         import os
-        from pystructurePipeline.handler_pipeline import PipelineHandler
+        from hexmaps.handler_pipeline import PipelineHandler
 
         handler = PipelineHandler(conf_path=str(tmp_path / "config.txt"),
                                   verbose=False) if False else None
 
         conf_path = self._write_minimal_config(tmp_path)
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
         out_dir    = kh.meta["out_dir"]
@@ -127,7 +127,7 @@ class TestKeyHandler:
             f.write("# fake ecsv\n")
 
         # _find_output_fname should discover this file without needing regrid
-        from pystructurePipeline.handler_pipeline import PipelineHandler
+        from hexmaps.handler_pipeline import PipelineHandler
         handler = PipelineHandler(conf_path=str(conf_path), verbose=False)
         found = handler._find_output_fname("ngc5194")
         assert found == existing
@@ -135,7 +135,7 @@ class TestKeyHandler:
     def test_save_mask_defaults_false(self, tmp_path):
         """save_mask is not set in the minimal fixture, so it must default to False."""
         conf_path = self._write_minimal_config(tmp_path)
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
         assert kh.meta["save_mask"] is False
@@ -148,7 +148,7 @@ class TestKeyHandler:
                 "[output]\nsave_mask = true\nsave_fits = false",
             )
         )
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
         assert kh.meta["save_mask"] is True
@@ -169,7 +169,7 @@ class TestKeyHandler:
             .replace("target_res = 27.0", "target_res = 45.0")
             .replace("save_fits = false", "save_fits = true")
         )
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
         assert kh.meta["target_res"] == 45.0
@@ -187,7 +187,7 @@ class TestKeyHandler:
         """
         import numpy as np
         from astropy.io import fits
-        from pystructurePipeline.stage_regrid import run_sampling
+        from hexmaps.stage_regrid import run_sampling
 
         # Minimal 3-D overlay cube with known BMAJ = 30 arcsec
         ny, nx, nv = 10, 10, 5
@@ -253,12 +253,12 @@ class TestKeyHandler:
         (the original motivation: a typo'd or misplaced setting should never
         silently and quietly fall back without a trace).
         """
-        from pystructurePipeline.pystructureLogger import logger
+        from hexmaps.logger import logger
 
         logger.configure(verbose=True, log_file=None)
 
         conf_path = self._write_minimal_config(tmp_path)
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         KeyHandler(str(conf_path))
         captured = capsys.readouterr()
@@ -275,12 +275,12 @@ class TestKeyHandler:
         warning, unlike every other [resolution]/[masking]/[spectral]/
         [output]/[structure] setting.
         """
-        from pystructurePipeline.pystructureLogger import logger
+        from hexmaps.logger import logger
 
         logger.configure(verbose=True, log_file=None)
 
         conf_path = self._write_minimal_config(tmp_path)
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
         captured = capsys.readouterr()
@@ -289,12 +289,12 @@ class TestKeyHandler:
 
     def test_explicit_setting_does_not_log_warning(self, tmp_path, capsys):
         """An explicitly-set value should not trigger a fallback warning."""
-        from pystructurePipeline.pystructureLogger import logger
+        from hexmaps.logger import logger
 
         logger.configure(verbose=True, log_file=None)
 
         conf_path = self._write_minimal_config(tmp_path)
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         KeyHandler(str(conf_path))
         captured = capsys.readouterr()
@@ -310,7 +310,7 @@ class TestKeyHandler:
         strings.
         """
         conf_path = self._write_minimal_config(tmp_path)
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
         row = kh.source_table.iloc[0]
@@ -321,12 +321,12 @@ class TestKeyHandler:
 
     def test_validate_passes(self, tmp_path):
         conf_path = self._write_minimal_config(tmp_path)
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         assert KeyHandler(str(conf_path)).validate() is True
 
     def test_missing_conf_path_raises(self):
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         with pytest.raises(FileNotFoundError):
             KeyHandler("/nonexistent/path/config.txt")
@@ -334,14 +334,14 @@ class TestKeyHandler:
     def test_missing_target_definitions_raises(self, tmp_path):
         conf_path = self._write_minimal_config(tmp_path)
         (tmp_path / "keys" / "target_definitions.txt").unlink()
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         with pytest.raises(FileNotFoundError):
             KeyHandler(str(conf_path))
 
     def test_repr(self, tmp_path):
         conf_path = self._write_minimal_config(tmp_path)
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
         assert "KeyHandler" in repr(kh)
@@ -359,7 +359,7 @@ class TestKeyHandler:
             "ngc5194, 202.4696, 47.1952, 8.58, 0.10, 22.0, 3.0, 173.0, 3.0, 3.54, 0.05\n"
             "ngc5457, 210.8025, 54.3492, 6.70, 0.32, 18.0, 5.0, 39.0, 5.0, 13.46, 0.50\n"
         )
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
         assert kh.sources == ["ngc5194", "ngc5457"]
@@ -369,7 +369,7 @@ class TestKeyHandler:
         (tmp_path / "keys" / "hfs_lines.txt").write_text(
             "hcn10,\t88.6316023,  88.6304156,\tGHz\n"
         )
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
         assert kh.hfs_data is not None
@@ -381,7 +381,7 @@ class TestKeyHandler:
 
     def test_hfs_file_none_when_absent(self, tmp_path):
         conf_path = self._write_minimal_config(tmp_path)
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
         assert kh.hfs_data is None
@@ -406,7 +406,7 @@ class TestKeyHandler:
                 "[sources]\nsources = ngc1234\n",
             )
         )
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
         assert kh.sources == ["ngc1234"]
@@ -416,7 +416,7 @@ class TestKeyHandler:
         """Unlike hfs_file, geom_file is required: a missing file must raise."""
         conf_path = self._write_minimal_config(tmp_path)
         (tmp_path / "keys" / "target_definitions.txt").unlink()
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         with pytest.raises(FileNotFoundError):
             KeyHandler(str(conf_path))
@@ -431,7 +431,7 @@ class TestKeyHandler:
                 1,
             )
         )
-        from pystructurePipeline.handler_keys import KeyHandler
+        from hexmaps.handler_keys import KeyHandler
 
         with pytest.raises(FileNotFoundError):
             KeyHandler(str(conf_path))
@@ -466,20 +466,20 @@ class TestSourceHandler:
         )
 
     def test_get_source_params(self):
-        from pystructurePipeline.handler_sources import SourceHandler
+        from hexmaps.handler_sources import SourceHandler
 
         th = SourceHandler(self._make_table(), ["ngc5194"])
         assert abs(th.get_source_params("ngc5194")["ra_ctr"] - 202.47) < 1e-6
 
     def test_unknown_source_raises(self):
-        from pystructurePipeline.handler_sources import SourceHandler
+        from hexmaps.handler_sources import SourceHandler
 
         th = SourceHandler(self._make_table(), ["ngc5194"])
         with pytest.raises(KeyError):
             th.get_source_params("ngc9999")
 
     def test_source_not_in_table_raises(self):
-        from pystructurePipeline.handler_sources import SourceHandler
+        from hexmaps.handler_sources import SourceHandler
 
         with pytest.raises(ValueError):
             SourceHandler(self._make_table(), ["ngc9999"])
@@ -493,26 +493,26 @@ class TestSourceHandler:
 class TestFitsUtils:
 
     def test_get_beam_arcsec_missing_file(self):
-        from pystructurePipeline.utils_fits import get_beam_arcsec
+        from hexmaps.utils_fits import get_beam_arcsec
 
         with pytest.raises(FileNotFoundError):
             get_beam_arcsec("/nonexistent/file.fits")
 
     def test_read_fits_cube_missing_file(self):
-        from pystructurePipeline.utils_fits import read_fits_cube
+        from hexmaps.utils_fits import read_fits_cube
 
         with pytest.raises(FileNotFoundError):
             read_fits_cube("/nonexistent/file.fits")
 
     def test_hex_grid_basic(self):
-        from pystructurePipeline.utils_fits import hex_grid
+        from hexmaps.utils_fits import hex_grid
 
         x, y = hex_grid(0.0, 0.0, 0.01, radec=False, r_limit=0.05)
         assert len(x) > 0
 
     def test_deproject_shape(self):
         import numpy as np
-        from pystructurePipeline.utils_fits import deproject
+        from hexmaps.utils_fits import deproject
 
         ra = np.linspace(202.0, 203.0, 10)
         dec = np.linspace(47.0, 48.0, 10)
@@ -521,7 +521,7 @@ class TestFitsUtils:
 
     def test_gaussian_PSF_2D_shape(self):
         import numpy as np
-        from pystructurePipeline.utils_fits import gaussian_PSF_2D
+        from hexmaps.utils_fits import gaussian_PSF_2D
 
         psf = gaussian_PSF_2D(
             11, [0.0, 1.0, 3.0, 3.0, 0.0, 0.0, 0.0], center=True, normalize=True
@@ -530,7 +530,7 @@ class TestFitsUtils:
         assert abs(np.sum(psf) - 1.0) < 1e-6
 
     def test_deconvolve_gauss_basic(self):
-        from pystructurePipeline.utils_fits import deconvolve_gauss
+        from hexmaps.utils_fits import deconvolve_gauss
 
         maj, minn, pa, info = deconvolve_gauss(30.0, 20.0, 30.0, 0.0, 20.0, 0.0)
         assert info[0]  # worked
@@ -549,7 +549,7 @@ class TestStageFits:
         build_edge_mask must return a 2-D float array smaller than the input
         footprint, eroded by the expected number of pixels on all sides.
         """
-        from pystructurePipeline.stage_fits import build_edge_mask
+        from hexmaps.stage_fits import build_edge_mask
         from astropy.io import fits
 
         # Full 30x30 observed footprint
@@ -572,7 +572,7 @@ class TestStageFits:
         When the pixel scale is coarser than half the beam (trim radius < 1),
         no trimming is applied and the full footprint is returned.
         """
-        from pystructurePipeline.stage_fits import build_edge_mask
+        from hexmaps.stage_fits import build_edge_mask
         from astropy.io import fits
 
         ov_footprint = np.ones((10, 10), dtype=bool)
@@ -588,7 +588,7 @@ class TestStageFits:
         ov_footprint, not a rectangular grid extent. A circular island
         of observed pixels should be eroded at its own boundary.
         """
-        from pystructurePipeline.stage_fits import build_edge_mask
+        from hexmaps.stage_fits import build_edge_mask
         from astropy.io import fits
 
         ny, nx = 20, 20
@@ -617,7 +617,7 @@ class TestStageFits:
         the overlay footprint must be 0, and the eroded boundary must follow
         the overlay footprint boundary, not the full grid boundary.
         """
-        from pystructurePipeline.stage_fits import build_edge_mask
+        from hexmaps.stage_fits import build_edge_mask
         from astropy.io import fits
 
         ny, nx = 20, 20
@@ -645,7 +645,7 @@ class TestStageFits:
         already on the overlay's native PPV grid, unlike the old hex-grid
         save_to_fits_cube path).
         """
-        from pystructurePipeline.stage_fits import save_ppv_mask_to_fits
+        from hexmaps.stage_fits import save_ppv_mask_to_fits
         from astropy.io import fits
 
         mask = np.zeros((4, 5, 5))
@@ -695,7 +695,7 @@ class TestStageFits:
         centre and leave most far-from-line channels unmasked, for every
         spatial pixel (since the synthetic cube is spatially uniform).
         """
-        from pystructurePipeline.stage_fits import construct_mask_ppv
+        from hexmaps.stage_fits import construct_mask_ppv
 
         cube, vaxis = self._make_synthetic_ppv_cube()
         mask = construct_mask_ppv(cube, SN_processing=[2, 4])
@@ -716,8 +716,8 @@ class TestStageFits:
         """
         import astropy.units as au
         from astropy.table import Table, Column
-        from pystructurePipeline.stage_fits import construct_mask_ppv
-        from pystructurePipeline.stage_products import construct_mask
+        from hexmaps.stage_fits import construct_mask_ppv
+        from hexmaps.stage_products import construct_mask
 
         cube, vaxis = self._make_synthetic_ppv_cube(ny=3, nx=3)
         n_chan, ny, nx = cube.shape
@@ -737,7 +737,7 @@ class TestStageFits:
         assert np.array_equal(mask_ppv, mask_hex_reshaped)
 
     def test_apply_strict_mask_ppv_removes_small_components(self):
-        from pystructurePipeline.stage_fits import apply_strict_mask_ppv
+        from hexmaps.stage_fits import apply_strict_mask_ppv
 
         mask = np.zeros((1, 10, 10), dtype=int)
         mask[0, 5, 5] = 1  # isolated single pixel: too small, removed
@@ -754,8 +754,8 @@ class TestStageFits:
         array -- it is a pure reshape wrapper, not a re-implementation.
         """
         import astropy.units as au
-        from pystructurePipeline.stage_fits import get_mom_maps_ppv
-        from pystructurePipeline.utils_table import get_mom_maps
+        from hexmaps.stage_fits import get_mom_maps_ppv
+        from hexmaps.utils_table import get_mom_maps
 
         cube, vaxis_arr = self._make_synthetic_ppv_cube(ny=2, nx=2)
         n_chan, ny, nx = cube.shape
@@ -785,7 +785,7 @@ class TestStageFits:
             )
 
     def test_convolve_cube_to_target_skips_when_already_at_resolution(self):
-        from pystructurePipeline.stage_fits import convolve_cube_to_target
+        from hexmaps.stage_fits import convolve_cube_to_target
         from astropy.io import fits
 
         cube = np.ones((5, 6, 6))
@@ -797,7 +797,7 @@ class TestStageFits:
         assert np.array_equal(out_data, cube)
 
     def test_get_convolved_ppv_cube_uses_cached_file(self, tmp_path):
-        from pystructurePipeline.stage_fits import get_convolved_ppv_cube
+        from hexmaps.stage_fits import get_convolved_ppv_cube
         from astropy.io import fits
 
         cube = np.arange(2 * 3 * 3, dtype=float).reshape(2, 3, 3)
@@ -817,7 +817,7 @@ class TestStageFits:
         assert np.array_equal(data, cube)
 
     def test_get_convolved_ppv_cube_raises_if_nothing_available(self, tmp_path):
-        from pystructurePipeline.stage_fits import get_convolved_ppv_cube
+        from hexmaps.stage_fits import get_convolved_ppv_cube
         from astropy.io import fits
 
         hdr = fits.Header()
@@ -841,20 +841,20 @@ class TestStageFits:
 class TestTableUtils:
 
     def test_load_missing_file(self):
-        from pystructurePipeline.utils_table import load_pystructure
+        from hexmaps.utils_table import load_hexmaps
 
         with pytest.raises(FileNotFoundError):
-            load_pystructure("/nonexistent/file.ecsv")
+            load_hexmaps("/nonexistent/file.ecsv")
 
     def test_find_latest_missing(self, tmp_path):
-        from pystructurePipeline.utils_table import find_latest_pystructure
+        from hexmaps.utils_table import find_latest_hexmaps
 
         with pytest.raises(FileNotFoundError):
-            find_latest_pystructure(str(tmp_path), "ngc5194")
+            find_latest_hexmaps(str(tmp_path), "ngc5194")
 
     def test_shuffle_roundtrip(self):
         import numpy as np
-        from pystructurePipeline.utils_table import shuffle
+        from hexmaps.utils_table import shuffle
 
         vaxis = np.arange(-100, 101, 1.0)
         spec = np.exp(-0.5 * (vaxis / 20.0) ** 2)
@@ -865,7 +865,7 @@ class TestTableUtils:
     def test_get_mom_maps_runs(self):
         import numpy as np
         from astropy import units as u
-        from pystructurePipeline.utils_table import get_mom_maps
+        from hexmaps.utils_table import get_mom_maps
 
         n_pts, n_chan = 5, 50
         vaxis = np.linspace(-100, 100, n_chan) * u.km / u.s
@@ -887,27 +887,27 @@ class TestTableUtils:
 class TestInitWorkdir:
 
     def test_creates_expected_files(self, tmp_path):
-        from pystructurePipeline.init_workdir import init_workdir
+        from hexmaps.init_workdir import init_workdir
 
         init_workdir(str(tmp_path))
         assert (tmp_path / "config.txt").exists()
         assert (tmp_path / "keys" / "target_definitions.txt").exists()
-        assert (tmp_path / "run_pystructure.py").exists()
+        assert (tmp_path / "run_hexmaps.py").exists()
 
     def test_overwrite_false_raises(self, tmp_path):
-        from pystructurePipeline.init_workdir import init_workdir
+        from hexmaps.init_workdir import init_workdir
 
         init_workdir(str(tmp_path))
         with pytest.raises(FileExistsError):
             init_workdir(str(tmp_path), overwrite=False)
 
     def test_overwrite_true_replaces(self, tmp_path):
-        from pystructurePipeline.init_workdir import init_workdir
+        from hexmaps.init_workdir import init_workdir
 
         init_workdir(str(tmp_path))
-        (tmp_path / "run_pystructure.py").write_text("# corrupted")
+        (tmp_path / "run_hexmaps.py").write_text("# corrupted")
         init_workdir(str(tmp_path), overwrite=True)
-        assert "PipelineHandler" in (tmp_path / "run_pystructure.py").read_text()
+        assert "PipelineHandler" in (tmp_path / "run_hexmaps.py").read_text()
 
 
 # ---------------------------------------------------------------------------
@@ -918,32 +918,32 @@ class TestInitWorkdir:
 class TestCLI:
 
     def test_init_creates_files(self, tmp_path):
-        from pystructurePipeline.cli import main
+        from hexmaps.cli import main
 
         main(["--init", "--workdir", str(tmp_path)])
-        assert (tmp_path / "run_pystructure.py").exists()
+        assert (tmp_path / "run_hexmaps.py").exists()
 
     def test_init_overwrite_conflict(self, tmp_path):
-        from pystructurePipeline.cli import main
+        from hexmaps.cli import main
 
         main(["--init", "--workdir", str(tmp_path)])
         with pytest.raises(SystemExit):
             main(["--init", "--workdir", str(tmp_path)])
 
     def test_missing_conf_exits(self):
-        from pystructurePipeline.cli import main
+        from hexmaps.cli import main
 
         with pytest.raises((SystemExit, FileNotFoundError)):
             main(["--conf", "/nonexistent/config.txt"])
 
     def test_no_args_exits(self):
-        from pystructurePipeline.cli import main
+        from hexmaps.cli import main
 
         with pytest.raises(SystemExit):
             main([])
 
     def test_invalid_stage_exits(self):
-        from pystructurePipeline.cli import main
+        from hexmaps.cli import main
 
         with pytest.raises(SystemExit):
             main(["--conf", "config.txt", "--stages", "invalid_stage"])
@@ -957,16 +957,16 @@ class TestCLI:
 class TestLogger:
 
     def test_get_logger_prints_formatted_message(self, capsys):
-        from pystructurePipeline.pystructureLogger import logger, get_logger
+        from hexmaps.logger import logger, get_logger
 
         logger.configure(verbose=True, log_file=None)
         log = get_logger("Regrid")
         log.info("hello world")
         captured = capsys.readouterr()
-        assert "[pyStructure] [Regrid]    [INFO]     hello world" in captured.out
+        assert "[HexMaps] [Regrid]    [INFO]     hello world" in captured.out
 
     def test_verbose_false_suppresses_print(self, capsys):
-        from pystructurePipeline.pystructureLogger import logger, get_logger
+        from hexmaps.logger import logger, get_logger
 
         logger.configure(verbose=False, log_file=None)
         log = get_logger("Products")
@@ -978,18 +978,18 @@ class TestLogger:
         logger.configure(verbose=True, log_file=None)  # restore default
 
     def test_log_file_written(self, tmp_path):
-        from pystructurePipeline.pystructureLogger import logger, get_logger
+        from hexmaps.logger import logger, get_logger
 
         log_path = tmp_path / "run.log"
         logger.configure(verbose=False, log_file=str(log_path))
         log = get_logger("FITS")
         log.error("file not found")
         content = log_path.read_text()
-        assert "[pyStructure] [FITS]      [ERROR]    file not found" in content
+        assert "[HexMaps] [FITS]      [ERROR]    file not found" in content
         logger.configure(verbose=True, log_file=None)  # restore default
 
     def test_save_writes_all_records(self, tmp_path):
-        from pystructurePipeline.pystructureLogger import logger, get_logger
+        from hexmaps.logger import logger, get_logger
 
         logger.configure(verbose=False, log_file=None)
         log = get_logger("Sampling")
@@ -1003,7 +1003,7 @@ class TestLogger:
         logger.configure(verbose=True, log_file=None)  # restore default
 
     def test_get_records_filtering(self):
-        from pystructurePipeline.pystructureLogger import logger, get_logger
+        from hexmaps.logger import logger, get_logger
 
         logger.configure(verbose=False, log_file=None)
         log = get_logger("Keys")
@@ -1023,7 +1023,7 @@ class TestPipelineHandlerLogging:
         kh = TestKeyHandler()
         conf_path = kh._write_minimal_config(tmp_path)
 
-        from pystructurePipeline.handler_pipeline import PipelineHandler
+        from hexmaps.handler_pipeline import PipelineHandler
 
         log_path = tmp_path / "run.log"
         handler = PipelineHandler(

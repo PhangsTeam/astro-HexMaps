@@ -1,5 +1,5 @@
 """
-pystructureLogger.py — centralized logging for the PyStructure pipeline.
+logger.py — centralized logging for the HexMaps pipeline.
 
 All pipeline modules log through a single shared PipelineLogger instance,
 obtained via get_logger(stage). This gives every message a consistent format:
@@ -28,7 +28,7 @@ Usage
 -----
 Module-level logger bound to a fixed stage name::
 
-    from pystructurePipeline.pystructureLogger import get_logger
+    from hexmaps.logger import get_logger
     LOG = get_logger("Regrid")
 
     LOG.info("Map SPIRE250 sampled successfully.")
@@ -37,10 +37,10 @@ Module-level logger bound to a fixed stage name::
 
 Configuring verbosity / file output (done once, typically by PipelineHandler)::
 
-    from pystructurePipeline.pystructureLogger import logger
-    logger.configure(verbose=True, log_file="pystructure_run.log")
+    from hexmaps.logger import logger
+    logger.configure(verbose=True, log_file="hexmaps_run.log")
     ...
-    logger.save("pystructure_run.log")   # also done automatically if log_file is set
+    logger.save("hexmaps_run.log")   # also done automatically if log_file is set
 """
 
 import os
@@ -57,7 +57,7 @@ _LEVEL_COL_WIDTH = len("WARNING") + 2 + 1  # "[WARNING]"  + 2 spaces
 
 class PipelineLogger:
     """
-    Shared logger for all PyStructure pipeline modules.
+    Shared logger for all HexMaps pipeline modules.
 
     A single instance of this class (``logger``, defined at the bottom of this
     module) is imported by every pipeline module.  Each module obtains a
@@ -105,7 +105,7 @@ class PipelineLogger:
             )
             with open(self.log_file, "w") as f:
                 f.write(
-                    f"pyStructure log started at "
+                    f"HexMaps log started at "
                     f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                 )
 

@@ -1,3 +1,6 @@
+# =============================================================================
+# HexMaps hfs_lines.txt
+# =============================================================================
 # column 1: line name (has to match database entry)
 # column 2: reference frequency
 # column 3: hyperfine transition frequency

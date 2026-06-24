@@ -1,11 +1,11 @@
 # =============================================================================
-# PyStructure config.txt
+# HexMaps config.txt
 # =============================================================================
-# Single configuration file for a PyStructure run. Combines what used to be
+# Single configuration file for a HexMaps run. Combines what used to be
 # master_key.txt + data_key.txt + config_key.txt.
 #
 # Run with:
-#   pystructure --conf config.txt
+#   hexmaps --conf config.txt
 #
 # Two files are intentionally kept SEPARATE from this one, in a fixed `keys/`
 # subfolder next to this config.txt, because they change far less often than
@@ -24,7 +24,7 @@
 # Directory containing the input FITS files
 data_dir    = data/
 
-# Directory for output .ecsv PyStructure files
+# Directory for output .ecsv HexMaps files
 out_dir     = output/
 
 # Required: path to the source geometry table (RA, Dec, distance, ...).
@@ -41,7 +41,7 @@ out_dir     = output/
 user     = Dr. Hubble Trouble
 
 # Free-form comment stored in the output table metadata
-comments = Example PyStructure run
+comments = Example HexMaps run
 
 
 # -----------------------------------------------------------------------------
