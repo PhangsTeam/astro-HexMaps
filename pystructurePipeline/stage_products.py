@@ -42,11 +42,11 @@ TPEAK_<LINE>  : peak brightness temperature within the mask
 RMS_<LINE>    : noise rms outside the mask
 EW_<LINE>     : equivalent width (∑ T dv / Tpeak / sqrt(2π))
 EEW_<LINE>    : uncertainty on EW
-SPEC_SHUFF<LINE>   : shuffled spectrum (n_pts × n_shuff_chan)
+SPEC_SHUFF_<LINE>   : shuffled spectrum (n_pts × n_shuff_chan)
 SPEC_MASK          : combined velocity-integration mask (n_pts × n_chan)
 SPEC_MASK_<LINE>   : per-line mask (stored if ref_line != "first")
 SPEC_VAXIS         : velocity axis in km/s (n_pts × n_chan)
-SPEC_VAXISSHUFF    : shuffled velocity axis in km/s (n_pts × n_shuff_chan)
+SPEC_VAXIS_SHUFF   : shuffled velocity axis in km/s (n_pts × n_shuff_chan)
 """
 
 import numpy as np
@@ -435,7 +435,7 @@ def run_products(source, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
     # ------------------------------------------------------------------
     # Velocity axis columns
     #
-    # SPEC_VAXIS and SPEC_VAXISSHUFF are written ONCE here, before the loop
+    # SPEC_VAXIS and SPEC_VAXIS_SHUFF are written ONCE here, before the loop
     # over lines, because:
     #   (a) they are identical for all lines (both derived from the overlay header)
     #   (b) Astropy Table raises ValueError if you try to overwrite an existing
@@ -458,7 +458,7 @@ def run_products(source, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
         unit=u.km / u.s,
         description="Velocity axis (km/s)",
     )
-    this_data["SPEC_VAXISSHUFF"] = Column(
+    this_data["SPEC_VAXIS_SHUFF"] = Column(
         np.array([new_vaxis] * n_pts_total),
         unit=u.km / u.s,
         description="Shuffled velocity axis (km/s)",
@@ -591,7 +591,7 @@ def run_products(source, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
             new_vaxis=new_vaxis,
             interp=0,  # nearest-neighbour to preserve noise statistics
         )
-        this_data["SPEC_SHUFF" + line_name.upper()] = Column(
+        this_data[f"SPEC_SHUFF_{line_name.upper()}"] = Column(
             shuffled,
             unit=this_spec.unit,
             description=f"Velocity-shuffled {line_desc} brightness temperature",

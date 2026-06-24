@@ -62,7 +62,7 @@ class pystructureAnalysis:
     def _get_vaxis(self, shuffled: bool = False) -> au.Quantity:
         """Return the velocity axis for the first line."""
         if shuffled:
-            return self.struct["SPEC_VAXISSHUFF"][0]
+            return self.struct["SPEC_VAXIS_SHUFF"][0]
         else:
             return self.struct["SPEC_VAXIS"][0]
 
@@ -201,7 +201,7 @@ class pystructureAnalysis:
             plt.show()
 
     def quickplot_spectrum(
-        self, line: str, idx: int = None, show_mask: bool = True, ax=None
+        self, line: str, idx: int = None, show_mask: bool = True, show_rms: bool = True, ax=None
     ):
         """
         Plot a single spectrum from the native velocity grid.
@@ -211,6 +211,7 @@ class pystructureAnalysis:
         line      : str  — line name, e.g. ``"12CO21"``
         idx       : int  — sampling-point index (default: point closest to centre)
         show_mask : bool — shade the integration mask region
+        show_rms  : bool — show the RMS level
         ax        : Axes — existing axes to draw into
         """
         col = f"SPEC_{line.upper()}"
@@ -246,6 +247,10 @@ class pystructureAnalysis:
             )
             ax.set_ylim(ylo, yhi)
 
+        if show_rms and f"RMS_{line.upper()}" in self.struct.colnames:
+            rms = self.struct[f"RMS_{line.upper()}"][idx]
+            ax.axhline(rms, color="r", linewidth=0.8, linestyle=":", label="RMS")
+
         ax.axhline(0, color="k", linewidth=0.6, linestyle="--")
         ax.set_xlabel(f"Velocity [{vunit}]")
         ax.set_ylabel(f"T$_{{\\rm b}}$ [{unit}]" if unit else "Brightness temperature")
@@ -268,7 +273,7 @@ class pystructureAnalysis:
         idx  : int  — sampling-point index (default: point closest to centre)
         ax   : Axes — existing axes to draw into
         """
-        col = f"SPEC_SHUFF{line.upper()}"
+        col = f"SPEC_SHUFF_{line.upper()}"
         if col not in self.struct.colnames:
             raise KeyError(f"Column '{col}' not found.")
 
