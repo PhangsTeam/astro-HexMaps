@@ -165,8 +165,8 @@ use_hfs_lines    = false
 # pixels near the map edge where the convolution is unreliable because the
 # beam extends beyond the observed area.
 #
-#   0.5  — default; trim by half a beam (conventional minimum safe margin)
 #   0    — disable erosion entirely (keep full FOV)
+#   0.5  — default; trim by half a beam (conventional minimum safe margin)
 #   1.0  — conservative; trim by one full beam
 #
 # The same value is applied to both the hex-grid footprint and the FITS outputs
@@ -202,7 +202,7 @@ spec_smooth_method = binned
 
 [output]
 # Save the convolved intermediate FITS cubes and bands to disk
-save_fits        = true
+save_fits        = false
 
 # Save moment maps as FITS files
 save_mom_maps    = true
