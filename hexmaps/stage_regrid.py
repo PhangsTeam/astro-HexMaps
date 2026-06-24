@@ -765,6 +765,23 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
         fill_maps, fill_cubes = [], []
 
     # ------------------------------------------------------------------
+    # Collect raw FITS headers for all input files before any processing.
+    # Populated during the maps/cubes loops below and written into the
+    # table metadata at the end.
+    # ------------------------------------------------------------------
+    overlay_file = meta.get("overlay_file", "")
+    overlay_fname = (
+        path.join(data_dir, overlay_file)
+        if source in overlay_file
+        else path.join(data_dir, source + overlay_file)
+    )
+    input_headers = {}
+
+    # Overlay header — raw, before any processing
+    if path.exists(overlay_fname):
+        input_headers["OVERLAY"] = fits.getheader(overlay_fname)
+
+    # ------------------------------------------------------------------
     # Process 2D maps
     # ------------------------------------------------------------------
     for _, map_entry in maps.iterrows():
@@ -778,6 +795,9 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
         if not path.exists(map_file):
             LOG.error(f"Map {map_entry['map_name']} not found: {map_file}")
             continue
+
+        # Capture the raw header before any processing
+        input_headers[map_entry["map_name"].upper()] = fits.getheader(map_file)
 
         perbeam = "/beam" in str(map_entry.get("map_unit", ""))
         this_int, _ = sample_at_res(
@@ -803,6 +823,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
                 str(map_entry["map_dir"]), source + str(map_entry["map_uc"])
             )
             if path.exists(uc_file):
+                input_headers["EMAP_" + map_entry["map_name"].upper()] = fits.getheader(uc_file)
                 uc_int, _ = sample_at_res(
                     uc_file,
                     samp_ra,
@@ -835,6 +856,9 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
             LOG.error(f"Cube {cube['line_name']} not found: {cube_file}")
             continue
 
+        # Capture the raw header before any processing
+        input_headers[cube["line_name"].upper()] = fits.getheader(cube_file)
+
         this_spec, _ = sample_at_res(
             cube_file,
             samp_ra,
@@ -858,6 +882,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
         if map_ext and map_ext not in ("nan", ""):
             b2d_file = path.join(str(cube["line_dir"]), source + map_ext)
             if path.exists(b2d_file):
+                input_headers["MAP_" + cube["line_name"].upper()] = fits.getheader(b2d_file)
                 b2d, _ = sample_at_res(
                     b2d_file,
                     samp_ra,
@@ -877,6 +902,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
         if map_uc and map_uc not in ("nan", ""):
             uc_file = path.join(str(cube["line_dir"]), source + map_uc)
             if path.exists(uc_file):
+                input_headers["EMAP_" + cube["line_name"].upper()] = fits.getheader(uc_file)
                 uc, _ = sample_at_res(
                     uc_file,
                     samp_ra,
@@ -922,6 +948,8 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
                 LOG.error(f"Mask file not found: {mask_file}")
                 spec_mask = np.zeros((n_pts, n_chan))
             else:
+                _mask_label = "SPEC_" + str(input_mask["mask_name"].iloc[0]).upper()
+                input_headers[_mask_label] = fits.getheader(mask_file)
                 spec_mask, _ = sample_mask(
                     mask_file, samp_ra, samp_dec, target_hdr=ov_hdr
                 )
@@ -937,6 +965,19 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
     # ------------------------------------------------------------------
     # Write output
     # ------------------------------------------------------------------
+    # Embed all collected raw FITS headers into the table metadata.
+    # Each header is serialised as a compact 80-char-per-card string
+    # (FITS standard format, no newlines) via header.tostring(), so it
+    # survives the ECSV round-trip without any encoding tricks.
+    # Key: f"input_header_{label}" where label matches the table column key
+    # (e.g. "input_header_12CO21", "input_header_SPIRE250", "input_header_OVERLAY").
+    # Recover with: fits.Header.fromstring(table.meta["input_header_{label}"])
+    for label, hdr in input_headers.items():
+        try:
+            this_data.meta[f"input_header_{label}"] = hdr.tostring()
+        except Exception as e:
+            LOG.warning(f"Could not serialise header for {label}: {e}")
+
     os.makedirs(meta.get("out_dir", "output/"), exist_ok=True)
     this_data.write(fname, format="ascii.ecsv", overwrite=True)
     LOG.info(f"Database written to: {fname}")

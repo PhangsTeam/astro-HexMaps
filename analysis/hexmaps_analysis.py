@@ -444,6 +444,90 @@ class HexMapsAnalysis:
 
         return content
 
+    def list_input_headers(self) -> list:
+        """
+        Return the labels of all input FITS headers embedded in this database.
+
+        Labels match the table column keys used for each input, uppercased:
+
+        - ``"OVERLAY"`` — the overlay cube
+        - ``"<LINE_NAME>"`` — spectral cube (e.g. ``"12CO21"``)
+        - ``"MAP_<LINE_NAME>"`` — 2D companion map for a cube (e.g. ``"MAP_12CO21"``)
+        - ``"EMAP_<LINE_NAME>"`` — uncertainty map (e.g. ``"EMAP_12CO21"``)
+        - ``"<MAP_NAME>"`` — standalone 2D map (e.g. ``"SPIRE250"``)
+        - ``"SPEC_<MASK_NAME>"`` — external FITS mask (e.g. ``"SPEC_HEXMASK"``)
+
+        Returns
+        -------
+        list of str — sorted list of label strings, or an empty list if
+        no input headers were embedded (e.g. older pipeline version).
+
+        Examples
+        --------
+        >>> db = HexMapsAnalysis("ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
+        >>> db.list_input_headers()
+        ['12CO21', '12CO10', 'OVERLAY', 'SPIRE250']
+        """
+        prefix = "input_header_"
+        return sorted(
+            k[len(prefix):]
+            for k in self.struct.meta
+            if k.startswith(prefix)
+        )
+
+    def get_input_header(self, label: str):
+        """
+        Return the raw FITS header for the input file identified by *label*.
+
+        The header is stored in the .ecsv metadata as a compact 80-char-per-card
+        string (FITS standard ``header.tostring()`` format). This method
+        deserialises it back to an ``astropy.io.fits.Header`` object.
+
+        Parameters
+        ----------
+        label : str
+            Label matching the table column key, uppercased — as returned by
+            ``list_input_headers()``.  Examples: ``"12CO21"``, ``"SPIRE250"``,
+            ``"OVERLAY"``, ``"MAP_12CO21"``, ``"EMAP_SPIRE250"``.
+            You can also pass the full metadata key
+            (``"input_header_12CO21"``); the prefix will be stripped.
+
+        Returns
+        -------
+        astropy.io.fits.Header
+            The original FITS header before any pipeline processing.
+
+        Raises
+        ------
+        KeyError if *label* is not found in the embedded headers.
+
+        Examples
+        --------
+        >>> db = HexMapsAnalysis("ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
+        >>> hdr = db.get_input_header("12CO21")
+        >>> print(hdr["BMAJ"] * 3600, "arcsec")
+        12.82 arcsec
+        >>> hdr_ov = db.get_input_header("OVERLAY")
+        >>> print(repr(hdr_ov))    # prints all header cards
+        """
+        from astropy.io import fits as _fits
+
+        # Accept both the bare label and the full meta key
+        if label.startswith("input_header_"):
+            key = label
+            label = label[len("input_header_"):]
+        else:
+            key = f"input_header_{label}"
+
+        if key not in self.struct.meta:
+            available = self.list_input_headers()
+            raise KeyError(
+                f"No embedded header found for label {label!r}. "
+                f"Available: {available}"
+            )
+
+        return _fits.Header.fromstring(self.struct.meta[key])
+
     def __repr__(self):
         return (
             f"HexMapsAnalysis(source='{self.struct.meta.get('Source', '?')}', "
