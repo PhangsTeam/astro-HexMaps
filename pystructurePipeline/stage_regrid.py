@@ -989,7 +989,7 @@ def _build_fname(source, meta):
     out_dir    = meta.get("out_dir", "output/")
     res_suffix = meta.get("res_suffix", "27p0as")
     date_str   = date.today().strftime("%Y_%m_%d")
-    return os.path.join(out_dir, f"{source}_hexforge_{res_suffix}_{date_str}.ecsv")
+    return os.path.join(out_dir, f"{source}_hexmaps_{res_suffix}_{date_str}.ecsv")
 
 
 def _init_table(

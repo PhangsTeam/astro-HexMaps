@@ -458,7 +458,7 @@ def run_products(source, fname, meta, cubes, input_mask, hfs_data):
         unit=u.km / u.s,
         description="Velocity axis (km/s)",
     )
-    this_data["SPEC_VAXISSHUFF"] = Column(
+    this_data["SPEC_VAXIS_SHUFF"] = Column(
         np.array([new_vaxis] * n_pts_total),
         unit=u.km / u.s,
         description="Shuffled velocity axis (km/s)",
