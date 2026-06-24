@@ -46,6 +46,8 @@ from astropy.wcs import WCS
 from astropy.table import Table, Column
 from astropy import units as au
 from reproject import reproject_interp
+from scipy.ndimage import binary_erosion
+from skimage.morphology import disk
 
 from hexmaps.utils_fits import (
     twod_head,
@@ -55,7 +57,7 @@ from hexmaps.utils_fits import (
     reproject_cube,
 )
 
-from hexmaps.logger import get_logger
+from hexmaps.hexmapsLogger import get_logger
 
 LOG = get_logger("Regrid")
 
@@ -344,10 +346,7 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
     pix_scale_as = abs(ov_hdr["CDELT1"]) * 3600.0
     trim_radius_pix = int(np.floor((target_res_as / 2.0) / pix_scale_as))
     if trim_radius_pix > 0:
-        from skimage.morphology import disk as _disk
-        from scipy.ndimage import binary_erosion as _binary_erosion
-
-        mask = _binary_erosion(ov_footprint, structure=_disk(trim_radius_pix))
+        mask = binary_erosion(ov_footprint, structure=disk(trim_radius_pix))
         LOG.info(
             f"Hex grid footprint eroded by {trim_radius_pix} px "
             f"(half beam = {target_res_as/2:.1f} arcsec); "

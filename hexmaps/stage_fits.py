@@ -72,13 +72,14 @@ from astropy.wcs import WCS
 from astropy.table import Table
 from astropy.stats import median_absolute_deviation
 from scipy.ndimage import label, binary_erosion
+from skimage.morphology import disk
 from datetime import date
 
 from hexmaps.utils_fits import twod_head, conv_with_gauss, reproject_cube
 from hexmaps.stage_regrid import _ensure_ms, _get_vaxis
 from hexmaps.utils_table import get_mom_maps, build_noise_mask
 
-from hexmaps.logger import get_logger
+from hexmaps.hexmapsLogger import get_logger
 
 LOG = get_logger("FITS")
 
@@ -602,8 +603,6 @@ def build_edge_mask(ov_footprint, ov_hdr, target_res_as):
     )
 
     # Circular structuring element for isotropic erosion of the non-NaN blob
-    from skimage.morphology import disk
-
     structure = disk(trim_radius_pix)
 
     eroded = binary_erosion(ov_footprint, structure=structure)
