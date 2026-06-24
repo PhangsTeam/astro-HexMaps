@@ -340,24 +340,30 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
     mask_hdr = twod_head(ov_hdr)
     target_res_as = meta.get("target_res", 27.0)
 
-    # Apply the same half-beam edge erosion used for the FITS output files
-    # so that the hex grid and the FITS products share the same effective
-    # footprint — hex points in the edge strip (where convolution artefacts
-    # arise because the beam extends beyond the observed area) are excluded.
+    # Apply configurable FOV erosion to the hex grid footprint so that the
+    # hex grid and all FITS products share the same effective footprint.
+    # fov_erosion_beams is read from meta (set by handler_keys); default 0.5
+    # gives the conventional half-beam trim. Set to 0 to disable erosion.
+    fov_erosion_beams = meta.get("fov_erosion_beams", 0.5)
     pix_scale_as = abs(ov_hdr["CDELT1"]) * 3600.0
-    trim_radius_pix = int(np.floor((target_res_as / 2.0) / pix_scale_as))
+    trim_radius_pix = int(np.floor(fov_erosion_beams * target_res_as / pix_scale_as))
     if trim_radius_pix > 0:
         mask = binary_erosion(ov_footprint, structure=disk(trim_radius_pix))
+        trim_as = fov_erosion_beams * target_res_as
         LOG.info(
             f"Hex grid footprint eroded by {trim_radius_pix} px "
-            f"(half beam = {target_res_as/2:.1f} arcsec); "
+            f"({fov_erosion_beams} beam = {trim_as:.1f} arcsec); "
             f"{mask.sum()} of {ov_footprint.sum()} pixels retained."
         )
     else:
         mask = ov_footprint
-        LOG.warning(
-            "Edge trim radius is <= 0 pixels; no hex grid edge removal applied."
-        )
+        if fov_erosion_beams > 0:
+            LOG.warning(
+                "Edge trim radius is <= 0 pixels; no hex grid edge removal applied."
+            )
+        else:
+            LOG.info("FOV erosion disabled (fov_erosion_beams = 0); "
+                     "full footprint used for hex grid.")
 
     pixels_per_beam = meta.get("pixels_per_beam", 2.0)
     max_rad = meta.get("max_rad", "auto")

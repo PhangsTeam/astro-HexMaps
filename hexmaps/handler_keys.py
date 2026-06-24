@@ -354,6 +354,8 @@ class KeyHandler:
         use_fixed_vel_mask: bool  — use a fixed velocity-window mask
         use_fixed_noise_mask: bool — use explicit velocity windows for noise estimation
         use_hfs_lines     : bool  — apply HFS correction (requires hfs_file)
+        fov_erosion_beams : float — FOV erosion in units of the beam FWHM (default 0.5);
+                                    set to 0 to disable erosion entirely
         mom_thresh        : float — S/N threshold for moment computation
         conseq_channels   : int   — minimum consecutive channels for valid mask
         mom2_method       : str   — "fwhm" | "sqrt" | "math"
@@ -420,6 +422,9 @@ class KeyHandler:
         )
         self.meta["use_hfs_lines"] = (
             _get("masking", "use_hfs_lines", "false").lower() == "true"
+        )
+        self.meta["fov_erosion_beams"] = float(
+            _get("masking", "fov_erosion_beams", 0.5)
         )
         self.meta["mom_thresh"] = float(_get("masking", "mom_thresh", 5.0))
         self.meta["conseq_channels"] = int(float(_get("masking", "conseq_channels", 3)))

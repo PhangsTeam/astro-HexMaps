@@ -160,6 +160,19 @@ use_fixed_noise_mask = false
 # Use hyperfine structure correction (requires hfs_file in [paths])
 use_hfs_lines    = false
 
+# FOV edge erosion: trim the effective field-of-view by this multiple of the
+# beam FWHM before computing moments and writing FITS outputs. This removes
+# pixels near the map edge where the convolution is unreliable because the
+# beam extends beyond the observed area.
+#
+#   0.5  — default; trim by half a beam (conventional minimum safe margin)
+#   0    — disable erosion entirely (keep full FOV)
+#   1.0  — conservative; trim by one full beam
+#
+# The same value is applied to both the hex-grid footprint and the FITS outputs
+# so they always share the same effective FOV.
+fov_erosion_beams = 0.5
+
 # S/N threshold for moment-1, moment-2, and EW computation
 mom_thresh       = 5
 

@@ -638,6 +638,43 @@ class TestStageFits:
         assert edge_mask[5, 10] == 0.0
         assert edge_mask[14, 10] == 0.0
 
+    def test_build_edge_mask_fov_erosion_beams_scales_radius(self):
+        """
+        fov_erosion_beams scales the trim radius linearly: 1.0 beam gives
+        twice the trim radius of 0.5 beam.
+        """
+        from hexmaps.stage_fits import build_edge_mask
+        from astropy.io import fits
+
+        ov_footprint = np.ones((40, 40), dtype=bool)
+        hdr = fits.Header()
+        hdr["CDELT1"] = -1.0 / 3600.0  # 1 arcsec/pixel, beam = 10 arcsec
+
+        # 0.5 beam → trim 5 px; 1.0 beam → trim 10 px
+        mask_half = build_edge_mask(ov_footprint, hdr, 10.0, fov_erosion_beams=0.5)
+        mask_full = build_edge_mask(ov_footprint, hdr, 10.0, fov_erosion_beams=1.0)
+
+        # full-beam erosion must keep fewer pixels than half-beam
+        assert mask_full.sum() < mask_half.sum()
+        # centre must be kept in both cases
+        assert mask_half[20, 20] == 1.0
+        assert mask_full[20, 20] == 1.0
+
+    def test_build_edge_mask_zero_erosion_returns_full_footprint(self):
+        """
+        fov_erosion_beams = 0 must disable erosion and return the full
+        footprint unchanged, without a warning about <= 0 pixels.
+        """
+        from hexmaps.stage_fits import build_edge_mask
+        from astropy.io import fits
+
+        ov_footprint = np.ones((15, 15), dtype=bool)
+        hdr = fits.Header()
+        hdr["CDELT1"] = -1.0 / 3600.0
+
+        mask = build_edge_mask(ov_footprint, hdr, 10.0, fov_erosion_beams=0.0)
+        assert mask.sum() == 15 * 15  # full footprint, no pixels removed
+
     def test_save_ppv_mask_to_fits_writes_cube_as_is(self, tmp_path):
         """
         save_ppv_mask_to_fits writes a plain numpy mask array directly,

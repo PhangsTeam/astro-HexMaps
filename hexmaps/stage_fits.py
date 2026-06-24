@@ -543,16 +543,17 @@ def save_ppv_mask_to_fits(mask, ov_hdr, source, filename, folder, out_nan_mask=N
     fits.writeto(fname_fits, data=data_out, header=hdr_out, overwrite=True)
 
 
-def build_edge_mask(ov_footprint, ov_hdr, target_res_as):
+def build_edge_mask(ov_footprint, ov_hdr, target_res_as, fov_erosion_beams=0.5):
     """
-    Build a 2-D spatial edge mask by eroding the observed non-NaN footprint
-    by half a beam width.
+    Build a 2-D spatial edge mask by eroding the observed non-NaN footprint.
 
     Convolution near the edge of the observed area is unreliable: the beam
     extends beyond the data boundary and the convolved values are computed
     from only a partial beam footprint, which systematically under- or
-    over-estimates the true brightness. Removing a border of half a beam
-    width (FWHM / 2) in pixels eliminates the worst-affected region.
+    over-estimates the true brightness. Removing a border of
+    ``fov_erosion_beams × beam_FWHM`` in pixels eliminates the worst-affected
+    region. The default of 0.5 (half a beam) is the conventional minimum
+    safe margin; larger values give a more conservative trim.
 
     The footprint to erode is the *non-NaN area* of the overlay cube —
     the irregular blob of pixels where the overlay actually has data — not
@@ -564,9 +565,11 @@ def build_edge_mask(ov_footprint, ov_hdr, target_res_as):
     The algorithm:
       1. Accept *ov_footprint*: a 2-D bool array, True where the overlay has
          at least one finite value along the velocity axis.
-      2. Compute the trim radius in pixels: floor((target_res_as / 2) /
-         pixel_scale). Uses floor to be conservative (never removes more
-         than half a beam).
+      2. Compute the trim radius in pixels:
+         floor(fov_erosion_beams × target_res_as / pixel_scale).
+         Uses floor to be conservative. If fov_erosion_beams is 0 (or
+         the resulting radius is < 1 pixel), no erosion is applied and
+         the full footprint is returned.
       3. Erode *ov_footprint* using a circular structuring element of that
          radius via scipy.ndimage.binary_erosion. A circular (rather than
          square) kernel gives isotropic edge removal matching the shape of
@@ -575,13 +578,15 @@ def build_edge_mask(ov_footprint, ov_hdr, target_res_as):
 
     Parameters
     ----------
-    ov_footprint  : np.ndarray (ny, nx) bool — True where the overlay has
-                   at least one finite value along the velocity axis.
-                   Derived in the caller as
-                   ``np.any(np.isfinite(ov_data), axis=0)``.
-    ov_hdr        : FITS Header (3-D) — overlay header; provides CDELT1 for the
-                   pixel scale used to convert target_res_as to pixels
-    target_res_as : float — target beam FWHM in arcseconds
+    ov_footprint      : np.ndarray (ny, nx) bool — True where the overlay has
+                        at least one finite value along the velocity axis.
+                        Derived in the caller as
+                        ``np.any(np.isfinite(ov_data), axis=0)``.
+    ov_hdr            : FITS Header (3-D) — overlay header; provides CDELT1 for the
+                        pixel scale used to convert target_res_as to pixels
+    target_res_as     : float — target beam FWHM in arcseconds
+    fov_erosion_beams : float — erosion radius in units of the beam FWHM
+                        (default 0.5 = half beam). Set to 0 to disable erosion.
 
     Returns
     -------
@@ -590,15 +595,19 @@ def build_edge_mask(ov_footprint, ov_hdr, target_res_as):
     """
     # Trim radius in pixels
     pix_scale_as = abs(ov_hdr["CDELT1"]) * 3600.0  # arcsec/pixel
-    trim_radius_pix = int(np.round((target_res_as / 2.0) / pix_scale_as, 0))
+    trim_radius_pix = int(np.floor(fov_erosion_beams * target_res_as / pix_scale_as))
 
     if trim_radius_pix <= 0:
-        LOG.warning("Edge trim radius is <= 0 pixels; no edge removal applied.")
+        if fov_erosion_beams > 0:
+            LOG.warning("Edge trim radius is <= 0 pixels; no edge removal applied.")
+        else:
+            LOG.info("FOV erosion disabled (fov_erosion_beams = 0).")
         return ov_footprint.astype(float)
 
+    trim_as = fov_erosion_beams * target_res_as
     LOG.info(
         f"Removing {trim_radius_pix} pixel edge border "
-        f"(= half beam = {target_res_as/2:.1f} arcsec at "
+        f"(= {fov_erosion_beams} beam = {trim_as:.1f} arcsec at "
         f"{pix_scale_as:.2f} arcsec/px)."
     )
 
@@ -770,7 +779,10 @@ def run_moments_ppv(
     # including any concavities, rather than the rectangular reprojected
     # grid extent.
     # ------------------------------------------------------------------
-    edge_mask = build_edge_mask(ov_footprint, ov_hdr, target_res_as)
+    edge_mask = build_edge_mask(
+        ov_footprint, ov_hdr, target_res_as,
+        fov_erosion_beams=meta.get("fov_erosion_beams", 0.5),
+    )
 
     # ------------------------------------------------------------------
     # Mask construction — mirrors stage_products.run_products exactly.
@@ -845,12 +857,23 @@ def run_moments_ppv(
     # so every pipeline output shares the same NaN pattern.
     out_nan_mask = ~(ov_footprint & edge_mask.astype(bool))
 
+    # Apply out_nan_mask to every in-memory cube BEFORE computing moments.
+    # This is critical: without it, the edge-strip pixels (which have biased
+    # values due to partial-beam convolution at the footprint boundary) would
+    # enter the RMS and moment calculations even though they are masked out
+    # in the integration mask. Setting them to NaN here ensures the moment
+    # estimators see a clean cube with no partial-beam contamination.
+    for name in cube_data:
+        cube_val = cube_data[name].value.copy()
+        cube_val[:, out_nan_mask] = np.nan
+        cube_data[name] = cube_val * cube_data[name].unit
+
     # Apply out_nan_mask to any saved convolved cube files on disk so they
-    # share the same NaN pattern as the moment maps. The regrid stage already
-    # applied ov_footprint, but the edge-strip erosion only happens here.
+    # share the same NaN pattern as the moment maps.
+    res_suffix = meta.get("res_suffix", "27p0as")
     for _, row in cubes.iterrows():
         cube_fits_path = os.path.join(
-            folder, f"{source}_{row['line_name']}_{target_res_as}as.fits"
+            folder, f"{source}_{row['line_name']}_{res_suffix}.fits"
         )
         if os.path.exists(cube_fits_path):
             data_c, hdr_c = fits.getdata(cube_fits_path, header=True)
@@ -1106,7 +1129,10 @@ def run_fits(
     # points back onto the dense overlay grid.
     # ------------------------------------------------------------------
     if save_maps:
-        _edge = build_edge_mask(ov_footprint, ov_hdr, target_res_as)
+        _edge = build_edge_mask(
+            ov_footprint, ov_hdr, target_res_as,
+            fov_erosion_beams=meta.get("fov_erosion_beams", 0.5),
+        )
         _out_nan = ~(ov_footprint & _edge.astype(bool))
         res_suffix = meta.get("res_suffix", "27p0as")
 
