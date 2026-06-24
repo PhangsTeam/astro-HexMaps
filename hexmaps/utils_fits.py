@@ -1120,7 +1120,8 @@ def reproject_cube(input_data, output_projection, shape_out=None,
                     hdu_in=0, order='bilinear', roundtrip_coords=True,
                     output_array=None, output_footprint=None,
                     return_footprint=True, block_size=None,
-                    parallel=False, return_type=None, dask_method=None,
+                    parallel=False, return_type=None, 
+                    # dask_method=None,
                     spectral_order='linear'):
     """
     Drop-in replacement for ``reproject.reproject_interp`` with automatic
@@ -1159,8 +1160,8 @@ def reproject_cube(input_data, output_projection, shape_out=None,
         Parallelism control.  Passed to ``reproject_interp``.
     return_type : {'numpy', 'dask'}, optional
         Return type for the output array.
-    dask_method : {'memmap', 'none'}, optional
-        Method to use when the input array is a dask array.
+    #dask_method : {'memmap', 'none'}, optional
+    #    Method to use when the input array is a dask array.
     spectral_order : str, optional
         Interpolation kind used when resampling the spectral axis onto the
         target velocity grid.  Any value accepted by
@@ -1257,7 +1258,7 @@ def reproject_cube(input_data, output_projection, shape_out=None,
         block_size=block_size,
         parallel=parallel,
         return_type=return_type,
-        dask_method=dask_method,
+        #dask_method=dask_method,
     )
 
     # -- Safety net: fall back if still all-NaN despite spatial overlap ------
