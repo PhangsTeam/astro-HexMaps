@@ -55,9 +55,9 @@ from astropy import units as u
 from astropy.stats import median_absolute_deviation
 from astropy.table import Table, Column
 
-from pystructurePipeline.utils_table import shuffle, get_mom_maps, build_noise_mask
+from hexmaps.utils_table import shuffle, get_mom_maps, build_noise_mask
 
-from pystructurePipeline.pystructureLogger import get_logger
+from hexmaps.logger import get_logger
 
 LOG = get_logger("Products")
 
@@ -80,7 +80,7 @@ def construct_mask(ref_line, this_data, SN_processing):
     Parameters
     ----------
     ref_line      : str         — column name suffix, e.g. "12CO21" (without "SPEC_")
-    this_data     : Table       — the PyStructure table (must contain SPEC_<ref_line>)
+    this_data     : Table       — the HexMaps table (must contain SPEC_<ref_line>)
     SN_processing : list[float] — [low_SN_thresh, high_SN_thresh]
 
     Returns
@@ -395,7 +395,7 @@ def run_products(source, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
                 ref_line_vmean = vmean_comb
                 LOG.info(f"ref+HI mask: using HI at r > 0.23 r25.")
             else:
-                LOG.warning(f"HI not found in PyStructure; " "ignoring ref+HI option.")
+                LOG.warning(f"HI not found in HexMaps; " "ignoring ref+HI option.")
 
         # Optional strict spatial connectivity filter
         if strict_mask:

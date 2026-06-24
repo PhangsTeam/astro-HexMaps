@@ -8,7 +8,7 @@ per-source geometry (position angle, inclination, distance, r25).
 
 import pandas as pd
 
-from pystructurePipeline.pystructureLogger import get_logger
+from hexmaps.logger import get_logger
 
 LOG = get_logger("Loading")
 

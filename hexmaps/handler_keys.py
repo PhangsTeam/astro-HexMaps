@@ -1,14 +1,14 @@
 """
-handler_keys.py — KeyHandler: reads and validates all PyStructure configuration.
+handler_keys.py — KeyHandler: reads and validates all HexMaps configuration.
 
-PyStructure configuration lives in two places:
+HexMaps configuration lives in two places:
 
 config.txt
     A single file in the working directory containing everything needed to
     run the pipeline: paths/metadata (formerly master_key.txt), the source
     list/overlay/maps/cubes/mask tables (formerly data_key.txt), and all
     numerical/boolean pipeline settings (formerly config_key.txt). This is
-    the file you pass to the CLI via ``pystructure --conf config.txt`` and
+    the file you pass to the CLI via ``hexmaps --conf config.txt`` and
     the one you're expected to edit on every run.
 
 keys/ subfolder (next to config.txt)
@@ -38,7 +38,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-from pystructurePipeline.pystructureLogger import get_logger
+from hexmaps.logger import get_logger
 
 LOG = get_logger("Loading")
 
@@ -86,7 +86,7 @@ HFS_COLUMNS = ["hfs_name", "hfs_ref_freq", "hfs_freq", "unit"]
 
 class KeyHandler:
     """
-    Reads and validates all PyStructure configuration from config.txt.
+    Reads and validates all HexMaps configuration from config.txt.
 
     The handler is the single source of truth for all pipeline configuration.
     Every other pipeline module receives either ``meta`` (a plain dict of

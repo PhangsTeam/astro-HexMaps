@@ -19,7 +19,7 @@ This stage is the core data-ingestion step of the pipeline.  It:
 5. Optionally samples an external mask cube/image.
 6. Writes the table to disk as a .ecsv file.
 
-The .ecsv file written here is the primary output format of PyStructure.
+The .ecsv file written here is the primary output format of HexMaps.
 Subsequent stages (stage_products, stage_fits) read and enrich it.
 
 Column naming convention
@@ -47,7 +47,7 @@ from astropy.table import Table, Column
 from astropy import units as au
 from reproject import reproject_interp
 
-from pystructurePipeline.utils_fits import (
+from hexmaps.utils_fits import (
     twod_head,
     conv_with_gauss,
     deproject,
@@ -55,7 +55,7 @@ from pystructurePipeline.utils_fits import (
     reproject_cube,
 )
 
-from pystructurePipeline.pystructureLogger import get_logger
+from hexmaps.logger import get_logger
 
 LOG = get_logger("Regrid")
 
@@ -133,7 +133,7 @@ def _ensure_ms(hdr, data=None):
 #     (preferring the input cube's own value if both have one). The small
 #     radio/optical velocity-convention difference this introduces is of order
 #     (v/c)^2 — many orders of magnitude below the channel width — and is
-#     negligible since PyStructure's own velocity axis (CRVAL3/CDELT3/CRPIX3 in
+#     negligible since HexMaps's own velocity axis (CRVAL3/CDELT3/CRPIX3 in
 #     m/s) is used for all scientific calculations, not the WCS spectral
 #     transform. Only if NEITHER header has a RESTFRQ is it removed from both,
 #     as before.
@@ -723,7 +723,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
     -------
     fname : str — path of the written .ecsv file
     """
-    from pystructurePipeline import __version__, __author__, __email__, __credits__
+    from hexmaps import __version__, __author__, __email__, __credits__
 
     # Generate sampling grid
     sampling = run_sampling(source=source, params=params, meta=meta)
@@ -1032,7 +1032,7 @@ def _init_table(
     # Provenance metadata stored in the table header
     this_data.meta.update(
         {
-            "Name": "PyStructure",
+            "Name": "HexMaps",
             "Version": version,
             "Authors": author,
             "Contacts": email,

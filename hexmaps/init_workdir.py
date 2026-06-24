@@ -1,14 +1,14 @@
 """
-pystructure.init_workdir
+hexmaps.init_workdir
 ========================
 Copies the bundled config/key templates and a run script into a user-chosen
 working directory so they can get started without hunting for example files.
 
 Called via the CLI:
-    pystructure --init [--workdir ./my_project]
+    hexmaps --init [--workdir ./my_project]
 
 Or from Python:
-    from pystructurePipeline import init_workdir
+    from hexmaps import init_workdir
     init_workdir("./my_project")
 """
 
@@ -28,13 +28,13 @@ if not _TEMPLATES_DIR.exists():
 
 def init_workdir(workdir: str = ".", overwrite: bool = False) -> None:
     """
-    Initialise a PyStructure working directory.
+    Initialise a HexMaps working directory.
 
     Copies the following into *workdir*:
       config.txt                    ← the file you edit on every run
       keys/target_definitions.csv   ← source geometry (edit once, reuse)
       keys/hfs_lines.csv            ← hyperfine structure lines (optional, edit once)
-      run_pystructure.py            ← ready-to-edit run script
+      run_hexmaps.py            ← ready-to-edit run script
 
     Parameters
     ----------
@@ -72,20 +72,20 @@ def init_workdir(workdir: str = ".", overwrite: bool = False) -> None:
         copied.append(str(dst.relative_to(workdir)))
 
     # --- Run script ---
-    # run_pystructure.py lives at templates/run_pystructure.py when bundled,
+    # run_hexmaps.py lives at templates/run_hexmaps.py when bundled,
     # or at the repo root when falling back to a dev clone.
-    run_script_src = _TEMPLATES_DIR / "run_pystructure.py"
+    run_script_src = _TEMPLATES_DIR / "run_hexmaps.py"
     if not run_script_src.exists():
-        run_script_src = _PACKAGE_DIR.parent / "run_pystructure.py"
-    run_script_dst = workdir / "run_pystructure.py"
+        run_script_src = _PACKAGE_DIR.parent / "run_hexmaps.py"
+    run_script_dst = workdir / "run_hexmaps.py"
     if run_script_dst.exists() and not overwrite:
         raise FileExistsError(
             f"{run_script_dst} already exists. Use overwrite=True to replace it."
         )
     shutil.copy2(run_script_src, run_script_dst)
-    copied.append("run_pystructure.py")
+    copied.append("run_hexmaps.py")
 
-    print(f"[INFO]     PyStructure working directory initialised at: {workdir}")
+    print(f"[INFO]     HexMaps working directory initialised at: {workdir}")
     print(f"[INFO]     Files created:")
     for f in copied:
         print(f"[INFO]       {f}")
@@ -100,5 +100,5 @@ def init_workdir(workdir: str = ".", overwrite: bool = False) -> None:
         f"[INFO]       3. (optional) Edit keys/hfs_lines.csv  — hyperfine structure lines"
     )
     print(
-        f"[INFO]       4. Run:  python run_pystructure.py  (or:  pystructure --conf config.txt)"
+        f"[INFO]       4. Run:  python run_hexmaps.py  (or:  hexmaps --conf config.txt)"
     )

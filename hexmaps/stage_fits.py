@@ -74,11 +74,11 @@ from astropy.stats import median_absolute_deviation
 from scipy.ndimage import label, binary_erosion
 from datetime import date
 
-from pystructurePipeline.utils_fits import twod_head, conv_with_gauss, reproject_cube
-from pystructurePipeline.stage_regrid import _ensure_ms, _get_vaxis
-from pystructurePipeline.utils_table import get_mom_maps, build_noise_mask
+from hexmaps.utils_fits import twod_head, conv_with_gauss, reproject_cube
+from hexmaps.stage_regrid import _ensure_ms, _get_vaxis
+from hexmaps.utils_table import get_mom_maps, build_noise_mask
 
-from pystructurePipeline.pystructureLogger import get_logger
+from hexmaps.logger import get_logger
 
 LOG = get_logger("FITS")
 
@@ -177,7 +177,7 @@ def reproject_map_to_overlay(data, hdr, ov_hdr, log=None):
     data, hdr : reprojected map and the 2-D overlay-aligned header
     """
     log = log or LOG
-    from pystructurePipeline.utils_fits import twod_head
+    from hexmaps.utils_fits import twod_head
 
     trg_hdr = twod_head(copy.deepcopy(ov_hdr))
     data, _ = reproject_cube((data, hdr), trg_hdr, order="bilinear")

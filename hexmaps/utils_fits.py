@@ -42,7 +42,7 @@ from astropy.wcs.utils import proj_plane_pixel_scales
 from astropy.convolution import convolve, convolve_fft, Gaussian1DKernel
 from astropy.utils.console import ProgressBar
 
-from pystructurePipeline.pystructureLogger import get_logger
+from hexmaps.logger import get_logger
 
 # Utility functions do not have their own pipeline "stage" — log messages
 # should appear under whichever stage is calling them. Each function below

@@ -1,7 +1,7 @@
 """
-handler_pipeline.py — PipelineHandler: orchestrates the PyStructure pipeline.
+handler_pipeline.py — PipelineHandler: orchestrates the HexMaps pipeline.
 
-This is the main entry point for programmatic use of PyStructurePipeline.
+This is the main entry point for programmatic use of HexMapsPipeline.
 It loads all key files, validates the configuration, creates the output
 directory, and then dispatches the requested pipeline stages for each source.
 
@@ -26,7 +26,7 @@ Usage
 -----
 Programmatic (from Python)::
 
-    from pystructurePipeline import PipelineHandler
+    from hexmaps import PipelineHandler
     handler = PipelineHandler(conf_path="config.txt")
     handler.run_all()                              # regrid + products (default), all sources
     handler.run_stages(["regrid", "products"])     # subset of stages
@@ -34,9 +34,9 @@ Programmatic (from Python)::
 
 Command-line (after pip install)::
 
-    pystructure --conf config.txt
-    pystructure --conf config.txt --stages regrid products fits
-    pystructure --conf config.txt --targets ngc5194 ngc5457
+    hexmaps --conf config.txt
+    hexmaps --conf config.txt --stages regrid products fits
+    hexmaps --conf config.txt --targets ngc5194 ngc5457
 """
 
 import os
@@ -44,9 +44,9 @@ import numpy as np
 from pathlib import Path
 from datetime import date
 
-from pystructurePipeline.handler_keys import KeyHandler
-from pystructurePipeline.handler_sources import SourceHandler
-from pystructurePipeline.pystructureLogger import get_logger, logger
+from hexmaps.handler_keys import KeyHandler
+from hexmaps.handler_sources import SourceHandler
+from hexmaps.logger import get_logger, logger
 
 ALL_STAGES = ["regrid", "products", "fits"]
 DATABASE_STAGES = ["regrid", "products"]  # default: omits the optional fits stage
@@ -61,7 +61,7 @@ LOG_RETURN = get_logger("Return")
 
 class PipelineHandler:
     """
-    Orchestrates the PyStructure pipeline stages.
+    Orchestrates the HexMaps pipeline stages.
 
     Parameters
     ----------
@@ -235,7 +235,7 @@ class PipelineHandler:
         onto the overlay WCS, samples at the hex-grid points, computes
         deprojected coordinates, and writes the result to a .ecsv file.
         """
-        from pystructurePipeline.stage_regrid import run_regrid, LOG as REGRID_LOG
+        from hexmaps.stage_regrid import run_regrid, LOG as REGRID_LOG
 
         REGRID_LOG.info(f"Convolving and sampling data for {source}.")
         run_regrid(
@@ -257,7 +257,7 @@ class PipelineHandler:
         maps and shuffled spectra for every line, and overwrites the .ecsv
         with the enriched table.
         """
-        from pystructurePipeline.stage_products import run_products, LOG as PRODUCTS_LOG
+        from hexmaps.stage_products import run_products, LOG as PRODUCTS_LOG
 
         PRODUCTS_LOG.info(f"Create products for source: {source} ...")
         run_products(
@@ -281,7 +281,7 @@ class PipelineHandler:
         so the fits stage can run independently without regrid or products
         in the same session.
         """
-        from pystructurePipeline.stage_fits import run_fits, LOG as FITS_LOG
+        from hexmaps.stage_fits import run_fits, LOG as FITS_LOG
 
         FITS_LOG.info(f"Creating FITS files for source: {source} ...")
         run_fits(

@@ -1,7 +1,7 @@
-# PyStructure
+# HexMaps
 
-[![Contributors](https://img.shields.io/github/contributors/jdenbrok/PyStructure.svg?style=for-the-badge)](https://github.com/jdenbrok/PyStructure/graphs/contributors)
-[![MIT License](https://img.shields.io/github/license/jdenbrok/PyStructure.svg?style=for-the-badge)](LICENSE)
+[![Contributors](https://img.shields.io/github/contributors/jdenbrok/HexMaps.svg?style=for-the-badge)](https://github.com/jdenbrok/HexMaps/graphs/contributors)
+[![MIT License](https://img.shields.io/github/license/jdenbrok/HexMaps.svg?style=for-the-badge)](LICENSE)
 
 A Python package for homogenizing and analyzing multi-wavelength astronomical
 datasets on hexagonal grids. Samples 2D images (maps) and 3D spectral cubes
@@ -14,14 +14,14 @@ along with optional FITS moment and map images.
 
 ```bash
 # From PyPI (once published)
-pip install pystructurePipeline
+pip install hexmaps
 
 # From GitHub (latest)
-pip install git+https://github.com/lukas-neumann-astro/PyStructure.git
+pip install git+https://github.com/lukas-neumann-astro/HexMaps.git
 
 # Editable / development install (from inside the cloned repo)
-git clone https://github.com/lukas-neumann-astro/PyStructure.git
-cd PyStructure
+git clone https://github.com/lukas-neumann-astro/HexMaps.git
+cd HexMaps
 pip install -e ".[dev]"
 ```
 
@@ -36,11 +36,11 @@ that you control.
 ### 1 — Set up a working directory
 
 ```bash
-# Creates config.txt, keys/, and run_pystructure.py in the current folder
-pystructure --init
+# Creates config.txt, keys/, and run_hexmaps.py in the current folder
+hexmaps --init
 
 # Or choose a destination
-pystructure --init --workdir ~/projects/my_galaxy_survey
+hexmaps --init --workdir ~/projects/my_galaxy_survey
 cd ~/projects/my_galaxy_survey
 ```
 
@@ -67,25 +67,25 @@ and are usually shared across many projects, so they're kept separate.
 
 ```bash
 # Edit and run the script in your working directory
-python run_pystructure.py
+python run_hexmaps.py
 
 # Or use the CLI directly (runs regrid + products by default)
-pystructure --conf config.txt
+hexmaps --conf config.txt
 
 # Include the optional fits stage (FITS moment maps and band images)
-pystructure --conf config.txt --stages regrid products fits
+hexmaps --conf config.txt --stages regrid products fits
 
 # Single source
-pystructure --conf config.txt --targets ngc5194
+hexmaps --conf config.txt --targets ngc5194
 
 # Write a log file in addition to stdout
-pystructure --conf config.txt --log_file pystructure_run.log
+hexmaps --conf config.txt --log_file hexmaps_run.log
 ```
 
 ### 4 — Use from Python
 
 ```python
-import pystructurePipeline as pys
+import hexmaps as pys
 
 handler = pys.PipelineHandler(conf_path="config.txt")
 handler.run_all()  # default: regrid + products only
@@ -117,8 +117,8 @@ handler.run_stages(["regrid", "products"], targets=["ngc5194"])
 ## Repository layout
 
 ```
-PyStructure/                      <- git repo - install this with pip
-|-- pystructurePipeline/          <- installable package
+HexMaps/                      <- git repo - install this with pip
+|-- hexmaps/          <- installable package
 |   |-- handler_keys.py               reads & validates all key files
 |   |-- handler_sources.py            source geometry lookups
 |   |-- handler_pipeline.py           PipelineHandler: stage orchestration
@@ -127,19 +127,19 @@ PyStructure/                      <- git repo - install this with pip
 |   |-- stage_fits.py                 FITS moment-map / map-image writing
 |   |-- utils_fits.py                 FITS/WCS helpers (convolution, deprojection, ...)
 |   |-- utils_table.py                table I/O, spectral shuffle, moment computation
-|   |-- pystructureLogger.py          centralized [pyStructure] [Stage] [LEVEL] logger
+|   |-- hexmapsLogger.py          centralized [HexMaps] [Stage] [LEVEL] logger
 |   |-- init_workdir.py               copies key-file templates (--init)
-|   |-- cli.py                        `pystructure` console-script entry point
-|   `-- test_pystructure.py
+|   |-- cli.py                        `hexmaps` console-script entry point
+|   `-- test_hexmaps.py
 |-- config.txt                     <- example / template config file
 |-- keys/                          <- example / template reference tables
 |   |-- target_definitions.txt
 |   `-- hfs_lines.txt
 |-- analysis/                      <- post-processing & plotting helpers
-|   |-- pystructureAnalysis.py        load .ecsv, quicklook maps/spectra
-|   `-- pystructure_example.ipynb     example analysis notebook
+|   |-- hexmapsAnalysis.py        load .ecsv, quicklook maps/spectra
+|   `-- hexmaps_example.ipynb     example analysis notebook
 |-- data/                          <- example FITS input (NGC 5194)
-|-- run_pystructure.py             <- example run script
+|-- run_hexmaps.py             <- example run script
 |-- pyproject.toml
 `-- README.md
 
@@ -151,7 +151,7 @@ PyStructure/                      <- git repo - install this with pip
 |-- data/                           <- your FITS files
 |-- output/                         <- pipeline writes .ecsv tables here
 |-- saved_FITS_files/                  FITS moment/map images land here
-`-- run_pystructure.py              <- edit and run this
+`-- run_hexmaps.py              <- edit and run this
 ```
 
 ---
@@ -163,11 +163,11 @@ regardless of the order you list them in:
 
 | Stage | Module | Default | Description |
 |-------|--------|---------|-------------|
-| `regrid` | `stage_regrid.py` | ✓ | Generate the hexagonal sampling grid from the overlay cube, then convolve and sample maps & cubes onto it; write the PyStructure `.ecsv` |
+| `regrid` | `stage_regrid.py` | ✓ | Generate the hexagonal sampling grid from the overlay cube, then convolve and sample maps & cubes onto it; write the HexMaps `.ecsv` |
 | `products` | `stage_products.py` | ✓ | Build the S/N mask, compute moment maps (mom0/1/2, Tpeak, rms, EW), and shuffled spectra for every line |
 | `fits` | `stage_fits.py` | — optional | Compute PPV-native moment maps directly on the convolved cubes and write FITS files (moment maps, band images, mask cubes) |
 
-The default run (`run_all()` / `pystructure --conf config.txt`) executes only
+The default run (`run_all()` / `hexmaps --conf config.txt`) executes only
 **regrid** and **products** — the primary pipeline deliverable is the `.ecsv`
 database. The `fits` stage is an optional bonus that produces convenient FITS
 images; enable it explicitly with `--stages regrid products fits` or
@@ -181,11 +181,11 @@ stage, is now an internal step of `regrid`.
 ## Logging
 
 All pipeline output goes through a centralized logger
-(`pystructurePipeline.pystructureLogger`), giving every message a consistent,
+(`hexmaps.hexmapsLogger`), giving every message a consistent,
 column-aligned format:
 
 ```
-[pyStructure] [<Stage>]   [<LEVEL>]   <message>
+[HexMaps] [<Stage>]   [<LEVEL>]   <message>
 ```
 
 Stages used during a run:
@@ -201,28 +201,28 @@ Stages used during a run:
 Example:
 
 ```
-[pyStructure] [Loading]   [INFO]     Loading key files...
-[pyStructure] [Loading]   [INFO]     Loaded 1 source(s): ['ngc5194']
-[pyStructure] [Regrid]    [INFO]     Hexagonal grid generated: 1060 sampling points (spacing = 13.5 arcsec).
-[pyStructure] [Regrid]    [INFO]     Cube 12co21 sampled successfully.
-[pyStructure] [Products]  [INFO]     Mask complete. Computing moments.
-[pyStructure] [FITS]      [INFO]     Moment map FITS files written to: ./saved_FITS_files/
-[pyStructure] [Return]    [INFO]     --- Run summary ---
+[HexMaps] [Loading]   [INFO]     Loading key files...
+[HexMaps] [Loading]   [INFO]     Loaded 1 source(s): ['ngc5194']
+[HexMaps] [Regrid]    [INFO]     Hexagonal grid generated: 1060 sampling points (spacing = 13.5 arcsec).
+[HexMaps] [Regrid]    [INFO]     Cube 12co21 sampled successfully.
+[HexMaps] [Products]  [INFO]     Mask complete. Computing moments.
+[HexMaps] [FITS]      [INFO]     Moment map FITS files written to: ./saved_FITS_files/
+[HexMaps] [Return]    [INFO]     --- Run summary ---
 ```
 
 Pass `--log_file run.log` (CLI) or `PipelineHandler(..., log_file="run.log")`
 (Python) to additionally stream every message to a file. The full log history
 can also be written at any time with `handler.save_log("run.log")`, or
-inspected programmatically via `pystructureLogger.logger.get_records(...)`.
+inspected programmatically via `hexmapsLogger.logger.get_records(...)`.
 
 ---
 
 ## Reading the output
 
 ```python
-from pystructurePipeline.utils_table import load_pystructure
+from hexmaps.utils_table import load_hexmaps
 
-table = load_pystructure("output/ngc5194_data_struct_27as_2025_01_01.ecsv")
+table = load_hexmaps("output/ngc5194_data_struct_27as_2025_01_01.ecsv")
 
 import numpy as np, matplotlib.pyplot as plt
 mom0 = table["MOM0_12CO21"]
@@ -231,8 +231,8 @@ plt.show()
 ```
 
 For richer quicklook plots (maps, spectra, shuffled spectra, radial
-profiles), see `analysis/pystructureAnalysis.py` and the accompanying
-`analysis/pystructure_example.ipynb` notebook.
+profiles), see `analysis/hexmapsAnalysis.py` and the accompanying
+`analysis/hexmaps_example.ipynb` notebook.
 
 ---
 

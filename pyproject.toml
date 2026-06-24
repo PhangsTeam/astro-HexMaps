@@ -3,9 +3,9 @@ requires = ["setuptools>=42"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pystructurePipeline"
+name = "hexmaps"
 version = "4.3.0"
-description = "Homogenize and analyze multi-wavelength astronomical datasets on hexagonal grids."
+description = "HexMaps: Hexagonal-grid Multi-data Analysis and Processing Software for multi-wavelength astronomical datasets."
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [
@@ -50,25 +50,25 @@ docs = [
 ]
 
 [project.scripts]
-pystructure = "pystructurePipeline.cli:main"
+hexmaps = "hexmaps.cli:main"
 
 [project.urls]
-Homepage      = "https://github.com/PhangsTeam/PyStructure"
-Repository    = "https://github.com/lukas-neumann-astro/PyStructure"
-Issues        = "https://github.com/PhangsTeam/PyStructure/issues"
-Documentation = "https://pystructure.readthedocs.io/en/latest/"
+Homepage      = "https://github.com/lukas-neumann-astro/HexMaps"
+Repository    = "https://github.com/lukas-neumann-astro/HexMaps"
+Issues        = "https://github.com/lukas-neumann-astro/HexMaps/issues"
+Documentation = "https://hexmaps.readthedocs.io/en/latest/"
 
 [tool.setuptools.packages.find]
 where   = ["."]
-include = ["pystructurePipeline*"]
+include = ["hexmaps*"]
 
 [tool.setuptools.package-data]
-pystructurePipeline = [
+hexmaps = [
     "templates/keys/*.txt",
-    "templates/run_pystructure.py",
+    "templates/run_hexmaps.py",
     "py.typed",
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["pystructurePipeline"]
+testpaths = ["hexmaps"]
 python_files = ["test_*.py"]

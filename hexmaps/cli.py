@@ -1,20 +1,20 @@
 """
-pystructurePipeline.cli — entry point for the `pystructure` console script.
+hexmaps.cli — entry point for the `hexmaps` console script.
 
 Installed by pip via pyproject.toml [project.scripts]:
-    pystructure = "pystructurePipeline.cli:main"
+    hexmaps = "hexmaps.cli:main"
 
 Usage
 -----
 Initialise a working directory (copies key templates + run script):
-    pystructure --init
-    pystructure --init --workdir ./my_project
+    hexmaps --init
+    hexmaps --init --workdir ./my_project
 
 Run the pipeline (from inside a working directory):
-    pystructure --conf config.txt
-    pystructure --conf config.txt --stages regrid products
-    pystructure --conf config.txt --targets ngc5194
-    pystructure --conf config.txt --log_file pystructure_run.log
+    hexmaps --conf config.txt
+    hexmaps --conf config.txt --stages regrid products
+    hexmaps --conf config.txt --targets ngc5194
+    hexmaps --conf config.txt --log_file hexmaps_run.log
 """
 
 import argparse
@@ -26,7 +26,7 @@ DATABASE_STAGES = ["regrid", "products"]
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="PyStructure: homogenize and analyze multi-wavelength astronomical datasets.",
+        description="HexMaps: homogenize and analyze multi-wavelength astronomical datasets.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -94,7 +94,7 @@ def main(argv=None):
     # --init mode: scaffold a working directory and exit
     # ------------------------------------------------------------------
     if args.init:
-        from pystructurePipeline.init_workdir import init_workdir
+        from hexmaps.init_workdir import init_workdir
 
         try:
             init_workdir(workdir=args.workdir, overwrite=args.overwrite)
@@ -110,15 +110,15 @@ def main(argv=None):
     if args.conf is None:
         print(
             "[ERROR]    --conf is required when not using --init.\n"
-            "           Example: pystructure --conf config.txt\n"
-            "           To set up a new project: pystructure --init"
+            "           Example: hexmaps --conf config.txt\n"
+            "           To set up a new project: hexmaps --init"
         )
         sys.exit(1)
 
     try:
-        from pystructurePipeline import PipelineHandler
+        from hexmaps import PipelineHandler
     except ImportError as exc:
-        print(f"[ERROR]    Could not import pystructurePipeline: {exc}")
+        print(f"[ERROR]    Could not import hexmaps: {exc}")
         sys.exit(1)
 
     raw_stages = args.stages if args.stages else DATABASE_STAGES

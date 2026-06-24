@@ -6,9 +6,9 @@ All functions are self-contained and usable independently of the pipeline.
 Contents
 --------
 I/O helpers
-    load_pystructure         — load a .ecsv database
-    save_pystructure         — save a Table to .ecsv
-    find_latest_pystructure  — find the most recently dated .ecsv for a source
+    load_hexmaps         — load a .ecsv database
+    save_hexmaps         — save a Table to .ecsv
+    find_latest_hexmaps  — find the most recently dated .ecsv for a source
     get_column_names         — return column names without loading all data
     get_spec_lines           — return spectral line names
     get_map_names            — return 2D map names
@@ -28,7 +28,7 @@ from pathlib import Path
 from astropy import units as u
 from astropy.table import Table
 
-from pystructurePipeline.pystructureLogger import get_logger
+from hexmaps.logger import get_logger
 
 # Utility functions do not have their own pipeline "stage" — log messages
 # should appear under whichever stage is calling them. Each function below
@@ -43,9 +43,9 @@ _DEFAULT_LOG = get_logger("Loading")
 # ============================================================================
 
 
-def load_pystructure(fname: str, log=None) -> Table:
+def load_hexmaps(fname: str, log=None) -> Table:
     """
-    Load a PyStructure .ecsv file into an Astropy Table.
+    Load a HexMaps .ecsv file into an Astropy Table.
 
     Parameters
     ----------
@@ -65,14 +65,14 @@ def load_pystructure(fname: str, log=None) -> Table:
     log = log or _DEFAULT_LOG
     fname = Path(fname)
     if not fname.exists():
-        log.error(f"PyStructure file not found: {fname}")
-        raise FileNotFoundError(f"PyStructure file not found: {fname}")
+        log.error(f"HexMaps file not found: {fname}")
+        raise FileNotFoundError(f"HexMaps file not found: {fname}")
     return Table.read(fname)
 
 
-def save_pystructure(table: Table, fname: str, overwrite: bool = True) -> None:
+def save_hexmaps(table: Table, fname: str, overwrite: bool = True) -> None:
     """
-    Save an Astropy Table to a PyStructure .ecsv file.
+    Save an Astropy Table to a HexMaps .ecsv file.
 
     Creates the parent directory if it does not exist.
 
@@ -87,12 +87,12 @@ def save_pystructure(table: Table, fname: str, overwrite: bool = True) -> None:
     table.write(str(fname), format="ascii.ecsv", overwrite=overwrite)
 
 
-def find_latest_pystructure(out_dir: str, source: str, log=None) -> str:
+def find_latest_hexmaps(out_dir: str, source: str, log=None) -> str:
     """
-    Find the most recently dated PyStructure .ecsv file for *source*.
+    Find the most recently dated HexMaps .ecsv file for *source*.
 
     Files are matched by the glob pattern
-    ``{out_dir}/{source}_data_struct_*.ecsv`` and sorted lexicographically
+    ``{out_dir}/{source}_hexmaps_*.ecsv`` and sorted lexicographically
     (which is equivalent to date-order for the YYYY_MM_DD filename convention).
 
     Parameters
@@ -112,28 +112,28 @@ def find_latest_pystructure(out_dir: str, source: str, log=None) -> str:
     FileNotFoundError if no matching file is found.
     """
     log = log or _DEFAULT_LOG
-    pattern = os.path.join(out_dir, f"{source}_data_struct_*.ecsv")
+    pattern = os.path.join(out_dir, f"{source}_hexmaps_*.ecsv")
     matches = sorted(glob.glob(pattern))
     if not matches:
-        log.error(f"No PyStructure file found for " f"'{source}' in '{out_dir}'")
+        log.error(f"No HexMaps file found for " f"'{source}' in '{out_dir}'")
         raise FileNotFoundError(
-            f"No PyStructure file found for " f"'{source}' in '{out_dir}'"
+            f"No HexMaps file found for " f"'{source}' in '{out_dir}'"
         )
     return matches[-1]
 
 
 def get_column_names(fname: str) -> list:
-    """Return the column names of a PyStructure file."""
+    """Return the column names of a HexMaps file."""
     return Table.read(fname).colnames
 
 
 def get_spec_lines(fname: str) -> list:
-    """Return the spectral line names stored in a PyStructure file (from SPEC_ columns)."""
+    """Return the spectral line names stored in a HexMaps file (from SPEC_ columns)."""
     return [c[5:] for c in get_column_names(fname) if c.startswith("SPEC_")]
 
 
 def get_map_names(fname: str) -> list:
-    """Return the 2D map names stored in a PyStructure file (from MAP_ columns)."""
+    """Return the 2D map names stored in a HexMaps file (from MAP_ columns)."""
     return [c[4:] for c in get_column_names(fname) if c.startswith("MAP_")]
 
 
