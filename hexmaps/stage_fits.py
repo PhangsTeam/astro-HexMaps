@@ -79,7 +79,7 @@ from hexmaps.utils_fits import twod_head, conv_with_gauss, reproject_cube
 from hexmaps.stage_regrid import _ensure_ms, _get_vaxis
 from hexmaps.utils_table import get_mom_maps, build_noise_mask
 
-from hexmaps.hexmapsLogger import get_logger
+from hexmaps.logger import get_logger
 
 LOG = get_logger("FITS")
 

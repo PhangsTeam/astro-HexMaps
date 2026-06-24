@@ -57,7 +57,7 @@ from hexmaps.utils_fits import (
     reproject_cube,
 )
 
-from hexmaps.hexmapsLogger import get_logger
+from hexmaps.logger import get_logger
 
 LOG = get_logger("Regrid")
 
