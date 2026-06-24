@@ -889,7 +889,7 @@ def run_moments_ppv(
             folder, 
             out_nan_mask=out_nan_mask
         )
-        LOG.info(f"PPV mask cube written to: {os.path.join(folder, f"{source}_mask.fits")}")
+        LOG.info(f"PPV mask cube written to: {os.path.join(folder, f'{source}_mask.fits')}")
 
     # ------------------------------------------------------------------
     # Compute and write moments for every line.
@@ -915,7 +915,7 @@ def run_moments_ppv(
                         folder,
                         out_nan_mask=out_nan_mask,
                     )
-                    LOG.info(f"PPV mask cube for {line_name} written to: {os.path.join(folder, f"{source}_{hfs_mask_name}.fits")}")
+                    LOG.info(f"PPV mask cube for {line_name} written to: {os.path.join(folder, f'{source}_{hfs_mask_name}.fits')}")
 
         mom_maps = get_mom_maps_ppv(
             cube_data[line_name.upper()],
