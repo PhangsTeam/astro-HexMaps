@@ -60,10 +60,10 @@ def parse_args(argv=None):
     parser.add_argument(
         "--stages",
         nargs="+",
-        choices=ALL_STAGES,
+        choices=ALL_STAGES + ["all"],
         default=None,
         help=(
-            f"Pipeline stage(s) to run: {', '.join(ALL_STAGES)}. "
+            f"Pipeline stage(s) to run: {', '.join(ALL_STAGES)}, or 'all' to run every stage. "
             f"Default: {' '.join(DATABASE_STAGES)} (fits is optional and not run by default)."
         ),
     )
@@ -121,7 +121,10 @@ def main(argv=None):
         print(f"[ERROR]    Could not import pystructurePipeline: {exc}")
         sys.exit(1)
 
-    stages = args.stages if args.stages else DATABASE_STAGES
+    raw_stages = args.stages if args.stages else DATABASE_STAGES
+    # "all" is a convenience alias for ALL_STAGES; run_stages also handles
+    # it, but expanding here gives a cleaner log line.
+    stages = ALL_STAGES if raw_stages == ["all"] else raw_stages
     handler = PipelineHandler(
         conf_path=args.conf, verbose=not args.quiet, log_file=args.log_file
     )

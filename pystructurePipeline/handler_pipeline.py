@@ -145,11 +145,16 @@ class PipelineHandler:
         This means you can safely pass ["products", "regrid"] and the regrid
         stage will still run before products.
 
+        Passing ``"all"`` (or ``["all"]``) as *stages* is a shorthand for
+        all stages in ``ALL_STAGES``, equivalent to
+        ``["regrid", "products", "fits"]``.
+
         Parameters
         ----------
-        stages : list of str
+        stages : list of str or str
             Stage names to execute.  Must be a subset of:
             "regrid", "products", "fits".
+            The special value ``"all"`` expands to all available stages.
         targets : list of str, optional
             Restrict processing to these source names.  Defaults to all
             sources defined in config.txt.
@@ -158,12 +163,22 @@ class PipelineHandler:
         ------
         ValueError if any element of *stages* is not a valid stage name.
         """
+        # Accept a bare string as well as a list
+        if isinstance(stages, str):
+            stages = [stages]
+
+        # Expand "all" to every available stage
+        if "all" in stages:
+            stages = ALL_STAGES
+
         unknown = [s for s in stages if s not in ALL_STAGES]
         if unknown:
             LOG_LOADING.error(
-                f"Unknown stage(s): {unknown}. Valid stages: {ALL_STAGES}"
+                f"Unknown stage(s): {unknown}. Valid stages: {ALL_STAGES} (or 'all')"
             )
-            raise ValueError(f"Unknown stage(s): {unknown}. Valid stages: {ALL_STAGES}")
+            raise ValueError(
+                f"Unknown stage(s): {unknown}. Valid stages: {ALL_STAGES} (or 'all')"
+            )
 
         # Preserve canonical stage order
         ordered = [s for s in ALL_STAGES if s in stages]

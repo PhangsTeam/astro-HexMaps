@@ -29,8 +29,9 @@ CONF_PATH = "config.txt"
 #
 # Default: run regrid + products only. The fits stage is optional — it
 # produces convenient FITS images but the primary deliverable is the .ecsv
-# database. Set STAGES = ["regrid", "products", "fits"] to include it.
-STAGES = None  # runs regrid + products (default); add "fits" for FITS output
+# database. Set STAGES = ["regrid", "products", "fits"] (or STAGES = ["all"])
+# to include it.
+STAGES = None  # runs regrid + products (default); set ["all"] for every stage
 
 # Sources to process. Must match entries in keys/target_definitions.txt.
 # Set to None to process all sources defined in config.txt [sources].
