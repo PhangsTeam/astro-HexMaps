@@ -85,9 +85,9 @@ hexmaps --conf config.txt --log_file hexmaps_run.log
 ### 4 — Use from Python
 
 ```python
-import hexmaps as pys
+import hexmaps as hm
 
-handler = pys.PipelineHandler(conf_path="config.txt")
+handler = hm.PipelineHandler(conf_path="config.txt")
 handler.run_all()  # default: regrid + products only
 
 # Include the optional fits stage
@@ -97,53 +97,40 @@ handler.run_stages(["regrid", "products", "fits"])
 handler.run_stages(["regrid", "products"], targets=["ngc5194"])
 ```
 
-> **Migrating from an older version?** `master_key.txt`, `data_key.txt`, and
-> `config_key.txt` have been merged into a single `config.txt`. Concatenate
-> the `[paths]`/`[meta]` section of your old `master_key.txt`, the
-> `[sources]`/`[overlay]`/maps/cubes/mask content of `data_key.txt`, and the
-> `[resolution]`/`[masking]`/`[spectral]`/`[output]`/`[structure]` sections of
-> `config_key.txt` into one `config.txt` file (any order is fine, as long as
-> the `# ---- maps ----` / `# ---- cubes ----` / `# ---- mask ----` tables
-> come after all the `[section]` blocks). `target_definitions.txt` and
-> `hfs_lines.txt` keep the same filename and column layout, but are now
-> comma-separated instead of tab-separated (whitespace around each comma is
-> ignored, so you can still align columns with spaces or tabs for
-> readability); keep them in a `keys/` subfolder next to your new
-> `config.txt`. `--key_dir keys/` becomes `--conf config.txt`, and
-> `PipelineHandler(key_dir=...)` becomes `PipelineHandler(conf_path=...)`.
+> **Migrating from an older version?** TBD
 
 ---
 
 ## Repository layout
 
 ```
-HexMaps/                      <- git repo - install this with pip
-|-- hexmaps/          <- installable package
-|   |-- handler_keys.py               reads & validates all key files
-|   |-- handler_sources.py            source geometry lookups
-|   |-- handler_pipeline.py           PipelineHandler: stage orchestration
-|   |-- stage_regrid.py               hex grid generation + convolution + sampling
-|   |-- stage_products.py             spectral masking, moments, shuffled spectra
-|   |-- stage_fits.py                 FITS moment-map / map-image writing
-|   |-- utils_fits.py                 FITS/WCS helpers (convolution, deprojection, ...)
-|   |-- utils_table.py                table I/O, spectral shuffle, moment computation
-|   |-- hexmapsLogger.py          centralized [HexMaps] [Stage] [LEVEL] logger
-|   |-- init_workdir.py               copies key-file templates (--init)
-|   |-- cli.py                        `hexmaps` console-script entry point
+HexMaps/                            <- git repo - install this with pip
+|-- hexmaps/                        <- installable package
+|   |-- handler_keys.py             reads & validates all key files
+|   |-- handler_sources.py          source geometry lookups
+|   |-- handler_pipeline.py         PipelineHandler: stage orchestration
+|   |-- stage_regrid.py             hex grid generation + convolution + sampling
+|   |-- stage_products.py           spectral masking, moments, shuffled spectra
+|   |-- stage_fits.py               FITS moment-map / map-image writing
+|   |-- utils_fits.py               FITS/WCS helpers (convolution, deprojection, ...)
+|   |-- utils_table.py              table I/O, spectral shuffle, moment computation
+|   |-- hexmapsLogger.py            centralized [HexMaps] [Stage] [LEVEL] logger
+|   |-- init_workdir.py             copies key-file templates (--init)
+|   |-- cli.py                      `hexmaps` console-script entry point
 |   `-- test_hexmaps.py
-|-- config.txt                     <- example / template config file
-|-- keys/                          <- example / template reference tables
+|-- config.txt                      <- example / template config file
+|-- keys/                           <- example / template reference tables
 |   |-- target_definitions.txt
 |   `-- hfs_lines.txt
-|-- analysis/                      <- post-processing & plotting helpers
-|   |-- hexmapsAnalysis.py        load .ecsv, quicklook maps/spectra
-|   `-- hexmaps_example.ipynb     example analysis notebook
-|-- data/                          <- example FITS input (NGC 5194)
-|-- run_hexmaps.py             <- example run script
+|-- analysis/                       <- post-processing & plotting helpers
+|   |-- hexmapsAnalysis.py          load .ecsv, quicklook maps/spectra
+|   `-- hexmaps_example.ipynb       example analysis notebook
+|-- data/                           <- example FITS input (NGC 5194)
+|-- run_hexmaps.py                  <- example run script
 |-- pyproject.toml
 `-- README.md
 
-~/my_project/                      <- your working directory (anywhere on disk)
+~/my_project/                       <- your working directory (anywhere on disk)
 |-- config.txt                      <- edit this every run
 |-- keys/
 |   |-- target_definitions.txt      <- edit once, reuse across projects
@@ -151,7 +138,7 @@ HexMaps/                      <- git repo - install this with pip
 |-- data/                           <- your FITS files
 |-- output/                         <- pipeline writes .ecsv tables here
 |-- saved_FITS_files/                  FITS moment/map images land here
-`-- run_hexmaps.py              <- edit and run this
+`-- run_hexmaps.py                  <- edit and run this
 ```
 
 ---
@@ -185,7 +172,7 @@ All pipeline output goes through a centralized logger
 column-aligned format:
 
 ```
-[HexMaps] [<Stage>]   [<LEVEL>]   <message>
+[HH:MM:SS][<Stage>][<LEVEL>] <message>
 ```
 
 Stages used during a run:
@@ -201,13 +188,13 @@ Stages used during a run:
 Example:
 
 ```
-[HexMaps] [Loading]   [INFO]     Loading key files...
-[HexMaps] [Loading]   [INFO]     Loaded 1 source(s): ['ngc5194']
-[HexMaps] [Regrid]    [INFO]     Hexagonal grid generated: 1060 sampling points (spacing = 13.5 arcsec).
-[HexMaps] [Regrid]    [INFO]     Cube 12co21 sampled successfully.
-[HexMaps] [Products]  [INFO]     Mask complete. Computing moments.
-[HexMaps] [FITS]      [INFO]     Moment map FITS files written to: ./saved_FITS_files/
-[HexMaps] [Return]    [INFO]     --- Run summary ---
+[HH:MM:SS] [Loading]  [INFO]   Loading key files...
+[HH:MM:SS] [Loading]  [INFO]   Loaded 1 source(s): ['ngc5194']
+[HH:MM:SS] [Regrid]   [INFO]   Hexagonal grid generated: 1060 sampling points (spacing = 13.5 arcsec).
+[HH:MM:SS] [Regrid]   [INFO]   Cube 12co21 sampled successfully.
+[HH:MM:SS] [Products] [INFO]   Mask complete. Computing moments.
+[HH:MM:SS] [FITS]     [INFO]   Moment map FITS files written to: ./saved_FITS_files/
+[HH:MM:SS] [Return]   [INFO]   --- Run summary ---
 ```
 
 Pass `--log_file run.log` (CLI) or `PipelineHandler(..., log_file="run.log")`
@@ -242,5 +229,5 @@ Distributed under the MIT License — see [LICENSE](LICENSE) for details.
 
 ## Contact
 
-Dr. Jakob den Brok — jadenbrok@mpia.de
-Dr. Lukas Neumann — lukas.neumann@eso.org
+* Dr. Jakob den Brok — jadenbrok@mpia.de
+* Dr. Lukas Neumann — lukas.neumann@eso.org
