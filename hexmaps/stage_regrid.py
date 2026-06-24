@@ -837,7 +837,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
                     meta,
                     target_res_as=target_res_as,
                     target_hdr=ov_hdr,
-                    line_name=f"{map_entry["map_name"]}_err",
+                    line_name=f"{map_entry['map_name']}_err",
                     perbeam=perbeam,
                     unc=True,
                 )
