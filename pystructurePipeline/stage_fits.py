@@ -37,11 +37,14 @@ For each cube, the pipeline:
      (ny, nx) maps.
   4. Writes one FITS file per moment quantity per line.
 
-2D maps: unchanged; mask cube(s): now PPV-native too
+2D maps: also PPV-native; mask cube(s): PPV-native too
 ---------------------------------------------------------
-2D band/map columns (MAP_*/EMAP_*) have no PPV-cube equivalent (they are
-already 2-D quantities in the .ecsv), so they are still regridded from the
-hex-grid table via save_to_fits, exactly as before.
+2D band/map columns (MAP_*/EMAP_*) are now also processed PPV-native,
+mirroring the cube path exactly: the raw input FITS file is read, convolved
+to the target resolution on its native pixel grid with conv_with_gauss, and
+reprojected onto the overlay's 2-D spatial WCS with bilinear interpolation
+(get_convolved_map). This replaces the old nearest-neighbour hex-grid
+regridding (save_to_fits/sample_to_hdr) which produced blocky artefacts.
 
 The velocity-integration mask(s), however, are now written PPV-native as
 well (when save_mask is True): the same mask array built and used inside
@@ -68,11 +71,8 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.table import Table
 from astropy.stats import median_absolute_deviation
-from scipy.interpolate import griddata
 from scipy.ndimage import label, binary_erosion
-# from reproject import reproject_interp
 from datetime import date
-from typing import Sequence, Union
 
 from pystructurePipeline.utils_fits import twod_head, conv_with_gauss, reproject_cube
 from pystructurePipeline.stage_regrid import _ensure_ms, _get_vaxis
@@ -88,50 +88,6 @@ LOG = get_logger("FITS")
 # ============================================================================
 
 
-def sample_to_hdr(
-    in_data: Union[np.ndarray, Sequence[float]],
-    ra_samp: Union[np.ndarray, Sequence[float]],
-    dec_samp: Union[np.ndarray, Sequence[float]],
-    in_hdr: fits.Header,
-) -> np.ndarray:
-    """
-    Regrid hex-sampled 1-D data onto a 2-D rectangular pixel grid.
-
-    Uses scipy.griddata with nearest-neighbour interpolation.  The sampling
-    points are first converted to pixel coordinates using the input WCS, and
-    the output grid covers the full NAXIS1 × NAXIS2 extent of *in_hdr*.
-
-    Parameters
-    ----------
-    in_data   : array-like (n_pts,)  — values at the hex-grid positions
-    ra_samp   : array-like (n_pts,)  — RA of hex-grid points (degrees)
-    dec_samp  : array-like (n_pts,)  — Dec of hex-grid points (degrees)
-    in_hdr    : FITS Header           — 2-D WCS defining the output grid
-
-    Returns
-    -------
-    gridded : np.ndarray (NAXIS2, NAXIS1) — regridded map
-    """
-    x_axis = np.arange(in_hdr["NAXIS1"])
-    y_axis = np.arange(in_hdr["NAXIS2"])
-    grid_x, grid_y = np.meshgrid(x_axis, y_axis)
-
-    wcs = WCS(in_hdr)
-    pixel_coords = wcs.all_world2pix(np.column_stack((ra_samp, dec_samp)), 0)
-    return griddata(pixel_coords, in_data, (grid_x, grid_y), method="nearest")
-
-
-# ============================================================================
-# PPV-native pipeline: convolution, reprojection, masking, moments
-#
-# Everything in this section operates on plain 2-D/3-D numpy arrays and
-# FITS headers — never on the hex-grid .ecsv table. This mirrors the logic
-# in stage_regrid.py (convolution, reprojection) and stage_products.py
-# (mask construction) exactly, just applied directly to the rectangular
-# PPV grid instead of sampling at hex-grid points first.
-# ============================================================================
-
-
 def get_convolved_ppv_cube(
     source, line_name, line_dir, line_ext, meta, ov_hdr, fits_dir, log=None
 ):
@@ -139,30 +95,8 @@ def get_convolved_ppv_cube(
     Obtain a convolved PPV cube for *line_name*, aligned to the overlay WCS.
 
     Tries, in order:
-      1. Read the cube stage_regrid already wrote when save_fits was True
-         ({fits_dir}/{source}_{line_name}_{target_res_as}as.fits). This is
-         already convolved to target_res_as and reprojected onto the overlay
-         WCS, so it can be used directly.
-      2. If that file is absent, fall back to reading the raw input cube
-         from {line_dir}/{source}{line_ext}, convolving it to target_res_as
-         (convolve_cube_to_target) and reprojecting it onto the overlay WCS
-         (reproject_cube_to_overlay) from scratch.
-
-    Parameters
-    ----------
-    source        : str
-    line_name     : str   — cube name, e.g. "12co21"
-    line_dir      : str   — directory containing the raw input cube
-    line_ext      : str   — filename extension of the raw input cube
-    meta          : dict — from KeyHandler.meta
-    ov_hdr        : FITS Header — overlay header (3-D) defining the target WCS
-    fits_dir      : str   — directory to look for the stage_regrid save_fits output
-    log           : StageLogger, optional
-
-    Returns
-    -------
-    data : np.ndarray (n_chan, ny, nx) — convolved PPV cube on the overlay grid
-    hdr  : FITS Header — header matching *data*
+      1. Read the cube stage_regrid already wrote when save_fits was True.
+      2. Fall back to reading the raw input cube, convolving and reprojecting.
     """
     log = log or LOG
 
@@ -191,21 +125,6 @@ def get_convolved_ppv_cube(
 def convolve_cube_to_target(data, hdr, target_res_as, log=None):
     """
     Convolve a PPV cube to *target_res_as* arcsec, in place on its native grid.
-
-    Thin wrapper around utils_fits.conv_with_gauss with the same calling
-    convention stage_regrid.sample_at_res uses, so a from-scratch convolution
-    here behaves identically to the one stage_regrid would have produced.
-
-    Parameters
-    ----------
-    data          : np.ndarray (n_chan, ny, nx)
-    hdr           : FITS Header — native header of *data*
-    target_res_as : float — target beam FWHM in arcseconds
-    log           : StageLogger, optional
-
-    Returns
-    -------
-    data, hdr : convolved cube and updated header (BMAJ/BMIN updated)
     """
     log = log or LOG
     if "BMAJ" not in hdr:
@@ -228,23 +147,6 @@ def convolve_cube_to_target(data, hdr, target_res_as, log=None):
 def reproject_cube_to_overlay(data, hdr, ov_hdr, log=None):
     """
     Reproject a PPV cube onto the overlay's spatial+spectral WCS.
-
-    Ensures the velocity axis is in m/s and monotonically increasing
-    (matching the overlay convention), harmonizes RESTFRQ between the two
-    headers (see stage_regrid._harmonize_restfreq), then reprojects with
-    nearest-neighbour interpolation — the same approach stage_regrid.sample_at_res
-    uses for cubes.
-
-    Parameters
-    ----------
-    data   : np.ndarray (n_chan, ny, nx)
-    hdr    : FITS Header — native header of *data*
-    ov_hdr : FITS Header — overlay header (3-D) defining the target WCS
-    log    : StageLogger, optional
-
-    Returns
-    -------
-    data, hdr : reprojected cube and the (copied) overlay-aligned header
     """
     log = log or LOG
     trg_hdr = copy.deepcopy(ov_hdr)
@@ -255,57 +157,88 @@ def reproject_cube_to_overlay(data, hdr, ov_hdr, log=None):
     return data, trg_hdr
 
 
-def save_to_fits(
-    ra,
-    dec,
-    hdr_in,
-    ov_slice,
-    key,
-    filename,
-    this_source,
-    this_data,
-    line,
-    folder,
-    meta,
-    out_nan_mask=None,
-):
+def reproject_map_to_overlay(data, hdr, ov_hdr, log=None):
     """
-    Regrid one table column and write it to a FITS file.
+    Reproject a 2-D map onto the overlay's spatial WCS.
 
-    Silently skips if the requested column does not exist in *this_data*.
+    Uses bilinear interpolation (same as the cube path) to place the map on
+    the overlay pixel grid.  The overlay header is collapsed to 2-D first so
+    spectral keywords don't confuse the reprojection.
 
     Parameters
     ----------
-    ra, dec      : arrays       — hex-grid RA/Dec (degrees)
-    hdr_in       : FITS Header  — 2-D overlay header (pixel grid definition)
-    ov_slice     : np.ndarray   — footprint mask (1.0 inside mapped area, NaN outside)
-    key          : str          — column prefix, e.g. "MAP_", "EMAP_"
-    filename     : str          — quantity label in the output filename, e.g. "map"
-    this_source  : str          — source name
-    this_data    : Table        — the PyStructure table
-    line         : str          — line/map name, e.g. "12CO21" or "SPIRE250"
-    folder       : str          — output directory
-    out_nan_mask : np.ndarray (ny, nx) bool, optional — if supplied, pixels where
-                  out_nan_mask is True are set to NaN after regridding, giving
-                  the same NaN pattern as the moment maps and convolved cubes.
+    data   : np.ndarray (ny, nx)
+    hdr    : FITS Header — native 2-D header of *data*
+    ov_hdr : FITS Header — overlay header (2-D or 3-D) defining the target WCS
+    log    : StageLogger, optional
+
+    Returns
+    -------
+    data, hdr : reprojected map and the 2-D overlay-aligned header
     """
-    col_name = f"{key}{line.upper()}"
-    if col_name not in this_data.colnames:
-        return
+    log = log or LOG
+    from pystructurePipeline.utils_fits import twod_head
 
-    data_in = copy.deepcopy(this_data[col_name])
-    map_cart = sample_to_hdr(data_in, ra, dec, hdr_in)
+    trg_hdr = twod_head(copy.deepcopy(ov_hdr))
+    data, _ = reproject_cube((data, hdr), trg_hdr, order="bilinear")
+    return data, trg_hdr
 
-    # Apply footprint mask (NaN outside the observed area)
-    map_cart = ov_slice * map_cart
 
-    # Apply the combined NaN mask (footprint + edge strip)
-    if out_nan_mask is not None:
-        map_cart = np.where(out_nan_mask, np.nan, map_cart)
+def get_convolved_map(source, map_name, map_dir, map_ext, target_res_as, ov_hdr, log=None):
+    """
+    Obtain a convolved 2-D map for *map_name*, reprojected onto the overlay WCS.
 
-    res_suffix = meta.get("res_suffix", "27p0as")
-    fname_fits = os.path.join(folder, f"{this_source}_{line}_{res_suffix}{filename}.fits")
-    fits.writeto(fname_fits, data=map_cart, header=hdr_in, overwrite=True)
+    Mirrors get_convolved_ppv_cube but for 2-D maps: reads the raw input
+    FITS file, convolves it to *target_res_as* using conv_with_gauss, and
+    reprojects it onto the overlay's 2-D spatial WCS with bilinear
+    interpolation.
+
+    Unlike the cube path there is no on-disk cache for maps (stage_regrid
+    does not write a save_fits copy for 2-D maps), so the convolution and
+    reprojection always run from the raw input file.
+
+    Parameters
+    ----------
+    source        : str
+    map_name      : str   — map name, e.g. "spire250"
+    map_dir       : str   — directory containing the raw input FITS file
+    map_ext       : str   — filename extension of the raw input file
+    target_res_as : float — target beam FWHM in arcseconds
+    ov_hdr        : FITS Header — overlay header (3-D or 2-D) defining the target WCS
+    log           : StageLogger, optional
+
+    Returns
+    -------
+    data : np.ndarray (ny, nx) — convolved map on the overlay spatial grid
+    hdr  : FITS Header — 2-D header matching *data*
+    """
+    log = log or LOG
+
+    raw_path = os.path.join(map_dir, source + map_ext)
+    if not os.path.exists(raw_path):
+        log.error(f"Raw input map not found for {map_name}: {raw_path}")
+        raise FileNotFoundError(f"Raw input map not found for {map_name}: {raw_path}")
+
+    log.info(f"Processing map {map_name} from: {raw_path}")
+    data, hdr = fits.getdata(raw_path, header=True)
+
+    # Convolve to target resolution on the native grid
+    if "BMAJ" not in hdr:
+        log.warning(f"No BMAJ in header for {map_name}; skipping convolution.")
+    elif hdr["BMAJ"] >= 0.99 * target_res_as / 3600.0:
+        log.info(f"Map {map_name} already at or above target resolution; skipping convolution.")
+    else:
+        data, hdr = conv_with_gauss(
+            in_data=data,
+            in_hdr=hdr,
+            target_beam=target_res_as * np.array([1.0, 1.0, 0.0]),
+            quiet=True,
+            log=log,
+        )
+
+    # Reproject onto the overlay 2-D spatial grid
+    data, hdr = reproject_map_to_overlay(data, hdr, ov_hdr, log=log)
+    return data, hdr
 
 
 def construct_mask_ppv(ref_cube, SN_processing):
@@ -1162,42 +1095,59 @@ def run_fits(
         )
 
     # ------------------------------------------------------------------
-    # 2D map images
+    # 2D map images — PPV-native, analogous to the cube/moment path.
+    #
+    # Instead of regridding hex-grid MAP_*/EMAP_* columns via nearest-
+    # neighbour interpolation (save_to_fits), we now read the raw input
+    # map FITS files directly, convolve them to the target resolution on
+    # their native pixel grid, and reproject onto the overlay WCS with
+    # bilinear interpolation — exactly the same pipeline as for spectral
+    # cubes (get_convolved_ppv_cube). This eliminates the blocky nearest-
+    # neighbour artefacts that arose from interpolating sparse hex-grid
+    # points back onto the dense overlay grid.
     # ------------------------------------------------------------------
     if save_maps:
-        # Compute the same NaN mask used for moment maps so all output files
-        # share a consistent NaN pattern (overlay footprint + edge strip).
         _edge = build_edge_mask(ov_footprint, ov_hdr, target_res_as)
         _out_nan = ~(ov_footprint & _edge.astype(bool))
-        for map_name in maps["map_name"]:
-            save_to_fits(
-                ra_deg,
-                dec_deg,
-                ov_hdr_2d,
-                ov_slice,
-                "MAP_",
-                "",
-                source,
-                this_data,
-                map_name,
-                folder,
-                meta,
-                out_nan_mask=_out_nan,
-            )
-            save_to_fits(
-                ra_deg,
-                dec_deg,
-                ov_hdr_2d,
-                ov_slice,
-                "EMAP_",
-                "_err",
-                source,
-                this_data,
-                map_name,
-                folder,
-                meta,
-                out_nan_mask=_out_nan,
-            )
+        res_suffix = meta.get("res_suffix", "27p0as")
+
+        for _, map_row in maps.iterrows():
+            map_name = str(map_row["map_name"])
+            map_dir  = str(map_row["map_dir"])
+            map_ext  = str(map_row["map_ext"])
+            map_uc   = str(map_row.get("map_uc", "")).strip()
+
+            # --- primary map ---
+            try:
+                map_data, map_hdr = get_convolved_map(
+                    source, map_name, map_dir, map_ext,
+                    target_res_as, ov_hdr, log=LOG,
+                )
+                map_data = np.where(_out_nan, np.nan, map_data)
+                fname_map = os.path.join(folder, f"{source}_{map_name}_{res_suffix}.fits")
+                fits.writeto(fname_map, data=map_data, header=map_hdr, overwrite=True)
+            except FileNotFoundError:
+                LOG.warning(f"Skipping map {map_name}: raw input file not found.")
+                continue
+
+            # --- uncertainty map (optional; only if map_uc is defined) ---
+            if map_uc and map_uc not in ("nan", ""):
+                try:
+                    unc_data, unc_hdr = get_convolved_map(
+                        source, map_name, map_dir, map_uc,
+                        target_res_as, ov_hdr, log=LOG,
+                    )
+                    unc_data = np.where(_out_nan, np.nan, unc_data)
+                    fname_unc = os.path.join(
+                        folder, f"{source}_{map_name}_{res_suffix}_err.fits"
+                    )
+                    fits.writeto(fname_unc, data=unc_data, header=unc_hdr, overwrite=True)
+                except FileNotFoundError:
+                    LOG.warning(
+                        f"Skipping uncertainty map for {map_name}: "
+                        f"raw input file {map_uc} not found."
+                    )
+
         LOG.info(f"2D map FITS files written to: {folder}")
 
 

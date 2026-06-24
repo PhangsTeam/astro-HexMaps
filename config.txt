@@ -195,7 +195,7 @@ save_fits        = true
 save_mom_maps    = true
 
 # Save 2D map FITS files
-save_maps   = false
+save_maps   = true
 
 # Save the velocity-integration mask(s) as a 3D FITS cube (one file for the
 # combined SPEC_MASK, plus one per SPEC_MASK_<LINE> if present)
