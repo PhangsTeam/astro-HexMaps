@@ -97,6 +97,12 @@ spire250,  SPIRE 250 um,      MJy/sr,  _spire250_gauss21.fits,  data/
 # Example fixed-velocity mask (comment out if unused):
 # vel_mask, Fixed velocity window, -200, 200, km/s
 
+# Example noise velocity windows (comment out if unused):
+# Specify one or more line-free velocity ranges for noise (RMS) estimation.
+# Multiple windows are combined (OR) into a single noise channel mask.
+# noise_mask, Noise window (blue), -200, -100, km/s
+# noise_mask, Noise window (red),   100,  200, km/s
+
 
 # -----------------------------------------------------------------------------
 # [resolution] / [masking] / [spectral] / [output] / [structure]
@@ -146,6 +152,11 @@ use_input_mask   = false
 # Use a fixed velocity window defined in the [mask] table above
 use_fixed_vel_mask = false
 
+# Use explicit velocity windows (noise_mask rows in the [mask] table) for
+# noise (RMS) estimation instead of using channels outside the signal mask.
+# Useful when the line-free baseline is contaminated by other lines.
+use_fixed_noise_mask = false
+
 # Use hyperfine structure correction (requires hfs_file in [paths])
 use_hfs_lines    = false
 
@@ -184,7 +195,7 @@ save_fits        = true
 save_mom_maps    = true
 
 # Save 2D map FITS files
-save_maps   = true
+save_maps   = false
 
 # Save the velocity-integration mask(s) as a 3D FITS cube (one file for the
 # combined SPEC_MASK, plus one per SPEC_MASK_<LINE> if present)

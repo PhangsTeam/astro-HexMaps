@@ -296,7 +296,7 @@ def shuffle(
 # ============================================================================
 
 
-def get_mom_maps(spec_cube, mask, vaxis, mom_calc=(3, 3, "fwhm")):
+def get_mom_maps(spec_cube, mask, vaxis, mom_calc=(3, 3, "fwhm"), noise_mask=None):
     """
     Compute integrated spectral properties from a masked spectral cube.
 
@@ -328,6 +328,12 @@ def get_mom_maps(spec_cube, mask, vaxis, mom_calc=(3, 3, "fwhm")):
         SN_thresh       : float — S/N threshold for high-S/N submask
         conseq_channels : int   — min consecutive channels for submask
         mom2_method     : str   — "fwhm" | "sqrt" | "math"
+    noise_mask : array-like (n_pts × n_chan), optional — 0/1 mask selecting
+        the channels to use for noise (RMS) estimation. When supplied,
+        the RMS is computed from channels where noise_mask == 1 (instead of
+        the default channels-outside-the-integration-mask approach). Multiple
+        velocity windows can be combined by OR-ing them into one mask before
+        passing here.
 
     Returns
     -------
@@ -370,8 +376,14 @@ def get_mom_maps(spec_cube, mask, vaxis, mom_calc=(3, 3, "fwhm")):
         if np.nansum(spectrum != 0) < 1:
             continue
 
-        # RMS noise: standard deviation of channels outside the mask
-        rms = np.nanstd(spectrum[np.logical_and(mask_m == 0, spectrum != 0)])
+        # RMS noise: use explicit noise channels if provided, otherwise
+        # use channels outside the integration mask.
+        if noise_mask is not None:
+            noise_chans = np.asarray(noise_mask)[m].astype(bool)
+            rms_vals = spectrum[noise_chans & (spectrum != 0)]
+        else:
+            rms_vals = spectrum[np.logical_and(mask_m == 0, spectrum != 0)]
+        rms = np.nanstd(rms_vals)
         mom_maps["rms"][m] = rms * spec_unit
 
         # Peak brightness within the mask
@@ -427,3 +439,65 @@ def get_mom_maps(spec_cube, mask, vaxis, mom_calc=(3, 3, "fwhm")):
         mom_maps["ew_err"][m] = np.sqrt(term1 + term2) * v_unit
 
     return mom_maps
+
+
+def build_noise_mask(noise_mask_df, vaxis, shape):
+    """
+    Build a noise-channel mask from a DataFrame of velocity windows.
+
+    Combines all rows of *noise_mask_df* (each defining a velocity range
+    [mask_start, mask_end] in *mask_unit*) into a single boolean mask by
+    OR-ing them together, allowing multiple line-free windows to be specified
+    in config and merged automatically.
+
+    Parameters
+    ----------
+    noise_mask_df : pd.DataFrame with columns mask_start, mask_end, mask_unit
+    vaxis         : astropy Quantity (n_chan,) — velocity axis in any unit
+    shape         : tuple — output shape, either
+
+                    * (n_pts, n_chan) for the hex-grid path, where the channel
+                      axis is last and the mask is broadcast over all points, or
+                    * (n_chan, ny, nx) for the PPV path, where the channel axis
+                      is first and the mask is broadcast over all pixels.
+
+    Returns
+    -------
+    noise_mask : np.ndarray of bool, same shape as *shape* — True in channels
+                 that should be used for noise (RMS) estimation, or None if
+                 no channels fell within any window (with a warning logged).
+    """
+    from astropy import units as _au
+
+    LOG = get_logger("Loading")
+    n_chan = shape[-1] if len(shape) == 2 else shape[0]
+    chan_mask = np.zeros(n_chan, dtype=bool)
+
+    for _, row in noise_mask_df.iterrows():
+        try:
+            mask_unit  = str(row["mask_unit"]).strip()
+            mask_start = float(row["mask_start"]) * _au.Unit(mask_unit)
+            mask_end   = float(row["mask_end"])   * _au.Unit(mask_unit)
+            vaxis_conv = vaxis.to(_au.Unit(mask_unit))
+            window     = (vaxis_conv >= mask_start) & (vaxis_conv <= mask_end)
+            chan_mask  |= window.value if hasattr(window, "value") else np.asarray(window)
+        except Exception as e:
+            LOG.warning(
+                f"Could not parse noise velocity window row "
+                f"{row.to_dict()} — {e}"
+            )
+
+    if not chan_mask.any():
+        LOG.warning(
+            "use_fixed_noise_mask is True but no channels fall within the "
+            "specified noise velocity windows. Falling back to mask-inverted noise."
+        )
+        return None
+
+    # Broadcast to the requested output shape
+    if len(shape) == 2:
+        # hex-grid: (n_pts, n_chan) — repeat channel mask for all points
+        return np.broadcast_to(chan_mask[None, :], shape).copy()
+    else:
+        # PPV: (n_chan, ny, nx) — channel axis is first
+        return np.broadcast_to(chan_mask[:, None, None], shape).copy()

@@ -76,7 +76,7 @@ from typing import Sequence, Union
 
 from pystructurePipeline.utils_fits import twod_head, conv_with_gauss, reproject_cube
 from pystructurePipeline.stage_regrid import _ensure_ms, _get_vaxis
-from pystructurePipeline.utils_table import get_mom_maps
+from pystructurePipeline.utils_table import get_mom_maps, build_noise_mask
 
 from pystructurePipeline.pystructureLogger import get_logger
 
@@ -528,7 +528,7 @@ def external_mask_ppv(mask_file, ov_hdr, log=None):
     return data
 
 
-def get_mom_maps_ppv(cube, mask, vaxis, mom_calc):
+def get_mom_maps_ppv(cube, mask, vaxis, mom_calc, noise_mask=None):
     """
     Compute moment maps directly on a PPV cube, reusing utils_table.get_mom_maps
     exactly as-is.
@@ -543,10 +543,13 @@ def get_mom_maps_ppv(cube, mask, vaxis, mom_calc):
 
     Parameters
     ----------
-    cube     : astropy Quantity (n_chan, ny, nx) — brightness temperature cube
-    mask     : array-like (n_chan, ny, nx) — 0/1 integration mask
-    vaxis    : astropy Quantity (n_chan,) — velocity axis
-    mom_calc : tuple (SN_thresh, conseq_channels, mom2_method)
+    cube       : astropy Quantity (n_chan, ny, nx) — brightness temperature cube
+    mask       : array-like (n_chan, ny, nx) — 0/1 integration mask
+    vaxis      : astropy Quantity (n_chan,) — velocity axis
+    mom_calc   : tuple (SN_thresh, conseq_channels, mom2_method)
+    noise_mask : array-like (n_chan, ny, nx), optional — channels to use for
+                 noise estimation (built by build_noise_mask; see get_mom_maps
+                 for details)
 
     Returns
     -------
@@ -559,8 +562,13 @@ def get_mom_maps_ppv(cube, mask, vaxis, mom_calc):
     # pixel as one "point", matching get_mom_maps' expected row-major layout.
     cube_pts = np.moveaxis(cube.value, 0, -1).reshape(ny * nx, n_chan) * cube.unit
     mask_pts = np.moveaxis(np.asarray(mask), 0, -1).reshape(ny * nx, n_chan)
+    noise_pts = (
+        np.moveaxis(np.asarray(noise_mask), 0, -1).reshape(ny * nx, n_chan)
+        if noise_mask is not None
+        else None
+    )
 
-    mom_maps_pts = get_mom_maps(cube_pts, mask_pts, vaxis, mom_calc)
+    mom_maps_pts = get_mom_maps(cube_pts, mask_pts, vaxis, mom_calc, noise_mask=noise_pts)
 
     mom_maps = {}
     for key, val in mom_maps_pts.items():
@@ -670,7 +678,8 @@ def build_edge_mask(ov_footprint, ov_hdr, target_res_as):
 
 
 def run_moments_ppv(
-    source, meta, cubes, input_mask, hfs_data, params, folder, save_mask=False
+    source, meta, cubes, input_mask, hfs_data, params, folder,
+    save_mask=False, noise_mask_df=None
 ):
     """
     Compute and write PPV-native moment maps for every cube of *source*.
@@ -690,18 +699,19 @@ def run_moments_ppv(
 
     Parameters
     ----------
-    source     : str
-    meta       : dict — from KeyHandler.meta
-    cubes      : pd.DataFrame — cube definitions from KeyHandler
-    input_mask : pd.DataFrame — mask definition from KeyHandler
-    hfs_data   : pd.DataFrame or None — hyperfine data from KeyHandler
-    params     : dict — source geometry from SourceHandler
-    folder     : str — output directory for the moment FITS files
-    save_mask  : bool — if True, also write the PPV mask(s) used here to FITS
-                (see save_ppv_mask_to_fits): the combined mask once as
-                {source}_mask.fits, plus one {source}_mask_<line>.fits for
-                every line whose HFS-extended mask actually differs from
-                the combined mask.
+    source        : str
+    meta          : dict — from KeyHandler.meta
+    cubes         : pd.DataFrame — cube definitions from KeyHandler
+    input_mask    : pd.DataFrame — mask definition from KeyHandler
+    hfs_data      : pd.DataFrame or None — hyperfine data from KeyHandler
+    params        : dict — source geometry from SourceHandler
+    folder        : str — output directory for the moment FITS files
+    save_mask     : bool — if True, also write the PPV mask(s) used here to FITS
+    noise_mask_df : pd.DataFrame or None — noise velocity window table from
+                   KeyHandler.get_noise_mask(). When use_fixed_noise_mask is
+                   True and this DataFrame is non-empty, the RMS noise is
+                   estimated from channels within these windows rather than
+                   from channels outside the integration mask.
     """
     use_input_mask = meta.get("use_input_mask", False)
     use_fixed_vel_mask = meta.get("use_fixed_vel_mask", False)
@@ -751,6 +761,33 @@ def run_moments_ppv(
         (ov_hdr["CDELT3"] * au.Unit(ov_hdr.get("CUNIT3", "m/s"))).to(au.km / au.s).value
     )
     vaxis = (_get_vaxis(ov_hdr) * au.Unit(ov_hdr.get("CUNIT3", "m/s"))).to(au.km / au.s)
+
+    # ------------------------------------------------------------------
+    # Build the noise channel mask (PPV path).
+    # If use_fixed_noise_mask is True and noise_mask_df is non-empty,
+    # build a (n_chan, ny, nx) boolean mask selecting the noise channels.
+    # This is passed to get_mom_maps_ppv so RMS is estimated from those
+    # channels rather than from the inverse of the integration mask.
+    # ------------------------------------------------------------------
+    use_fixed_noise_mask = meta.get("use_fixed_noise_mask", False)
+    ppv_noise_mask = None
+    if use_fixed_noise_mask:
+        if noise_mask_df is not None and len(noise_mask_df) > 0:
+            # Shape determined after cubes are loaded; use a placeholder for
+            # now and rebuild with the correct shape inside the per-line loop.
+            _noise_mask_df = noise_mask_df
+            LOG.info(
+                f"Noise RMS will be estimated from {len(noise_mask_df)} "
+                "fixed velocity window(s)."
+            )
+        else:
+            LOG.warning(
+                "use_fixed_noise_mask is True but no noise_mask rows found "
+                "in the [mask] table. Falling back to mask-inverted noise."
+            )
+            _noise_mask_df = None
+    else:
+        _noise_mask_df = None
 
     # ------------------------------------------------------------------
     # Load every cube's convolved PPV data up front (needed both for mask
@@ -926,7 +963,18 @@ def run_moments_ppv(
                     LOG.info(f"PPV mask cube for {line_name} written to: {os.path.join(folder, f"{source}_{hfs_mask_name}.fits")}")
 
         mom_maps = get_mom_maps_ppv(
-            cube_data[line_name.upper()], active_mask, vaxis, mom_calc
+            cube_data[line_name.upper()],
+            active_mask,
+            vaxis,
+            mom_calc,
+            noise_mask=(
+                build_noise_mask(
+                    _noise_mask_df, vaxis,
+                    cube_data[line_name.upper()].shape
+                )
+                if _noise_mask_df is not None
+                else None
+            ),
         )
 
         ov_hdr_2d = twod_head(ov_hdr)
@@ -972,7 +1020,10 @@ def run_moments_ppv(
         LOG.info(f"Compute moment maps and write to file for line: {line_name}.")
 
 
-def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data=None):
+def run_fits(
+    source, fname, meta, maps, cubes, params,
+    input_mask=None, hfs_data=None, noise_mask_df=None
+):
     """
     Write FITS moment maps, 2D map images, and mask cube(s) for *source*.
 
@@ -1099,6 +1150,7 @@ def run_fits(source, fname, meta, maps, cubes, params, input_mask=None, hfs_data
             params,
             folder,
             save_mask=save_mask,
+            noise_mask_df=noise_mask_df,
         )
         LOG.info(f"Moment map FITS files written to: {folder}")
     elif save_mask:

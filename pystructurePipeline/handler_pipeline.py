@@ -252,6 +252,7 @@ class PipelineHandler:
             cubes=self.key_handler.get_cubes(),
             input_mask=self.key_handler.get_input_mask(),
             hfs_data=self.key_handler.get_hfs_data(),
+            noise_mask_df=self.key_handler.get_noise_mask(),
         )
 
     def _run_fits(self, source: str):
@@ -277,6 +278,7 @@ class PipelineHandler:
             params=self.source_handler.get_source_params(source),
             input_mask=self.key_handler.get_input_mask(),
             hfs_data=self.key_handler.get_hfs_data(),
+            noise_mask_df=self.key_handler.get_noise_mask(),
         )
 
     # ------------------------------------------------------------------
@@ -293,16 +295,16 @@ class PipelineHandler:
 
         Examples
         --------
-        angular 27 arcsec  → ngc5194_hexforge_27p0as_2025_06_01.ecsv
-        physical 100 pc    → ngc5194_hexforge_100pc_2025_06_01.ecsv
-        native 12.8 arcsec → ngc5194_hexforge_12p8as_2025_06_01.ecsv
+        angular 27 arcsec  → ngc5194_hexmaps_27p0as_2025_06_01.ecsv
+        physical 100 pc    → ngc5194_hexmaps_100pc_2025_06_01.ecsv
+        native 12.8 arcsec → ngc5194_hexmaps_12p8as_2025_06_01.ecsv
         """
         meta       = self.key_handler.meta
         out_dir    = meta.get("out_dir", "output/")
         res_suffix = meta.get("res_suffix", "27p0as")
         date_str   = date.today().strftime("%Y_%m_%d")
         fname      = os.path.join(
-            out_dir, f"{source}_hexforge_{res_suffix}_{date_str}.ecsv"
+            out_dir, f"{source}_hexmaps_{res_suffix}_{date_str}.ecsv"
         )
 
         # In archive mode, bump the version number if the file already exists
@@ -322,7 +324,7 @@ class PipelineHandler:
 
         Used by products and fits stages when running independently (without
         regrid in the same session). Globs for
-        ``{source}_hexforge_{res_suffix}_*.ecsv`` in out_dir and returns
+        ``{source}_hexmaps_{res_suffix}_*.ecsv`` in out_dir and returns
         the most recently modified match, so re-running products or fits
         after a prior regrid just works without needing to supply the date.
         """
@@ -330,7 +332,7 @@ class PipelineHandler:
         meta       = self.key_handler.meta
         out_dir    = meta.get("out_dir", "output/")
         res_suffix = meta.get("res_suffix", "27p0as")
-        pattern    = os.path.join(out_dir, f"{source}_hexforge_{res_suffix}_*.ecsv")
+        pattern    = os.path.join(out_dir, f"{source}_hexmaps_{res_suffix}_*.ecsv")
         matches    = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
         if matches:
             LOG_LOADING.info(f"Found existing database for {source}: {matches[0]}")

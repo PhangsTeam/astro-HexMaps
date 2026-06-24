@@ -64,8 +64,10 @@ CUBE_COLUMNS = [
     "map_ext",
     "map_uc",
 ]
-MASK_COLUMNS_VEL = ["mask_name", "mask_desc", "mask_start", "mask_end", "mask_unit"]
+MASK_COLUMNS_VEL  = ["mask_name", "mask_desc", "mask_start", "mask_end", "mask_unit"]
 MASK_COLUMNS_FILE = ["mask_name", "mask_desc", "mask_ext", "mask_dir"]
+# Columns for noise-estimation velocity windows (same layout as MASK_COLUMNS_VEL)
+NOISE_MASK_COLUMNS = ["mask_name", "mask_desc", "mask_start", "mask_end", "mask_unit"]
 TARGET_COLUMNS = [
     "source",
     "ra_ctr",
@@ -128,7 +130,8 @@ class KeyHandler:
         self.source_table = None
         self.maps = None
         self.cubes = None
-        self.input_mask = None
+        self.input_mask  = None
+        self.noise_mask  = None
         self.hfs_data = None
 
         self.load()
@@ -170,6 +173,10 @@ class KeyHandler:
     def get_input_mask(self) -> pd.DataFrame:
         """Return the DataFrame of mask definitions (may be empty)."""
         return self.input_mask
+
+    def get_noise_mask(self) -> pd.DataFrame:
+        """Return the DataFrame of noise velocity windows (may be empty)."""
+        return self.noise_mask
 
     def get_source_table(self) -> pd.DataFrame:
         """Return the full source geometry table."""
@@ -341,6 +348,7 @@ class KeyHandler:
         strict_mask       : bool  — apply spatial connectivity filter
         use_input_mask    : bool  — use an external FITS mask from the [mask] table
         use_fixed_vel_mask: bool  — use a fixed velocity-window mask
+        use_fixed_noise_mask: bool — use explicit velocity windows for noise estimation
         use_hfs_lines     : bool  — apply HFS correction (requires hfs_file)
         mom_thresh        : float — S/N threshold for moment computation
         conseq_channels   : int   — minimum consecutive channels for valid mask
@@ -402,6 +410,9 @@ class KeyHandler:
         )
         self.meta["use_fixed_vel_mask"] = (
             _get("masking", "use_fixed_vel_mask", "false").lower() == "true"
+        )
+        self.meta["use_fixed_noise_mask"] = (
+            _get("masking", "use_fixed_noise_mask", "false").lower() == "true"
         )
         self.meta["use_hfs_lines"] = (
             _get("masking", "use_hfs_lines", "false").lower() == "true"
@@ -539,7 +550,7 @@ class KeyHandler:
         # ------------------------------------------------------------------
         # Pass 2: parse the tabular sections line by line
         # ------------------------------------------------------------------
-        map_rows, cube_rows, mask_rows = [], [], []
+        map_rows, cube_rows, mask_rows, noise_mask_rows = [], [], [], []
         section = None
 
         with open(self.conf_path, "r") as f:
@@ -579,7 +590,11 @@ class KeyHandler:
                     cube_rows.append(parts[: len(CUBE_COLUMNS)])
 
                 elif section == "mask" and len(parts) >= 3:
-                    mask_rows.append(parts)
+                    # Route by first field: "noise_mask" rows go to noise_mask_rows
+                    if parts[0].lower() == "noise_mask":
+                        noise_mask_rows.append(parts)
+                    else:
+                        mask_rows.append(parts)
 
         # Build DataFrames
         self.maps = pd.DataFrame(map_rows, columns=MAP_COLUMNS)
@@ -613,6 +628,23 @@ class KeyHandler:
             )
         else:
             self.input_mask = pd.DataFrame(columns=cols)
+
+        # Build noise_mask DataFrame (always velocity-window format)
+        if noise_mask_rows:
+            padded = [
+                r + [""] * max(0, len(NOISE_MASK_COLUMNS) - len(r))
+                for r in noise_mask_rows
+            ]
+            self.noise_mask = pd.DataFrame(
+                [r[: len(NOISE_MASK_COLUMNS)] for r in padded],
+                columns=NOISE_MASK_COLUMNS,
+            )
+            LOG.info(
+                f"Loaded {len(self.noise_mask)} noise velocity window(s) "
+                "from the [mask] table."
+            )
+        else:
+            self.noise_mask = pd.DataFrame(columns=NOISE_MASK_COLUMNS)
 
     def _resolve_resolution(self):
         """

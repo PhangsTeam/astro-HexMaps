@@ -55,7 +55,7 @@ from astropy import units as u
 from astropy.stats import median_absolute_deviation
 from astropy.table import Table, Column
 
-from pystructurePipeline.utils_table import shuffle, get_mom_maps
+from pystructurePipeline.utils_table import shuffle, get_mom_maps, build_noise_mask
 
 from pystructurePipeline.pystructureLogger import get_logger
 
@@ -281,7 +281,7 @@ def _build_hfs_mask(mask, line_name, hfs_data, this_data):
 # ============================================================================
 
 
-def run_products(source, fname, meta, cubes, input_mask, hfs_data):
+def run_products(source, fname, meta, cubes, input_mask, hfs_data, noise_mask_df=None):
     """
     Process all spectra for *source*: mask, moments, shuffle.
 
@@ -458,13 +458,37 @@ def run_products(source, fname, meta, cubes, input_mask, hfs_data):
         unit=u.km / u.s,
         description="Velocity axis (km/s)",
     )
-    this_data["SPEC_VAXIS_SHUFF"] = Column(
+    this_data["SPEC_VAXISSHUFF"] = Column(
         np.array([new_vaxis] * n_pts_total),
         unit=u.km / u.s,
         description="Shuffled velocity axis (km/s)",
     )
     this_data.meta["SPEC_VCHAN0_SHUFF"] = new_vaxis[0]
     this_data.meta["SPEC_DELTAV_SHUFF"] = new_vaxis[1] - new_vaxis[0]
+
+    # ------------------------------------------------------------------
+    # Build the noise channel mask (hex-grid path).
+    # If use_fixed_noise_mask is True and noise_mask_df is non-empty,
+    # build a (n_pts, n_chan) boolean array selecting the channels to use
+    # for noise (RMS) estimation. Passed to get_mom_maps as noise_mask.
+    # ------------------------------------------------------------------
+    use_fixed_noise_mask = meta.get("use_fixed_noise_mask", False)
+    hex_noise_mask = None
+    if use_fixed_noise_mask:
+        if noise_mask_df is not None and len(noise_mask_df) > 0:
+            hex_noise_mask = build_noise_mask(
+                noise_mask_df, _vaxis, (n_pts_total, n_chan)
+            )
+            if hex_noise_mask is not None:
+                LOG.info(
+                    f"Noise RMS will be estimated from {len(noise_mask_df)} "
+                    "fixed velocity window(s)."
+                )
+        else:
+            LOG.warning(
+                "use_fixed_noise_mask is True but no noise_mask rows found "
+                "in the [mask] table. Falling back to mask-inverted noise."
+            )
 
     # ------------------------------------------------------------------
     # Loop over spectral lines: compute moments and shuffled spectra
@@ -505,8 +529,15 @@ def run_products(source, fname, meta, cubes, input_mask, hfs_data):
         else:
             active_mask = mask
 
-        # Compute moment maps
-        mom_maps = get_mom_maps(this_spec, active_mask, this_vaxis, mom_calc)
+        # Compute moment maps; use the noise channel mask if available,
+        # otherwise fall back to inverting the integration mask.
+        line_noise_mask = (
+            hex_noise_mask[:n_pts_l] if hex_noise_mask is not None else None
+        )
+        mom_maps = get_mom_maps(
+            this_spec, active_mask, this_vaxis, mom_calc,
+            noise_mask=line_noise_mask,
+        )
         line_desc = str(cubes["line_desc"].iloc[jj])
 
         # Only derive moments from the cube if no pre-computed 2D map was

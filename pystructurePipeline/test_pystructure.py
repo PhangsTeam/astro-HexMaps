@@ -122,7 +122,7 @@ class TestKeyHandler:
         os.makedirs(out_dir, exist_ok=True)
 
         # Write a fake .ecsv with an older date
-        existing = os.path.join(out_dir, f"ngc5194_hexforge_{res_suffix}_2024_01_01.ecsv")
+        existing = os.path.join(out_dir, f"ngc5194_hexmaps_{res_suffix}_2024_01_01.ecsv")
         with open(existing, "w") as f:
             f.write("# fake ecsv\n")
 
