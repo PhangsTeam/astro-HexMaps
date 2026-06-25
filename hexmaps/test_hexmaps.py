@@ -132,6 +132,58 @@ class TestKeyHandler:
         found = handler._find_output_fname("ngc5194")
         assert found == existing
 
+    # ------------------------------------------------------------------
+    # Mandatory-key error tests
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("missing_key,section,replace_line", [
+        ("target_res",   "resolution", "target_res = 27.0"),
+        ("resolution",   "resolution", "resolution = angular"),
+        ("ref_line",     "masking",    "ref_line = first"),
+    ])
+    def test_mandatory_setting_raises_on_missing_key(
+        self, tmp_path, missing_key, section, replace_line
+    ):
+        """
+        target_res, resolution, and ref_line have no fallback defaults.
+        Omitting any of them must raise a KeyError with a clear message.
+        """
+        conf_path = self._write_minimal_config(tmp_path)
+        text = conf_path.read_text().replace(replace_line + "\n", "")
+        conf_path.write_text(text)
+
+        from hexmaps.handler_keys import KeyHandler
+        with pytest.raises(KeyError, match="Mandatory key"):
+            KeyHandler(str(conf_path))
+
+    def test_mandatory_sources_raises_on_missing(self, tmp_path):
+        """
+        [sources] / sources is mandatory; omitting it must raise a KeyError.
+        """
+        conf_path = self._write_minimal_config(tmp_path)
+        text = conf_path.read_text().replace(
+            "[sources]\nsources = ngc5194\n", ""
+        )
+        conf_path.write_text(text)
+
+        from hexmaps.handler_keys import KeyHandler
+        with pytest.raises(KeyError, match="Mandatory key"):
+            KeyHandler(str(conf_path))
+
+    def test_mandatory_overlay_file_raises_on_missing(self, tmp_path):
+        """
+        [overlay] / overlay_file is mandatory; omitting it must raise a KeyError.
+        """
+        conf_path = self._write_minimal_config(tmp_path)
+        text = conf_path.read_text().replace(
+            "[overlay]\noverlay_file = _12co21.fits\n", ""
+        )
+        conf_path.write_text(text)
+
+        from hexmaps.handler_keys import KeyHandler
+        with pytest.raises(KeyError, match="Mandatory key"):
+            KeyHandler(str(conf_path))
+
     def test_save_mask_defaults_false(self, tmp_path):
         """save_mask is not set in the minimal fixture, so it must default to False."""
         conf_path = self._write_minimal_config(tmp_path)

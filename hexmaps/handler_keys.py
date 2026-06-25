@@ -341,8 +341,8 @@ class KeyHandler:
         Resolution settings
         -------------------
         target_res       : float  — target beam FWHM (arcsec for angular mode,
-                                    pc for physical mode)
-        resolution       : str    — "angular" | "physical" | "native"
+                                    pc for physical mode). MANDATORY.
+        resolution       : str    — "angular" | "physical" | "native". MANDATORY.
         pixels_per_beam : float  — number of sampling points per beam diameter
         max_rad          : float | "auto"  — maximum map radius in degrees
         NAXIS_shuff      : int    — number of channels in the shuffled spectrum
@@ -350,7 +350,7 @@ class KeyHandler:
 
         Masking settings
         ----------------
-        ref_line          : str   — which line to use for mask construction
+        ref_line          : str   — which line to use for mask construction. MANDATORY.
         SN_processing     : list  — [low_SN, high_SN] thresholds
         strict_mask       : bool  — apply spatial connectivity filter
         use_input_mask    : bool  — use an external FITS mask from the [mask] table
@@ -397,16 +397,29 @@ class KeyHandler:
                 )
             return str(fallback)
 
+        def _require(section, key):
+            """Read *key* from *section*; raise ConfigError if absent."""
+            if cfg.has_option(section, key):
+                return cfg.get(section, key)
+            LOG.error(
+                f"Mandatory key '{key}' missing from [{section}] in config.txt. "
+                f"This key must be explicitly set — there is no default value."
+            )
+            raise KeyError(
+                f"Mandatory key '{key}' missing from [{section}] in config.txt. "
+                f"This key must be explicitly set — there is no default value."
+            )
+
         # Resolution
-        self.meta["target_res"] = float(_get("resolution", "target_res", 27.0))
-        self.meta["resolution"] = _get("resolution", "resolution", "angular")
+        self.meta["target_res"] = float(_require("resolution", "target_res"))
+        self.meta["resolution"] = _require("resolution", "resolution")
         self.meta["pixels_per_beam"] = float(_get("resolution", "pixels_per_beam", 2.0))
         self.meta["max_rad"] = _get("resolution", "max_rad", "auto")
         self.meta["NAXIS_shuff"] = int(float(_get("resolution", "NAXIS_shuff", 200)))
         self.meta["CDELT_SHUFF"] = float(_get("resolution", "CDELT_SHUFF", 4000.0))
 
         # Masking
-        self.meta["ref_line"] = _get("masking", "ref_line", "first")
+        self.meta["ref_line"] = _require("masking", "ref_line")
         self.meta["SN_processing"] = [
             float(x) for x in _get("masking", "SN_processing", "2,4").split(",")
         ]
@@ -542,18 +555,33 @@ class KeyHandler:
         cfg = configparser.ConfigParser(inline_comment_prefixes=("#",))
         cfg.read_string(ini_text)
 
-        # Source list: explicit [sources] section, or fall back to all targets
-        if "sources" in cfg:
-            raw = cfg["sources"].get("sources", "")
-            self.sources = [s.strip() for s in raw.split(",") if s.strip()]
-        else:
-            self.sources = list(self.source_table["source"])
+        # Source list — mandatory
+        if "sources" not in cfg or not cfg["sources"].get("sources", "").strip():
+            LOG.error(
+                "Mandatory key 'sources' missing from [sources] in config.txt. "
+                "This key must be explicitly set — there is no default value."
+            )
+            raise KeyError(
+                "Mandatory key 'sources' missing from [sources] in config.txt. "
+                "This key must be explicitly set — there is no default value."
+            )
+        self.sources = [
+            s.strip()
+            for s in cfg["sources"]["sources"].split(",")
+            if s.strip()
+        ]
 
-        # Overlay file extension (prepended with source name at runtime)
-        if "overlay" in cfg:
-            self.meta["overlay_file"] = cfg["overlay"].get("overlay_file", "")
-        else:
-            self.meta["overlay_file"] = ""
+        # Overlay file extension — mandatory
+        if "overlay" not in cfg or not cfg["overlay"].get("overlay_file", "").strip():
+            LOG.error(
+                "Mandatory key 'overlay_file' missing from [overlay] in config.txt. "
+                "This key must be explicitly set — there is no default value."
+            )
+            raise KeyError(
+                "Mandatory key 'overlay_file' missing from [overlay] in config.txt. "
+                "This key must be explicitly set — there is no default value."
+            )
+        self.meta["overlay_file"] = cfg["overlay"]["overlay_file"]
 
         # ------------------------------------------------------------------
         # Pass 2: parse the tabular sections line by line
