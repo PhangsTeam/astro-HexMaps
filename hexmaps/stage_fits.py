@@ -876,31 +876,6 @@ def run_moments_ppv(
         cube_val[:, out_nan_mask] = np.nan
         cube_data[name] = cube_val * cube_data[name].unit
 
-    # Write convolved cubes to disk if save_cubes is enabled.
-    # cube_data already has out_nan_mask applied (set to NaN above), so the
-    # written cubes share the same footprint as the moment maps.
-    res_suffix = meta.get("res_suffix", "27p0as")
-    save_cubes = meta.get("save_cubes", False)
-    if save_cubes:
-        os.makedirs(folder, exist_ok=True)
-        for _, row in cubes.iterrows():
-            line_upper = row["line_name"].upper()
-            if line_upper in cube_data:
-                out_hdr = copy.copy(ov_hdr)
-                out_hdr["BMAJ"] = target_res_as / 3600.0
-                out_hdr["BMIN"] = target_res_as / 3600.0
-                out_hdr["LINE"] = row["line_name"]
-                cube_fits_path = os.path.join(
-                    folder, f"{source}_{row['line_name']}_{res_suffix}.fits"
-                )
-                fits.writeto(
-                    cube_fits_path,
-                    data=cube_data[line_upper].value,
-                    header=out_hdr,
-                    overwrite=True,
-                )
-                LOG.info(f"Convolved cube written to: {cube_fits_path}")
-
     if save_mask:
         save_ppv_mask_to_fits(
             mask, 
@@ -1035,12 +1010,12 @@ def run_fits(
                 (required if use_hfs_lines is set)
     """
     save_mom_maps = meta.get("save_mom_maps", True)
-    save_maps = meta.get("save_maps", True)
-    save_mask = meta.get("save_mask", False)
+    save_maps     = meta.get("save_maps", True)
+    save_mask     = meta.get("save_mask", True)
+    save_cubes    = meta.get("save_cubes", True)
     folder = meta.get("folder_savefits", "./saved_fits_files/")
-    pixels_per_beam = meta.get("pixels_per_beam", 2.0)
 
-    if not (save_mom_maps or save_maps or save_mask):
+    if not (save_mom_maps or save_maps or save_mask or save_cubes):
         LOG.info(f"Output writing disabled for {source}; skipping.")
         return
 
@@ -1196,6 +1171,51 @@ def run_fits(
                     )
 
         LOG.info(f"2D map FITS files written to: {folder}")
+
+    # ------------------------------------------------------------------
+    # Convolved cubes — independent of save_mom_maps so users can save
+    # cubes without computing moment maps.
+    # Cubes are convolved from raw input, reprojected onto the overlay WCS,
+    # footprint-masked (ov_footprint) and edge-eroded (fov_erosion_beams)
+    # exactly like the moment maps.
+    # ------------------------------------------------------------------
+    if save_cubes:
+        _edge = build_edge_mask(
+            ov_footprint, ov_hdr, target_res_as,
+            fov_erosion_beams=meta.get("fov_erosion_beams", 0.5),
+        )
+        _out_nan = ~(ov_footprint & _edge.astype(bool))
+        res_suffix = meta.get("res_suffix", "27p0as")
+
+        for _, row in cubes.iterrows():
+            try:
+                cube_data, cube_hdr = get_convolved_ppv_cube(
+                    source,
+                    str(row["line_name"]),
+                    str(row["line_dir"]),
+                    str(row["line_ext"]),
+                    meta,
+                    ov_hdr,
+                    log=LOG,
+                )
+            except FileNotFoundError:
+                LOG.warning(
+                    f"Skipping cube {row['line_name']}: raw input file not found."
+                )
+                continue
+
+            cube_data[:, _out_nan] = np.nan
+
+            out_hdr = copy.copy(ov_hdr)
+            out_hdr["BMAJ"] = target_res_as / 3600.0
+            out_hdr["BMIN"] = target_res_as / 3600.0
+            out_hdr["LINE"] = str(row["line_name"])
+            cube_fits_path = os.path.join(
+                folder, f"{source}_{row['line_name']}_{res_suffix}.fits"
+            )
+            fits.writeto(cube_fits_path, data=cube_data,
+                         header=out_hdr, overwrite=True)
+            LOG.info(f"Convolved cube written to: {cube_fits_path}")
 
 
 def _resolve_target_res(params, meta, ov_hdr=None):

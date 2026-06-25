@@ -206,7 +206,7 @@ spec_smooth_method = binned
 # Save convolved PPV cubes as FITS files in the fits stage.
 # When true, each convolved cube is written to folder_savefits with the
 # filename pattern: {source}_{line_name}_{res_suffix}.fits
-save_cubes = false
+save_cubes = true
 
 # Save moment maps as FITS files
 save_mom_maps = true

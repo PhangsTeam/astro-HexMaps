@@ -446,12 +446,12 @@ class KeyHandler:
         self.meta["mom2_method"] = _get("masking", "mom2_method", "fwhm")
 
         # Output
-        self.meta["save_cubes"] = _get("output", "save_cubes", "false").lower() == "true"
+        self.meta["save_cubes"] = _get("output", "save_cubes", "true").lower() == "true"
         self.meta["save_mom_maps"] = (
             _get("output", "save_mom_maps", "true").lower() == "true"
         )
         self.meta["save_maps"] = _get("output", "save_maps", "true").lower() == "true"
-        self.meta["save_mask"] = _get("output", "save_mask", "false").lower() == "true"
+        self.meta["save_mask"] = _get("output", "save_mask", "true").lower() == "true"
 
         # Spectral smoothing
         self.meta["spec_smooth"] = _get("spectral", "spec_smooth", "default")
