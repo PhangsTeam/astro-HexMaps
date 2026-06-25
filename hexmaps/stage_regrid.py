@@ -325,6 +325,7 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
         LOG.error(f"Overlay file not found for {source}: {overlay_fname}")
         raise FileNotFoundError(f"Overlay file not found for {source}: {overlay_fname}")
 
+    LOG.info(f"Overlay file: {overlay_fname}")
     ov_cube, ov_hdr = fits.getdata(overlay_fname, header=True)
 
     if ov_hdr["NAXIS"] == 4:

@@ -18,7 +18,7 @@
 
 [meta]
 # Your name — stored in the output table metadata
-user     = Dr. Blocksberg
+user = Dr. Blocksberg
 
 # Free-form comment stored in the output table metadata
 comments = Example HexMaps run
@@ -28,10 +28,10 @@ comments = Example HexMaps run
 # -----------------------------------------------------------------------------
 [paths]
 # Directory containing the input FITS files
-data_dir    = data/
+data_dir = data/
 
 # Directory for output .ecsv HexMaps files
-out_dir     = output/
+out_dir = output/
 
 # Required: path to the source geometry table (RA, Dec, distance, ...).
 # Defaults to keys/target_definitions.txt next to this file if not set.
@@ -40,10 +40,10 @@ out_dir     = output/
 # Optional: path to hyperfine structure file (comment out if not needed)
 # Defaults to keys/hfs_lines.txt next to this file if not set, but is only
 # used if that file actually exists.
-# hfs_file  = keys/hfs_lines.txt
+# hfs_file = keys/hfs_lines.txt
 
 # Directory for output FITS maps
-folder_savefits  = ./saved_fits_files/
+folder_savefits = ./saved_fits_files/
 
 
 # -----------------------------------------------------------------------------
@@ -83,7 +83,7 @@ overlay_file = _12co21.fits
 
 # ---- maps ----
 spire250,  SPIRE 250 um,      MJy/sr,  _spire250_gauss21.fits,  data/
-# Add more bands below, one per line:
+# Add more maps below, one per line:
 # w4,      WISE Band 4,       MJy/sr,  _w4_gauss21.fits,         data/
 
 # ---- cubes ----
@@ -114,23 +114,23 @@ spire250,  SPIRE 250 um,      MJy/sr,  _spire250_gauss21.fits,  data/
 
 [resolution]
 # Target angular resolution in arcseconds (used when resolution = angular)
-target_res       = 27.0
+target_res = 27.0
 
 # How to interpret target_res:
 #   angular  - use target_res directly in arcseconds  (default)
 #   physical - convert target_res (in pc) to arcseconds using source distance
 #   native   - use the native resolution of the overlay image
-resolution       = angular
+resolution = angular
 
 # Number of sampling points per beam diameter (default 2 = half-beam spacing)
 pixels_per_beam = 2
 
 # Maximum map radius in degrees.  Set to 'auto' to derive from the overlay.
-max_rad          = auto
+max_rad = auto
 
 # Spectral axis parameters for the shuffled spectra output
-NAXIS_shuff      = 200
-CDELT_SHUFF      = 4000.0
+NAXIS_shuff = 200
+CDELT_SHUFF = 4000.0
 
 
 [masking]
@@ -143,13 +143,13 @@ CDELT_SHUFF      = 4000.0
 ref_line         = first
 
 # Signal-to-noise thresholds for the two-step mask: [low, high]
-SN_processing    = 2, 4
+SN_processing = 2, 4
 
 # If true, apply a strict spatial consistency check on the mask
-strict_mask      = false
+strict_mask = false
 
 # Use an external mask FITS file defined in the [mask] table above
-use_input_mask   = false
+use_input_mask = false
 
 # Use a fixed velocity window defined in the [mask] table above
 use_fixed_vel_mask = false
@@ -160,7 +160,7 @@ use_fixed_vel_mask = false
 use_fixed_noise_mask = false
 
 # Use hyperfine structure correction (requires hfs_file in [paths])
-use_hfs_lines    = false
+use_hfs_lines = false
 
 # FOV edge erosion: trim the effective field-of-view by this multiple of the
 # beam FWHM before computing moments and writing FITS outputs. This removes
@@ -176,16 +176,16 @@ use_hfs_lines    = false
 fov_erosion_beams = 0.5
 
 # S/N threshold for moment-1, moment-2, and EW computation
-mom_thresh       = 5
+mom_thresh = 5
 
 # Minimum number of consecutive channels above threshold for a valid mask
-conseq_channels  = 3
+conseq_channels = 3
 
 # Moment-2 output definition:
 #   fwhm  - convert sigma to FWHM  (default)
 #   sqrt  - return sqrt(mom2)
 #   math  - mathematical definition of moment 2
-mom2_method      = fwhm
+mom2_method = fwhm
 
 
 [spectral]
@@ -193,7 +193,7 @@ mom2_method      = fwhm
 #   default  - no smoothing
 #   overlay  - smooth to spectral resolution of the overlay cube
 #   <float>  - convolve to this resolution in km/s
-spec_smooth        = default
+spec_smooth = default
 
 # Method for spectral smoothing (when spec_smooth != default):
 #   binned    - bin channels to nearest integer ratio  (default)
@@ -203,18 +203,18 @@ spec_smooth_method = binned
 
 
 [output]
-# Save the convolved intermediate FITS cubes and bands to disk
-save_fits        = false
+# Save the convolved intermediate FITS cubes to disk
+save_fits = true
 
 # Save moment maps as FITS files
-save_mom_maps    = true
+save_mom_maps = true
 
 # Save 2D map FITS files
-save_maps   = true
+save_maps = true
 
 # Save the velocity-integration mask(s) as a 3D FITS cube (one file for the
 # combined SPEC_MASK, plus one per SPEC_MASK_<LINE> if present)
-save_mask   = true
+save_mask = true
 
 
 [structure]
