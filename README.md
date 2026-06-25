@@ -172,7 +172,7 @@ All pipeline output goes through a centralized logger
 column-aligned format:
 
 ```
-[HH:MM:SS][<Stage>][<LEVEL>] <message>
+YYYY-MM-DD HH:MM:SS[<Stage>][<LEVEL>] <message>
 ```
 
 Stages used during a run:
@@ -188,13 +188,13 @@ Stages used during a run:
 Example:
 
 ```
-[HH:MM:SS] [Loading]  [INFO]   Loading key files...
-[HH:MM:SS] [Loading]  [INFO]   Loaded 1 source(s): ['ngc5194']
-[HH:MM:SS] [Regrid]   [INFO]   Hexagonal grid generated: 1060 sampling points (spacing = 13.5 arcsec).
-[HH:MM:SS] [Regrid]   [INFO]   Cube 12co21 sampled successfully.
-[HH:MM:SS] [Products] [INFO]   Mask complete. Computing moments.
-[HH:MM:SS] [FITS]     [INFO]   Moment map FITS files written to: ./saved_FITS_files/
-[HH:MM:SS] [Return]   [INFO]   --- Run summary ---
+YYYY-MM-DD HH:MM:SS [Loading]  [INFO]   Loading key files...
+YYYY-MM-DD HH:MM:SS [Loading]  [INFO]   Loaded 1 source(s): ['ngc5194']
+YYYY-MM-DD HH:MM:SS [Regrid]   [INFO]   Hexagonal grid generated: 1060 sampling points (spacing = 13.5 arcsec).
+YYYY-MM-DD HH:MM:SS [Regrid]   [INFO]   Cube 12co21 sampled successfully.
+YYYY-MM-DD HH:MM:SS [Products] [INFO]   Mask complete. Computing moments.
+YYYY-MM-DD HH:MM:SS [FITS]     [INFO]   Moment map FITS files written to: ./saved_FITS_files/
+YYYY-MM-DD HH:MM:SS [Return]   [INFO]   --- Run summary ---
 ```
 
 Pass `--log_file run.log` (CLI) or `PipelineHandler(..., log_file="run.log")`

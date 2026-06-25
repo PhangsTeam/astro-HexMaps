@@ -4,7 +4,7 @@ logger.py — centralized logging for the HexMaps pipeline.
 All pipeline modules log through a single shared PipelineLogger instance,
 obtained via get_logger(stage). This gives every message a consistent format:
 
-    [HH:MM:SS] [<Stage>] [<LEVEL>] <message>
+    YYYY-MM-DD HH:MM:SS [<Stage>] [<LEVEL>] <message>
 
 The closing bracket of [<Stage>] and [<LEVEL>] always follows directly after
 the stage/level name (no padding inside the brackets); instead, the space
@@ -14,10 +14,10 @@ column lines up across all log lines, regardless of which stage or level
 produced them:
 
 e.g.
-    [HH:MM:SS] [Regrid]   [INFO]    Map SPIRE250 sampled successfully.
-    [HH:MM:SS] [Products] [ERROR]   12CO21 spectrum is all zeros; skipping.
-    [HH:MM:SS] [Loading]  [INFO]    Loading key files...
-    [HH:MM:SS] [FITS]     [WARNING] pixels_per_beam < 4; expect artefacts.
+    YYYY-MM-DD HH:MM:SS [Regrid]   [INFO]    Map SPIRE250 sampled successfully.
+    YYYY-MM-DD HH:MM:SS [Products] [ERROR]   12CO21 spectrum is all zeros; skipping.
+    YYYY-MM-DD HH:MM:SS [Loading]  [INFO]    Loading key files...
+    YYYY-MM-DD HH:MM:SS [FITS]     [WARNING] pixels_per_beam < 4; expect artefacts.
 
 In addition to printing, every message is stored as a structured record
 (timestamp, stage, level, message). The full log can optionally be written
@@ -124,7 +124,6 @@ class PipelineLogger:
         message : str — the message text
         """
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        timestamp_day = datetime.datetime.now().strftime("%H:%M:%S")
         self.records.append(
             {
                 "time": timestamp,
@@ -136,7 +135,7 @@ class PipelineLogger:
 
         stage_field = f"[{stage}]".ljust(_STAGE_COL_WIDTH)
         level_field = f"[{level}]".ljust(_LEVEL_COL_WIDTH)
-        time_field = f"[{timestamp_day}] "
+        time_field = f"{timestamp} "
         formatted = f"{time_field}{stage_field}{level_field}{message}"
 
         if self.verbose:
@@ -168,7 +167,7 @@ class PipelineLogger:
 
         Each line has the format::
 
-            [YYYY-MM-DD HH:MM:SS] [Stage] [LEVEL] <message>
+            YYYY-MM-DD HH:MM:SS [Stage] [LEVEL] <message>
 
         Parameters
         ----------
@@ -180,7 +179,7 @@ class PipelineLogger:
             for r in self.records:
                 stage_field = f"[{r['stage']}]".ljust(_STAGE_COL_WIDTH)
                 level_field = f"[{r['level']}]".ljust(_LEVEL_COL_WIDTH)
-                time_field = f"[{r['time']}] "
+                time_field = f"{r['time']} "
                 f.write(f"{time_field}{stage_field}{level_field}{r['message']}\n")
 
     def get_records(self, stage: str = None, level: str = None) -> list:
@@ -217,7 +216,7 @@ class StageLogger:
     -------
     >>> LOG = get_logger("Regrid")
     >>> LOG.info("Map SPIRE250 sampled successfully.")
-    [HH:MM:SS] [Regrid] [INFO] Map SPIRE250 sampled successfully.
+    YYYY-MM-DD HH:MM:SS [Regrid] [INFO] Map SPIRE250 sampled successfully.
     """
 
     def __init__(self, parent: PipelineLogger, stage: str):
