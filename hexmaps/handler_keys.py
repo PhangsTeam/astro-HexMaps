@@ -291,6 +291,9 @@ class KeyHandler:
 
         self.meta["data_dir"] = str(base / _get_path("data_dir", "data/"))
         self.meta["out_dir"] = str(base / _get_path("out_dir", "output/"))
+        self.meta["folder_savefits"] = str(
+            base / _get_path("folder_savefits", "./saved_fits_files/")
+        )
         # geom_file and hfs_file intentionally fall back to a default path
         # next to config.txt without a warning: this is documented behavior
         # (geom_file is required regardless and will raise its own error if
@@ -367,7 +370,6 @@ class KeyHandler:
         save_maps      : bool — save 2D map FITS files
         save_mask      : bool — save the velocity-integration mask(s) as a
                                 3D FITS cube (default False)
-        folder_savefits: str  — output folder for FITS maps
 
         Spectral smoothing
         ------------------
@@ -437,9 +439,6 @@ class KeyHandler:
         )
         self.meta["save_maps"] = _get("output", "save_maps", "true").lower() == "true"
         self.meta["save_mask"] = _get("output", "save_mask", "false").lower() == "true"
-        self.meta["folder_savefits"] = _get(
-            "output", "folder_savefits", "./saved_fits_files/"
-        )
 
         # Spectral smoothing
         self.meta["spec_smooth"] = _get("spectral", "spec_smooth", "default")
