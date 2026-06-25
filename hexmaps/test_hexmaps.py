@@ -57,7 +57,7 @@ class TestKeyHandler:
             "use_fixed_vel_mask = false\nuse_hfs_lines = false\n"
             "mom_thresh = 5\nconseq_channels = 3\n"
             "[spectral]\nspec_smooth = default\nspec_smooth_method = binned\n"
-            "[output]\nsave_fits = false\nsave_mom_maps = true\n"
+            "[output]\nsave_cubes = false\nsave_mom_maps = true\n"
             "save_maps = true\nfolder_savefits = ./saved_fits_files/\n"
             "[structure]\nstructure_creation = default\n"
         )
@@ -196,8 +196,8 @@ class TestKeyHandler:
         conf_path = self._write_minimal_config(tmp_path)
         conf_path.write_text(
             conf_path.read_text().replace(
-                "[output]\nsave_fits = false",
-                "[output]\nsave_mask = true\nsave_fits = false",
+                "[output]\nsave_cubes = false",
+                "[output]\nsave_mask = true\nsave_cubes = false",
             )
         )
         from hexmaps.handler_keys import KeyHandler
@@ -219,13 +219,13 @@ class TestKeyHandler:
         conf_path.write_text(
             conf_path.read_text()
             .replace("target_res = 27.0", "target_res = 45.0")
-            .replace("save_fits = false", "save_fits = true")
+            .replace("save_cubes = false", "save_cubes = true")
         )
         from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
         assert kh.meta["target_res"] == 45.0
-        assert kh.meta["save_fits"] is True
+        assert kh.meta["save_cubes"] is True
 
     def test_target_res_written_back_after_resolution_block(self, tmp_path):
         """
@@ -885,25 +885,35 @@ class TestStageFits:
         out_data, out_hdr = convolve_cube_to_target(cube, hdr, target_res_as=27.0)
         assert np.array_equal(out_data, cube)
 
-    def test_get_convolved_ppv_cube_uses_cached_file(self, tmp_path):
+    def test_get_convolved_ppv_cube_convolves_from_raw_input(self, tmp_path):
+        """
+        get_convolved_ppv_cube must always read the raw input file and
+        convolve from scratch — there is no cache lookup.
+        """
         from hexmaps.stage_fits import get_convolved_ppv_cube
         from astropy.io import fits
 
-        cube = np.arange(2 * 3 * 3, dtype=float).reshape(2, 3, 3)
+        ny, nx, nv = 3, 3, 2
+        cube = np.ones((nv, ny, nx))
         hdr = fits.Header()
         hdr["NAXIS"] = 3
-        hdr["NAXIS1"], hdr["NAXIS2"], hdr["NAXIS3"] = 3, 3, 2
-        # Filename must match the suffix get_convolved_ppv_cube builds from meta
-        cached_path = tmp_path / "testsrc_co_27p0as.fits"
-        fits.writeto(str(cached_path), cube, hdr)
+        hdr["NAXIS1"], hdr["NAXIS2"], hdr["NAXIS3"] = nx, ny, nv
+        hdr["CTYPE1"], hdr["CTYPE2"], hdr["CTYPE3"] = "RA---TAN", "DEC--TAN", "VELO"
+        hdr["CRVAL1"], hdr["CRVAL2"], hdr["CRVAL3"] = 10.0, 20.0, 0.0
+        hdr["CDELT1"], hdr["CDELT2"], hdr["CDELT3"] = -0.01, 0.01, 1000.0
+        hdr["CRPIX1"], hdr["CRPIX2"], hdr["CRPIX3"] = 2, 2, 1
+        hdr["CUNIT3"] = "m/s"
+        hdr["BMAJ"] = 30.0 / 3600.0
+        hdr["BMIN"] = 30.0 / 3600.0
+        raw_path = tmp_path / "testsrc_co.fits"
+        fits.writeto(str(raw_path), cube, hdr)
 
         meta = {"target_res": 27.0, "target_res_pc": 1000.0,
                 "resolution": "angular", "res_suffix": "27p0as"}
         data, _ = get_convolved_ppv_cube(
-            "testsrc", "co", "/nonexistent_dir", ".fits",
-            meta, hdr, str(tmp_path),
+            "testsrc", "co", str(tmp_path), "_co.fits", meta, hdr,
         )
-        assert np.array_equal(data, cube)
+        assert data.shape == (nv, ny, nx)
 
     def test_get_convolved_ppv_cube_raises_if_nothing_available(self, tmp_path):
         from hexmaps.stage_fits import get_convolved_ppv_cube
@@ -917,10 +927,8 @@ class TestStageFits:
                 "resolution": "angular", "res_suffix": "27p0as"}
         with pytest.raises(FileNotFoundError):
             get_convolved_ppv_cube(
-                "testsrc", "co", str(tmp_path), ".fits",
-                meta, hdr, str(tmp_path),
+                "testsrc", "co", str(tmp_path), ".fits", meta, hdr,
             )
-
 
 # ---------------------------------------------------------------------------
 # utils.table_utils

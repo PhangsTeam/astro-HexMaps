@@ -413,8 +413,6 @@ def sample_at_res(
     target_hdr=None,
     line_name="",
     source="",
-    save_fits=False,
-    dir_save_fits="",
     perbeam=False,
     spec_smooth=("default", "binned"),
     unc=False,
@@ -444,10 +442,8 @@ def sample_at_res(
     in_hdr        : FITS Header       — required if in_data is an array
     target_res_as : float             — target beam FWHM in arcseconds
     target_hdr    : FITS Header       — WCS to reproject onto (overlay header)
-    line_name     : str               — label for optional FITS output
-    source        : str               — source name for optional FITS output
-    save_fits     : bool              — write the convolved intermediate FITS
-    dir_save_fits : str               — directory for intermediate FITS output
+    line_name     : str               — label used in log messages
+    source        : str               — source name used in log messages
     perbeam       : bool              — correct for beam area change (use for
                                         maps in Jy/beam or K units)
     spec_smooth   : (mode, method)    — spectral smoothing parameters
@@ -565,22 +561,6 @@ def sample_at_res(
         else:
             data, _ = reproject_interp((data, hdr_out), trg_hdr, order="bilinear")
 
-        if save_fits:
-            out_hdr = copy.copy(trg_hdr)
-            out_hdr["BMAJ"] = target_res_as / 3600.0
-            out_hdr["BMIN"] = target_res_as / 3600.0
-            out_hdr["LINE"] = line_name
-            res_suffix = meta.get("res_suffix", "27p0as")
-            path_save_fits = path.join(
-                dir_save_fits, f"{source}_{line_name}_{res_suffix}.fits"
-            )
-            fits.writeto(
-                path_save_fits,
-                data=data,
-                header=out_hdr,
-                overwrite=True,
-            )
-            LOG.info(f"Convolved {line_name} written to: {path_save_fits}")
     else:
         LOG.info(f"No target header supplied; skipping reprojection.")
         trg_hdr = hdr_out
@@ -744,21 +724,6 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
     fname = _build_fname(source, meta)
     structure_creation = meta.get("structure_creation", "default")
     data_dir = meta.get("data_dir", "data/")
-    fits_dir = meta.get("folder_savefits", "./saved_fits_files/")
-
-    # FITS output from the regrid stage is intentionally disabled.
-    # Convolved cubes are written correctly by the fits stage (run_moments_ppv
-    # / run_fits), which applies the proper footprint mask, edge erosion, and
-    # NaN pattern. The save_fits machinery is kept for development/debugging
-    # but is never activated in normal pipeline runs.
-    save_fits = False
-    if meta.get("save_fits", False):
-        LOG.warning(
-            "save_fits = true is set in config, but FITS output during the "
-            "regrid stage is disabled. Convolved cubes are written by the "
-            "fits stage instead, where footprint masking and edge erosion are "
-            "applied correctly. Set save_fits = false to suppress this warning."
-        )
 
     # Decide whether to create a fresh table or fill an existing one
     if "fill" in structure_creation and path.exists(fname):
@@ -886,8 +851,6 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
             target_hdr=ov_hdr,
             line_name=cube["line_name"],
             source=source,
-            dir_save_fits=fits_dir,
-            save_fits=save_fits,
         )
         this_data["SPEC_" + cube["line_name"].upper()] = Column(
             this_spec,
@@ -999,35 +962,6 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
     os.makedirs(meta.get("out_dir", "output/"), exist_ok=True)
     this_data.write(fname, format="ascii.ecsv", overwrite=True)
     LOG.info(f"Database written to: {fname}")
-
-    # ------------------------------------------------------------------
-    # Apply overlay footprint NaN mask to all saved convolved cubes so
-    # they share the same NaN pattern as the moment maps and PPV mask.
-    # Pixels where the overlay has no finite data along the full velocity
-    # axis are set to NaN, removing values that reproject_interp filled
-    # in beyond the true observed boundary.
-    # ------------------------------------------------------------------
-    if save_fits:
-        overlay_file = meta.get("overlay_file", "")
-        overlay_fname = (
-            path.join(data_dir, overlay_file)
-            if source in overlay_file
-            else path.join(data_dir, source + overlay_file)
-        )
-        if path.exists(overlay_fname):
-            ov_cube_fp = fits.getdata(overlay_fname)
-            ov_footprint_2d = np.any(np.isfinite(ov_cube_fp), axis=0)
-            for _, cube in cubes.iterrows():
-                cube_fits_path = path.join(
-                    fits_dir, f"{source}_{cube['line_name']}_{target_res_as}as.fits"
-                )
-                if path.exists(cube_fits_path):
-                    data_c, hdr_c = fits.getdata(cube_fits_path, header=True)
-                    data_c[:, ~ov_footprint_2d] = np.nan
-                    fits.writeto(
-                        cube_fits_path, data=data_c, header=hdr_c, overwrite=True
-                    )
-            LOG.info("Overlay footprint NaN mask applied to saved convolved cubes.")
 
     return fname
 

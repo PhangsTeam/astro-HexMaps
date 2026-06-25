@@ -11,7 +11,7 @@ regridding back onto a rectangular grid for FITS output.
 
 For each cube, the pipeline:
   1. Obtains a convolved, overlay-WCS-aligned PPV cube for the line, either
-     by reading it from disk (the file stage_regrid writes when save_fits is
+     by reading it from disk (a cube previously saved by the fits stage when save_cubes is
      True) or, if that file is absent, by convolving and reprojecting the
      raw input cube itself (convolve_cube_to_target / reproject_cube_to_overlay).
   2. Builds (or reads) a PPV mask using exactly the same two-level S/N
@@ -90,27 +90,35 @@ LOG = get_logger("FITS")
 
 
 def get_convolved_ppv_cube(
-    source, line_name, line_dir, line_ext, meta, ov_hdr, fits_dir, log=None
+    source, line_name, line_dir, line_ext, meta, ov_hdr, log=None
 ):
     """
-    Obtain a convolved PPV cube for *line_name*, aligned to the overlay WCS.
+    Convolve the raw input cube for *line_name* to the target resolution and
+    reproject it onto the overlay WCS.
 
-    Tries, in order:
-      1. Read the cube stage_regrid already wrote when save_fits was True.
-      2. Fall back to reading the raw input cube, convolving and reprojecting.
+    Always reads the raw input FITS file and performs the convolution and
+    reprojection from scratch. There is no cache lookup — reproducibility is
+    guaranteed by always starting from the original data.
+
+    Parameters
+    ----------
+    source    : str — source name, prepended to line_ext to form the filename
+    line_name : str — line label (used in log messages)
+    line_dir  : str — directory containing the raw input FITS file
+    line_ext  : str — filename extension of the raw input file
+    meta      : dict — pipeline settings (target_res, res_suffix, etc.)
+    ov_hdr    : FITS Header — overlay header defining the target WCS
+    log       : StageLogger, optional
+
+    Returns
+    -------
+    data : np.ndarray (n_chan, ny, nx) — convolved cube on the overlay grid
+    hdr  : FITS Header — header matching the output array
     """
     log = log or LOG
 
-    res_suffix  = meta.get("res_suffix", "27p0as")
-    cached_path = os.path.join(fits_dir, f"{source}_{line_name}_{res_suffix}.fits")
-    if os.path.exists(cached_path):
-        log.info(f"Using existing convolved cube for line: {line_name}: {cached_path}")
-        return fits.getdata(cached_path, header=True)
-
     raw_path = os.path.join(line_dir, source + line_ext)
-    log.info(f"No saved convolved cube found for line: {line_name}")
-    log.info(f"Expected: {cached_path}")
-    log.info(f"Convolving raw input from scratch: {raw_path}")
+    log.info(f"Convolving {line_name} from: {raw_path}")
     if not os.path.exists(raw_path):
         log.error(f"Raw input cube not found for line: {line_name}: {raw_path}")
         raise FileNotFoundError(
@@ -195,7 +203,7 @@ def get_convolved_map(source, map_name, map_dir, map_ext, target_res_as, ov_hdr,
     interpolation.
 
     Unlike the cube path there is no on-disk cache for maps (stage_regrid
-    does not write a save_fits copy for 2-D maps), so the convolution and
+    does not write a save_cubes copy for 2-D maps), so the convolution and
     reprojection always run from the raw input file.
 
     Parameters
@@ -633,7 +641,7 @@ def run_moments_ppv(
     instead of working through the hex-grid .ecsv table.
 
     Required inputs (raises FileNotFoundError if missing, per cube):
-      - the convolved PPV cube, either the stage_regrid save_fits output or
+      - the convolved PPV cube, either a previously saved save_cubes output or
         (as a fallback) the raw input cube to convolve from scratch — see
         get_convolved_ppv_cube.
       - the overlay cube (for the WCS / spectral axis / footprint).
@@ -745,7 +753,6 @@ def run_moments_ppv(
             str(row["line_ext"]),
             meta,
             ov_hdr,
-            folder,
             log=LOG,
         )
         cube_data[name.upper()] = data * au.Unit(str(row["line_unit"]))
@@ -869,17 +876,30 @@ def run_moments_ppv(
         cube_val[:, out_nan_mask] = np.nan
         cube_data[name] = cube_val * cube_data[name].unit
 
-    # Apply out_nan_mask to any saved convolved cube files on disk so they
-    # share the same NaN pattern as the moment maps.
+    # Write convolved cubes to disk if save_cubes is enabled.
+    # cube_data already has out_nan_mask applied (set to NaN above), so the
+    # written cubes share the same footprint as the moment maps.
     res_suffix = meta.get("res_suffix", "27p0as")
-    for _, row in cubes.iterrows():
-        cube_fits_path = os.path.join(
-            folder, f"{source}_{row['line_name']}_{res_suffix}.fits"
-        )
-        if os.path.exists(cube_fits_path):
-            data_c, hdr_c = fits.getdata(cube_fits_path, header=True)
-            data_c[:, out_nan_mask] = np.nan
-            fits.writeto(cube_fits_path, data=data_c, header=hdr_c, overwrite=True)
+    save_cubes = meta.get("save_cubes", False)
+    if save_cubes:
+        os.makedirs(folder, exist_ok=True)
+        for _, row in cubes.iterrows():
+            line_upper = row["line_name"].upper()
+            if line_upper in cube_data:
+                out_hdr = copy.copy(ov_hdr)
+                out_hdr["BMAJ"] = target_res_as / 3600.0
+                out_hdr["BMIN"] = target_res_as / 3600.0
+                out_hdr["LINE"] = row["line_name"]
+                cube_fits_path = os.path.join(
+                    folder, f"{source}_{row['line_name']}_{res_suffix}.fits"
+                )
+                fits.writeto(
+                    cube_fits_path,
+                    data=cube_data[line_upper].value,
+                    header=out_hdr,
+                    overwrite=True,
+                )
+                LOG.info(f"Convolved cube written to: {cube_fits_path}")
 
     if save_mask:
         save_ppv_mask_to_fits(
@@ -988,7 +1008,7 @@ def run_fits(
     Moment maps (if save_mom_maps is True) are computed PPV-native: directly
     on the convolved, overlay-aligned PPV cubes, never via the hex-grid
     .ecsv table — see run_moments_ppv and the module docstring. This
-    requires either a save_fits cube on disk from stage_regrid, or the raw
+    requires either a save_cubes cube on disk from a prior fits stage run, or the raw
     input cube to convolve from scratch as a fallback; it raises
     FileNotFoundError if neither is available for a given line.
 

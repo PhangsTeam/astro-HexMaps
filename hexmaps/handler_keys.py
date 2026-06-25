@@ -365,7 +365,7 @@ class KeyHandler:
 
         Output settings
         ---------------
-        save_fits      : bool — save convolved intermediate FITS cubes
+        save_cubes     : bool — save convolved PPV cubes as FITS files in the fits stage
         save_mom_maps  : bool — save moment maps as FITS files
         save_maps      : bool — save 2D map FITS files
         save_mask      : bool — save the velocity-integration mask(s) as a
@@ -446,7 +446,7 @@ class KeyHandler:
         self.meta["mom2_method"] = _get("masking", "mom2_method", "fwhm")
 
         # Output
-        self.meta["save_fits"] = _get("output", "save_fits", "false").lower() == "true"
+        self.meta["save_cubes"] = _get("output", "save_cubes", "false").lower() == "true"
         self.meta["save_mom_maps"] = (
             _get("output", "save_mom_maps", "true").lower() == "true"
         )

@@ -203,12 +203,10 @@ spec_smooth_method = binned
 
 
 [output]
-# Save the convolved intermediate FITS cubes during the regrid stage.
-# NOTE: This is intentionally set to false. Convolved cubes are written
-# properly by the fits stage (run_fits / run_moments_ppv), which also
-# applies the correct footprint mask and edge erosion. The regrid-stage
-# FITS output is kept in the code for development/debugging purposes only.
-save_fits = false
+# Save convolved PPV cubes as FITS files in the fits stage.
+# When true, each convolved cube is written to folder_savefits with the
+# filename pattern: {source}_{line_name}_{res_suffix}.fits
+save_cubes = false
 
 # Save moment maps as FITS files
 save_mom_maps = true
