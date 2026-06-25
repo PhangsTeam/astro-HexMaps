@@ -16,6 +16,12 @@
 # Lines starting with '#' are comments.
 # =============================================================================
 
+[meta]
+# Your name — stored in the output table metadata
+user     = Dr. Blocksberg
+
+# Free-form comment stored in the output table metadata
+comments = Example HexMaps run
 
 # -----------------------------------------------------------------------------
 # [paths] — data/output locations and metadata
@@ -36,12 +42,8 @@ out_dir     = output/
 # used if that file actually exists.
 # hfs_file  = keys/hfs_lines.txt
 
-[meta]
-# Your name — stored in the output table metadata
-user     = Dr. Hubble Trouble
-
-# Free-form comment stored in the output table metadata
-comments = Example HexMaps run
+# Directory for output FITS maps
+folder_savefits  = ./saved_fits_files/
 
 
 # -----------------------------------------------------------------------------
@@ -214,16 +216,13 @@ save_maps   = true
 # combined SPEC_MASK, plus one per SPEC_MASK_<LINE> if present)
 save_mask   = true
 
-# Directory for output FITS maps
-folder_savefits  = ./saved_fits_files/
-
 
 [structure]
 # How to handle existing output files:
 #   default  - create / overwrite the output file each run
-#   fill     - open existing file and add missing bands/cubes
+#   fill     - open existing file and add missing maps/cubes
 #   archive  - create a new versioned copy each run (never overwrite)
 structure_creation = default
 
 # When structure_creation = fill, you can optionally pin the filename:
-# fname_fill = ngc5194_data_struct_27as_2025_01_01.ecsv
+# fname_fill = ngc5194_hexmaps_27p0as_2025_01_01.ecsv
