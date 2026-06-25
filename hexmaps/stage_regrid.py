@@ -745,9 +745,20 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
     structure_creation = meta.get("structure_creation", "default")
     data_dir = meta.get("data_dir", "data/")
     fits_dir = meta.get("folder_savefits", "./saved_fits_files/")
-    save_fits = meta.get("save_fits", False)
-    if save_fits:
-        os.makedirs(fits_dir, exist_ok=True)
+
+    # FITS output from the regrid stage is intentionally disabled.
+    # Convolved cubes are written correctly by the fits stage (run_moments_ppv
+    # / run_fits), which applies the proper footprint mask, edge erosion, and
+    # NaN pattern. The save_fits machinery is kept for development/debugging
+    # but is never activated in normal pipeline runs.
+    save_fits = False
+    if meta.get("save_fits", False):
+        LOG.warning(
+            "save_fits = true is set in config, but FITS output during the "
+            "regrid stage is disabled. Convolved cubes are written by the "
+            "fits stage instead, where footprint masking and edge erosion are "
+            "applied correctly. Set save_fits = false to suppress this warning."
+        )
 
     # Decide whether to create a fresh table or fill an existing one
     if "fill" in structure_creation and path.exists(fname):
