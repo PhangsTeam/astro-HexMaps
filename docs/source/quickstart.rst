@@ -1,36 +1,82 @@
 Quick Start
-============
+===========
 
-Preparing the default
-----------------------
+This page walks you through running HexMaps on the bundled NGC 5194 example
+data that ships with the repository.
 
-The installations of the script comes with a default example which allows you to test whether the code can run on your machine and if you have installed all necessary Python packages.
 
-The first lines of the ``PyStructure.conf`` configure file contain information about the path to the data directory. Adjust the path such that it points to the ``data`` directory that you find within the PyStructure folder:
+Step 1 — Initialise a Working Directory
+----------------------------------------
+
+After installing HexMaps, create a working directory populated with template
+files:
 
 .. code-block:: console
 
-   ####################################
-   # Step 1: Define the correct Paths #
-   ####################################
+   $ hexmaps --init --workdir ~/hexmaps_example
+   $ cd ~/hexmaps_example
 
-   # <path to directory with the data files>
-   data_dir = "<path to data directory>"
+You will find:
+
+* ``config.txt`` — the main configuration file
+* ``keys/target_definitions.txt`` — source geometry table
+* ``keys/hfs_lines.txt`` — hyperfine structure definitions (not needed for this example)
+* ``run_hexmaps.py`` — a ready-to-run Python script
 
 
+Step 2 — Copy the Example Data
+--------------------------------
+
+Copy the ``data/`` folder from the cloned repository into your working
+directory (or point ``data_dir`` in ``config.txt`` at it directly):
+
+.. code-block:: console
+
+   $ cp -r /path/to/PyStructure/data ./data
+
+The example data contains NGC 5194 CO(2–1), CO(1–0), and SPIRE 250 µm FITS
+files.
 
 
 .. _run_example:
 
-Running the Example
--------------------
+Step 3 — Run the Pipeline
+--------------------------
 
-Once you have correctly adjusted the ``data_dir`` path directory, you can simply run the script using the following command line:
+Open ``config.txt`` and verify the paths are correct, then run:
 
 .. code-block:: console
 
-   (.venv) $ python3 create_database.py --config PyStructure.conf
+   $ hexmaps --conf config.txt
 
-The script will print information in the terminal as it runs. The result will be a ``.npy`` file, which contains a Python dictionary with the processed data. It will store this file in the ``Output`` folder (its path is specified in the configure file).
+Or equivalently:
 
-For information on how to open and work with the processed data, see :ref:`Analysis`.
+.. code-block:: console
+
+   $ python run_hexmaps.py
+
+The pipeline will print progress to the terminal as it runs. The result is
+an ``.ecsv`` file in the ``output/`` folder.
+
+To also produce FITS moment maps and band images, add the fits stage:
+
+.. code-block:: console
+
+   $ hexmaps --conf config.txt --stages all
+
+.. NOTE::
+
+   All input FITS filenames must follow the convention::
+
+      <source_name><file_extension>
+
+   For example: ``ngc5194_12co21.fits``, where ``ngc5194`` is the source
+   name and ``_12co21.fits`` is the file extension defined in ``config.txt``.
+   The source name in ``config.txt`` must match both the filename prefix and
+   the entry in ``keys/target_definitions.txt``.
+
+
+Step 4 — Inspect the Output
+-----------------------------
+
+For information on how to open and analyse the output, see :ref:`Analysis`.

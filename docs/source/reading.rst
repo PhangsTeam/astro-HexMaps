@@ -1,104 +1,184 @@
 .. _Analysis:
 
-Working with PyStructures
-=========================
+Working with HexMaps Output
+============================
 
-How to open the file
---------------------
+The Output File
+---------------
 
-When you run the ``create_database.py`` script (see :ref:`run_example`), it creates a
-``.npy`` file, which simply contains a dictionary. To open this dicionary (for example in another ``Python`` scripts
-or in Jupyter Notebook), you can simply run:
+Running HexMaps produces an Astropy Enhanced CSV (``.ecsv``) file in the
+``output/`` directory. The filename follows the pattern::
 
-.. code-block::
+   <source>_hexmaps_<res_suffix>_<date>.ecsv
 
-  import numpy as np
-  database = np.load("<path to npy file>", allow_pickle = True).item()
+For example: ``ngc5194_hexmaps_27p0as_2025_01_01.ecsv``
 
-The instance ``database`` is now a ``Python`` dictionary, and the relevant, processed data can be extracted using this infrastructure.
-For example ``database['rgal_kpc']`` returns an array containing the galacocentric distances of each point (in kpc).
+The ``.ecsv`` format is human-readable plain text; units and metadata are
+stored in a comment header. It can be opened with any tool that reads CSV,
+but the recommended approach is via Astropy:
 
-The PyStructure class
----------------------
-The download comes with a script that lets you handle the PyStructure output as a ``Python`` class.
-This makes it easier to work and use with the databases.
+.. code-block:: python
 
-To read in a database, you can use the following synthax:
-.. code-block::
+   from astropy.table import Table
 
-  import sys
-  sys.path.append("<path to PyStructure/scritps folder")
-  import PyStructure as ps
+   table = Table.read("output/ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
+   print(table.colnames)
 
-  database = ps.PyStructure("path_to_file.npy")
+Or using the HexMaps convenience loader:
 
-This way you have extracted the databse as a dictionary, and can access it (for example the galactocentric radii) using ``database.struct['rgal_kpc']``.
+.. code-block:: python
+
+   from hexmaps.utils_table import load_hexmaps
+
+   table = load_hexmaps("output/ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
+
+
+Column Naming Conventions
+--------------------------
+
+Columns follow a consistent naming pattern:
+
++------------------------+-------------------------------------------------------+
+| Prefix                 | Content                                               |
++========================+=======================================================+
+| ``ra_deg``, ``dec_deg``| Hexagonal sightline coordinates                      |
++------------------------+-------------------------------------------------------+
+| ``rgal_kpc``           | Deprojected galactocentric radius                     |
++------------------------+-------------------------------------------------------+
+| ``SPEC_<LINE>``        | Full spectrum at each sightline (n_pts × n_chan)      |
++------------------------+-------------------------------------------------------+
+| ``MOM0_<LINE>``        | Integrated intensity (moment 0)                       |
++------------------------+-------------------------------------------------------+
+| ``MOM1_<LINE>``        | Intensity-weighted mean velocity (moment 1)           |
++------------------------+-------------------------------------------------------+
+| ``MOM2_<LINE>``        | Intensity-weighted line width (moment 2)              |
++------------------------+-------------------------------------------------------+
+| ``RMS_<LINE>``         | Per-sightline RMS noise                               |
++------------------------+-------------------------------------------------------+
+| ``TPEAK_<LINE>``       | Peak brightness temperature                           |
++------------------------+-------------------------------------------------------+
+| ``EW_<LINE>``          | Equivalent width                                      |
++------------------------+-------------------------------------------------------+
+| ``MAP_<NAME>``         | 2D band map values                                    |
++------------------------+-------------------------------------------------------+
+| ``SPEC_VAXIS``         | Velocity axis array (km/s)                            |
++------------------------+-------------------------------------------------------+
+
+For example: ``MOM0_12CO21``, ``RMS_12CO10``, ``MAP_SPIRE250``.
+
+
+The HexMapsAnalysis Class
+--------------------------
+
+``analysis/hexmaps_analysis.py`` wraps the table in a convenience class with
+quicklook plotting and data extraction methods:
+
+.. code-block:: python
+
+   import sys
+   sys.path.append("analysis/")
+   from hexmaps_analysis import HexMapsAnalysis
+
+   db = HexMapsAnalysis("output/ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
+   print(db)
+   # HexMapsAnalysis(source='ngc5194', n_pts=939, lines=['12CO21', '12CO10'])
+
 
 Quick Examples
 --------------
 
-Using the PyStructure class environment, some useful commands are:
+**List spectral lines in the database:**
 
-* **List of lines (3D cubes) included in PyStructure**
-.. code-block::
+.. code-block:: python
 
-  print(database.lines)
-  >>> ['12CO21', '12CO10']
+   print(db.lines)
+   # ['12CO21', '12CO10']
 
-* **Extract and plot spectrum (e.g. of brightest sightline)**
-.. code-block::
+**Plot a 2D moment map:**
 
-  import matplotlib.pyplot as plt
+.. code-block:: python
 
-  vaxis = database.get_vaxis()
-
-  #extract the CO(1-0) integrated intensities
-  ii_co10=database.struct['INT_VAL_12CO10']
-
-  #find index of largest intensity (i.e. the brightest sightline)
-  idx_brightes = np.argmax(ii_co10)
-
-  spec_co10 = database.struct['SPEC_VAL_12CO10'][idx_brightes,:]
-
-  #plot spectrum
-  plt.figure()
-  plt.step(vaxis, spec_co10)
-  plt.show()
-
-.. image:: spec.png
-     :width: 600
-
-* **Make 2D map of integrated intensities (quicklook)**
-
-.. code-block::
-
-  database.quickplot_2Dmap('12CO10')
+   db.quickplot_map("12CO21")
 
 .. image:: quicklook2.png
-       :width: 400
+   :width: 400
 
-This function makes it possible to have a quick look at the integrated intensity one of the cubes that are loaded in the PyStructure.
+**Plot a spectrum at the brightest sightline:**
 
-* **Make 2D map of integrated intensities (more extended)**
+.. code-block:: python
 
-We can also produce the maps ourselves, such that we have some more advanced options
-.. code-block::
+   db.quickplot_spectrum("12CO21")
 
-  # Extract coordinates. We do not have to provide the center coordinate, this just
-  # returns the coordinates relative to the reference coordinate.
-  ra, dec = database.get_coordinates("13:29:52.7 47:11:43")
+.. image:: spec.png
+   :width: 600
 
-  ii_co10=database.struct['INT_VAL_12CO10']
-  ii_co21=database.struct['INT_VAL_12CO21']
+**Custom 2D scatter map:**
 
-  plt.figure(figsize=(5,5))
-  ax=plt.subplot(1,1,1)
-  plt.scatter(ra, dec,c=ii_co10, s=90, marker='h', cmap='inferno')
-  plt.tricontour(ra, dec,ii_co21, colors='w', alpha=.5)
-  ax.invert_xaxis()
-  ax.set_xlabel(r'$\Delta$R.A. [arcsec]')
-  ax.set_ylabel(r'$\Delta$Decl. [arcsec]')
-  plt.show()
+.. code-block:: python
+
+   import matplotlib.pyplot as plt
+
+   ra, dec = db.get_coordinates("13:29:52.7 47:11:43")
+   mom0 = db.struct["MOM0_12CO21"]
+
+   fig, ax = plt.subplots(figsize=(5, 5))
+   sc = ax.scatter(ra, dec, c=mom0, s=90, marker="h", cmap="inferno")
+   ax.invert_xaxis()
+   ax.set_xlabel(r"$\Delta$R.A. [arcsec]")
+   ax.set_ylabel(r"$\Delta$Decl. [arcsec]")
+   plt.colorbar(sc, label="MOM0 [K km/s]")
+   plt.show()
 
 .. image:: map_2D.png
-         :width: 400
+   :width: 400
+
+**Compute a line ratio:**
+
+.. code-block:: python
+
+   ratio = db.get_ratio("12CO21", "12CO10", sn=5.0)
+   print(ratio["ratio"])   # array of CO(2-1)/CO(1-0) ratios
+
+**Plot a radial profile:**
+
+.. code-block:: python
+
+   db.quickplot_radial_profile("12CO21")
+
+**Recover provenance information:**
+
+.. code-block:: python
+
+   # Print the config.txt that was used to produce this database
+   print(db.get_config())
+
+   # Save it to a file
+   db.get_config(save_to="recovered_config.txt")
+
+   # List all embedded raw FITS headers
+   print(db.list_input_headers())
+   # ['12CO10', '12CO21', 'OVERLAY', 'SPIRE250']
+
+   # Recover a specific header (returns an astropy.io.fits.Header object)
+   hdr = db.get_input_header("12CO21")
+   print(f"Native beam: {hdr['BMAJ'] * 3600:.1f} arcsec")
+
+
+Accessing the Raw Table
+------------------------
+
+The underlying Astropy table is always accessible via ``db.struct``:
+
+.. code-block:: python
+
+   # All column names
+   print(db.struct.colnames)
+
+   # Galactocentric radii in kpc
+   print(db.struct["rgal_kpc"])
+
+   # Spectrum of the brightest CO(2-1) sightline
+   import numpy as np
+   idx = np.argmax(db.struct["MOM0_12CO21"])
+   spec = db.struct["SPEC_12CO21"][idx]
+   vaxis = db.struct["SPEC_VAXIS"][idx]

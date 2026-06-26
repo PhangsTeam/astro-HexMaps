@@ -1,44 +1,107 @@
 Code Structure
 ==============
 
-The PyStructure File structure
-------------------------------
+Repository Layout
+-----------------
 
-When you clone or install the GitHub repository, you need to keep the following files and folders: 
+When you clone or install HexMaps, the repository has the following structure:
 
-| PyStructure
-| ├── ListFiles 
-| │   ├── band_list.txt
-| │   ├── cube_list.txt
-| │   └── geometry.txt
-| ├── scripts
-| │   └── <all scripts in here>
-| ├── PyStructure.conf
-| └── create_database.py
+.. code-block:: text
+
+   PyStructure/                         ← git root (pip install this)
+   ├── hexmaps/                         ← installable Python package
+   │   ├── handler_keys.py              reads & validates config.txt and key files
+   │   ├── handler_sources.py           source geometry lookups
+   │   ├── handler_pipeline.py          PipelineHandler: stage orchestration
+   │   ├── stage_regrid.py              hex grid + convolution + sampling → .ecsv
+   │   ├── stage_products.py            spectral masking, moments, shuffled spectra
+   │   ├── stage_fits.py                FITS moment maps / cubes / band images
+   │   ├── utils_fits.py                FITS/WCS helpers (convolution, reprojection)
+   │   ├── utils_table.py               table I/O, spectral shuffle, moments
+   │   ├── hexmapsLogger.py             centralised stage-labelled logger
+   │   ├── init_workdir.py              --init scaffolding
+   │   ├── cli.py                       hexmaps console-script entry point
+   │   └── test_hexmaps.py              unit and integration tests
+   ├── config.txt                       ← example / template config file
+   ├── keys/
+   │   ├── target_definitions.txt       ← source geometry table
+   │   └── hfs_lines.txt                ← hyperfine structure definitions
+   ├── analysis/
+   │   ├── hexmaps_analysis.py          HexMapsAnalysis class: quicklook plots
+   │   └── hexmaps_example.ipynb        example analysis notebook
+   ├── conversion_from_pystructure/     ← migration scripts from old PyStructure
+   │   ├── config_conversion.py
+   │   ├── target_definitions_conversion.py
+   │   └── hfs_lines_conversion.py
+   ├── data/                            ← example FITS input (NGC 5194)
+   ├── docs/                            ← Sphinx / Read the Docs source
+   ├── images/                          ← logo and screenshot
+   └── run_hexmaps.py                   ← example run script
 
 
-The key files here that require user input to customize to your project are:
+Your Working Directory
+-----------------------
 
-* ``geometry.txt``: This file contains key information about the sources in your project
+The installed package and your project data live completely separately.
+A typical project directory looks like:
 
-* ``PyStructure.conf``: The configuration file. Here you need to specify the key details of your dataset to make the script work
+.. code-block:: text
+
+   ~/my_survey/
+   ├── config.txt               ← edit this every run
+   ├── keys/
+   │   ├── target_definitions.txt   ← edit once, reuse across projects
+   │   └── hfs_lines.txt
+   ├── data/                    ← your FITS files
+   ├── output/                  ← .ecsv database written here
+   ├── saved_fits_files/        ← FITS moment maps and images written here
+   └── run_hexmaps.py           ← copy and edit this
+
+Create this layout with a single command:
+
+.. code-block:: console
+
+   $ hexmaps --init --workdir ~/my_survey
 
 
-How does the PyStructure work?
-------------------------------
+How HexMaps Works
+-----------------
 
-The script can be broken down into two main steps:
+The pipeline has three stages:
 
-#. Homogenize the Data:
-	Based on a user-defined field-of-view and angular resolution, the other datasets will be reprojected and convolved to match sightline-by-sightline. The resulting construct will be a table with a list of sightlines with corresponding coordinates, line spectra or 2D map intensities.
+1. **Regrid**
+   Based on a user-defined overlay cube and target angular resolution, all
+   input maps and cubes are convolved to a common beam and sampled onto a
+   hexagonal grid. The grid spacing is ``target_res / pixels_per_beam``
+   (default: half-beam spacing). The result is an Astropy ``.ecsv`` table
+   with one row per hexagonal sightline.
 
-#. Process the 3D Data:
-	The code will process the 3D data cubes. This includes:
+2. **Products**
+   For each spectral cube, a two-level S/N mask is constructed from a
+   user-chosen reference line. Moment maps (integrated intensity, mean
+   velocity, line width, peak temperature, rms, equivalent width) are
+   computed for every line. Spectra are also shuffled by the line-of-sight
+   velocity to enable spectral stacking.
 
-	* Determining a signal masked based on a user-defined prior line; 
-	* Computing S/N-optimized moment 0 (intensity), 1 (mean velocity), 2 (line width), and 8 (peak intensity) maps;
-	* Shuffling the spectra by the line-of-sight velocity, such that stacking can be performed.
+3. **FITS** *(optional)*
+   Convolved cubes are reconstructed from the raw inputs and moment maps are
+   computed directly in position–position–velocity (PPV) space, then written
+   as FITS images. This stage is independent of the ``.ecsv`` database and
+   can be run separately.
 
-Intension behind the Code
--------------------------
-This code framework has been developed for dealing with a set of spectroscopic 3D astrophysical data spanning different frequencies. The challenging in analyzing such a dataset consists of adequately homogenizing them such that a pixel-by-pixel investigation is possible. Furthermore, the code is optimized to compute key products of 3D data cubes to make a robust analysis accessible. Cubes and maps can be combined.
+
+Design Philosophy
+-----------------
+
+HexMaps is designed around the principle that the **installed package is
+never modified by the user**. All project-specific files (config, keys,
+data, outputs) live in a working directory that the user controls, completely
+separate from the package installation. This means:
+
+* Multiple projects can share a single HexMaps installation.
+* Upgrading HexMaps does not affect existing project files.
+* The working directory is fully self-contained and portable.
+
+The ``.ecsv`` output format (Astropy Enhanced CSV) is human-readable,
+stores units and metadata in a comment header, and can be opened with
+``astropy.table.Table.read()`` without any HexMaps-specific code.

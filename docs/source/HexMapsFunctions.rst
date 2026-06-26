@@ -1,60 +1,181 @@
-PyStructure Functions
+HexMapsAnalysis Functions
+=========================
+
+The ``HexMapsAnalysis`` class (in ``analysis/hexmaps_analysis.py``) provides
+a set of methods for loading and working with HexMaps ``.ecsv`` databases.
+Instantiate it with the path to an output file:
+
+.. code-block:: python
+
+   import sys
+   sys.path.append("analysis/")
+   from hexmaps_analysis import HexMapsAnalysis
+
+   db = HexMapsAnalysis("output/ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
+
+The underlying Astropy table is available at ``db.struct``, and the list of
+spectral lines at ``db.lines``.
+
+----
+
+Coordinate Extraction
 ---------------------
-The PyStructure class contains a set of functions that help handle and extract the data stored in the dictionary.
-You can run the functions using ``database.<function>()``.
 
-.. function:: database.get_coordinates(center = None)
+.. function:: db.get_coordinates(center=None)
 
-   A function extracting the rightasencion and declination coordinates. If center coordinate is provided, the ra and dec coordimnates are returned as offset in arcsec.
+   Return the RA and Dec coordinates of all sightlines.
 
-   :param center: optional reference coordinate (e.g., ``"13:29:52.7 47:11:43"``). If provided, the returned values will represent the offset in arccsec with respect to this coordinate.
-   :type center: str
-   :return: ``ra``, ``dec`` ; two 1D arrays, one for the rightasencion and on for the declination.
-   :rtype: np.array
+   If *center* is provided, coordinates are returned as offsets in arcseconds
+   relative to that position.
 
+   :param center: Reference coordinate string, e.g. ``"13:29:52.7 47:11:43"``.
+                  If ``None``, returns absolute decimal degree coordinates.
+   :type center: str or None
+   :return: ``ra``, ``dec`` — two 1D arrays (degrees or arcsec offsets).
+   :rtype: numpy.ndarray
 
-.. function:: database.quickplot_2Dmap(line, s = 50, cmap = None)
+----
 
-    A function that generates a plot showing the integarted intensities of a user defined line.
+Quicklook Plots
+---------------
 
-    :param line: Name of the line in the PyStructure, e.g. "12CO21".
-    :type line: str
-    :param s: Marker size. User needs to vary if points do overlap or if there is too much space between the scatter points.
-    :type s: int
-    :param cmap: Colormap, default is "RdYlBu_r"
-    :type cmap: int
-    :return: 2D scatter plot illustrating the integrated intensities.
+.. function:: db.quickplot_map(line, s=50, cmap=None, ax=None)
 
-.. function:: database.get_vaxis(get_shuff = False)
+   Scatter plot of the moment-0 (integrated intensity) map for *line*.
 
-    A function extracting the spectral velocities
+   :param line: Line name as it appears in the database, e.g. ``"12CO21"``.
+   :type line: str
+   :param s: Marker size. Adjust if hexagons overlap or leave gaps.
+   :type s: int
+   :param cmap: Matplotlib colormap. Default: ``"RdYlBu_r"``.
+   :type cmap: str or None
+   :param ax: Existing Axes to plot into. If ``None``, a new figure is created.
+   :return: 2D scatter plot of integrated intensities.
 
-    :param get_shuff: If ``True``, return the shuffled spectral axis.
-    :type get_shuff: bool
-    :return: ``vaxis`` ; 1D arrays with the spectral axis values.
-    :rtype: array
+.. function:: db.quickplot_spectrum(line, idx=None, ax=None)
 
-.. function:: database.get_ratio(line,sn = 5)
+   Plot the spectrum at a single sightline.
 
-    A function computing the line ratio between two lines
+   :param line: Line name, e.g. ``"12CO21"``.
+   :type line: str
+   :param idx: Sightline index. If ``None``, the brightest sightline is used.
+   :type idx: int or None
+   :param ax: Existing Axes to plot into.
 
-    :param line: A list of two string of line1 and line2, with the ratio being line1/line2 (e.g. ``["12CO21","12CO10"]``)
-    :type line: list
-    :param sn: signal-to-noise ratio used for sigma clipping (can be ``float`` as well).
-    :type sn: int
-    :return: ``ratio`` ; Dictionary with the ratio (extract using ``ratio['ratio']``).
-    :rtype: dict
+.. function:: db.quickplot_shuffled_spectrum(line, idx=None, ax=None)
 
-.. function:: database.export_fits(data_array,fname,adjust_header=None, verbose=False)
+   Plot the velocity-shuffled spectrum at a single sightline.
 
-    A function that exports a 2D PyStructure map back to a FITS file
+   :param line: Line name.
+   :type line: str
+   :param idx: Sightline index. Defaults to the brightest sightline.
+   :type idx: int or None
+   :param ax: Existing Axes to plot into.
 
-    :param data_array: The data array that will be exported back to a FITS file.
-    :type data_array: array
-    :param fname: Name of the FITS file to be saved.
-    :type fname: str
-    :param adjust_header: Dictionary with header keys and the corresponding value.
-    :type adjust_header: dict
-    :param verbose: If ``True``, print progress outpur.
-    :type verbose: bool
-    :return: Saves the FITS file on the disk
+.. function:: db.quickplot_radial_profile(line, ax=None)
+
+   Plot the azimuthally averaged moment-0 radial profile.
+
+   :param line: Line name.
+   :type line: str
+   :param ax: Existing Axes to plot into.
+
+----
+
+Data Extraction
+---------------
+
+.. function:: db.get_mom0(line)
+
+   Return the moment-0 array for *line*.
+
+   :param line: Line name.
+   :type line: str
+   :return: 1D array of integrated intensities.
+   :rtype: numpy.ndarray
+
+.. function:: db.get_ratio(line1, line2, sn=5.0)
+
+   Compute the line ratio ``line1 / line2``, masking sightlines below
+   the S/N threshold in either line.
+
+   :param line1: Numerator line name.
+   :type line1: str
+   :param line2: Denominator line name.
+   :type line2: str
+   :param sn: S/N threshold for sigma clipping.
+   :type sn: float
+   :return: Dictionary with key ``"ratio"`` containing the 1D ratio array.
+   :rtype: dict
+
+.. function:: db.get_2D_database(fname=None, save=False)
+
+   Return a copy of the table with all ``SPEC_*`` columns removed, suitable
+   for compact storage or sharing.
+
+   :param fname: Output filename. Defaults to ``<source>_hexmaps_2D.ecsv``.
+   :type fname: str or None
+   :param save: If ``True``, write the table to *fname*.
+   :type save: bool
+   :return: Astropy Table with spectral columns removed.
+   :rtype: astropy.table.Table
+
+----
+
+Provenance Recovery
+-------------------
+
+.. function:: db.get_config(save_to=None)
+
+   Return the full content of the ``config.txt`` that was used to produce
+   this database, as a plain-text string.
+
+   The config is embedded in the ``.ecsv`` metadata at run time, making the
+   database fully self-documenting.
+
+   :param save_to: If given, write the config content to this file path.
+   :type save_to: str or None
+   :return: The original ``config.txt`` content.
+   :rtype: str
+
+   Example::
+
+      print(db.get_config())
+      db.get_config(save_to="recovered_config.txt")
+
+.. function:: db.list_input_headers()
+
+   List the labels of all raw FITS headers embedded in this database.
+
+   Labels correspond to the table column keys: e.g. ``"12CO21"`` for
+   ``SPEC_12CO21``, ``"SPIRE250"`` for ``MAP_SPIRE250``, ``"OVERLAY"`` for
+   the overlay cube.
+
+   :return: Sorted list of label strings.
+   :rtype: list of str
+
+   Example::
+
+      db.list_input_headers()
+      # ['12CO10', '12CO21', 'OVERLAY', 'SPIRE250']
+
+.. function:: db.get_input_header(label)
+
+   Return the raw FITS header of the input file identified by *label*, exactly
+   as it was on disk before any pipeline processing.
+
+   :param label: Label as returned by :func:`list_input_headers`, e.g.
+                 ``"12CO21"``, ``"OVERLAY"``, ``"SPIRE250"``.
+                 The full metadata key (``"input_header_12CO21"``) is also
+                 accepted.
+   :type label: str
+   :return: The original FITS header.
+   :rtype: astropy.io.fits.Header
+   :raises KeyError: If *label* is not found. The error message lists all
+                     available labels.
+
+   Example::
+
+      hdr = db.get_input_header("12CO21")
+      print(f"Native beam: {hdr['BMAJ'] * 3600:.1f} arcsec")
+      print(repr(hdr))    # print all header cards

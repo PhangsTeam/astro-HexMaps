@@ -1,225 +1,282 @@
-# HexMaps
+<!-- back-to-top anchor -->
+<a name="readme-top"></a>
 
-[![Contributors](https://img.shields.io/github/contributors/jdenbrok/HexMaps.svg?style=for-the-badge)](https://github.com/jdenbrok/HexMaps/graphs/contributors)
-[![MIT License](https://img.shields.io/github/license/jdenbrok/HexMaps.svg?style=for-the-badge)](LICENSE)
+<!-- PROJECT LOGO -->
+<br />
+<div align="center">
+  <a href="https://github.com/lukas-neumann-astro/PyStructure">
+    <img src="images/logo.png" alt="Logo" width="100" height="100">
+  </a>
 
-A Python package for homogenizing and analyzing multi-wavelength astronomical
-datasets on hexagonal grids. Samples 2D images (maps) and 3D spectral cubes
-at a common resolution and grid, producing Astropy Table output (`.ecsv`)
-along with optional FITS moment and map images.
+  <h3 align="center">HexMaps</h3>
+
+  <p align="center">
+    Hexagonal-grid Multi-data Analysis and Processing Software
+    <br />
+    <a href="https://hexmaps.readthedocs.io/en/latest/"><strong>Explore the docs »</strong></a>
+    <br /><br />
+    <a href="https://hexmaps.readthedocs.io/en/latest/quickstart.html">View Demo</a>
+    ·
+    <a href="https://github.com/lukas-neumann-astro/PyStructure/issues">Report Bug</a>
+    ·
+    <a href="https://github.com/lukas-neumann-astro/PyStructure/issues">Request Feature</a>
+  </p>
+</div>
+
+[![Contributors][contributors-shield]][contributors-url]
+[![Forks][forks-shield]][forks-url]
+[![Stargazers][stars-shield]][stars-url]
+[![Issues][issues-shield]][issues-url]
+[![MIT License][license-shield]][license-url]
 
 ---
 
-## Installation
+## About the Project
+
+[![HexMaps screenshot][product-screenshot]](https://hexmaps.readthedocs.io/en/latest/)
+
+**HexMaps** is a Python package for homogenizing and analysing
+multi-wavelength astronomical datasets on hexagonal grids. It is ideally
+suited for combining a heterogeneous set of 2D maps and 3D spectral cubes
+observed at different angular resolutions and pixel scales into a single,
+science-ready table for sightline-by-sightline analysis.
+
+Given a set of input data, HexMaps:
+
+1. **Regrids** all maps and cubes onto a common hexagonal sampling grid at a
+   user-specified angular resolution, convolving each dataset to a common
+   beam.
+2. **Processes** each spectral cube: builds an S/N mask from a reference line,
+   then computes moment maps (integrated intensity, mean velocity, line width,
+   peak temperature, rms, equivalent width) and shuffled spectra for every
+   line.
+3. **Writes FITS** output: PPV-native moment maps, optionally convolved cubes,
+   and 2D band images — all on the same pixel grid as the overlay cube.
+
+The primary deliverable is an Astropy `.ecsv` table with one row per
+hexagonal sightline, containing all spectra, moment maps, and 2D map values
+side by side. This makes line-ratio analysis, radial profile extraction, and
+spectral stacking straightforward with standard Python tools.
+
+HexMaps is the successor to
+[PyStructure (PhangsTeam)](https://github.com/PhangsTeam/PyStructure),
+refactored into a pip-installable package with a clean CLI, an INI-style
+single configuration file, and a modular stage architecture.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+HexMaps requires **Python ≥ 3.9**. All Python dependencies are installed
+automatically by pip:
+
+```
+astropy  numpy  pandas  scipy  matplotlib
+reproject  radio_beam  spectral_cube  scikit-image
+```
+
+### Installation
 
 ```bash
 # From PyPI (once published)
 pip install hexmaps
 
-# From GitHub (latest)
-pip install git+https://github.com/lukas-neumann-astro/HexMaps.git
+# From GitHub — latest development version
+pip install git+https://github.com/lukas-neumann-astro/PyStructure.git@rename/hexmaps
 
-# Editable / development install (from inside the cloned repo)
-git clone https://github.com/lukas-neumann-astro/HexMaps.git
-cd HexMaps
+# Editable / development install
+git clone -b rename/hexmaps https://github.com/lukas-neumann-astro/PyStructure.git
+cd PyStructure
 pip install -e ".[dev]"
 ```
 
-The installed package lives in your Python environment (e.g. your conda env).
-Your data, key files, and outputs live separately in a **working directory**
-that you control.
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
 
-## Quick start
+## Usage
 
-### 1 — Set up a working directory
+### 1 — Initialise a working directory
 
 ```bash
 # Creates config.txt, keys/, and run_hexmaps.py in the current folder
 hexmaps --init
 
-# Or choose a destination
-hexmaps --init --workdir ~/projects/my_galaxy_survey
-cd ~/projects/my_galaxy_survey
+# Or target a specific directory
+hexmaps --init --workdir ~/my_survey
+cd ~/my_survey
 ```
 
-This copies a config file, a `keys/` subfolder, and a ready-to-run script
-into your working directory. The installed package is never modified.
+This copies template configuration files into your working directory.
+The installed package is never modified.
 
 ### 2 — Edit your configuration
 
-Configuration is split into two parts, based on how often each one changes:
-
-| File | What to edit | How often |
-|------|-------------|-----------|
-| `config.txt` | `data_dir`/`out_dir`, your name, source list, overlay cube, map/cube file definitions, target resolution, masking thresholds, output flags | every run |
-| `keys/target_definitions.txt` | RA, Dec, distance, inclination for each source | rarely — set up once, reuse across projects |
+| File | What to configure | How often |
+|------|-------------------|-----------|
+| `config.txt` | data directory, source list, overlay cube, maps/cubes, target resolution, masking, output flags | every run |
+| `keys/target_definitions.txt` | RA, Dec, distance, inclination per source | once — shared across projects |
 | `keys/hfs_lines.txt` *(optional)* | Hyperfine structure line definitions | rarely |
 
-`config.txt` is the single file you'll typically touch: it combines what
-used to be three separate files (`master_key.txt`, `data_key.txt`,
-`config_key.txt`) into one. `keys/target_definitions.txt` and
-`keys/hfs_lines.txt` live in a fixed `keys/` subfolder next to `config.txt`
-and are usually shared across many projects, so they're kept separate.
+`config.txt` replaces the three separate files of the old PyStructure
+(`master_key.txt`, `data_key.txt`, `config_key.txt`).
+
+> **Migrating from PyStructure?** Use the conversion scripts:
+>
+> ```bash
+> python conversion_from_pystructure/config_conversion.py PyStructure.conf config.txt
+> python conversion_from_pystructure/target_definitions_conversion.py geometry.txt keys/target_definitions.txt
+> python conversion_from_pystructure/hfs_lines_conversion.py hfs_lines.txt keys/hfs_lines.txt
+> ```
 
 ### 3 — Run
 
 ```bash
-# Edit and run the script in your working directory
-python run_hexmaps.py
-
-# Or use the CLI directly (runs regrid + products by default)
+# Default: regrid + products (writes .ecsv database)
 hexmaps --conf config.txt
 
-# Include the optional fits stage (FITS moment maps and band images)
-hexmaps --conf config.txt --stages regrid products fits
+# All stages including FITS output
+hexmaps --conf config.txt --stages all
 
 # Single source
 hexmaps --conf config.txt --targets ngc5194
 
-# Write a log file in addition to stdout
-hexmaps --conf config.txt --log_file hexmaps_run.log
+# Also write a log file
+hexmaps --conf config.txt --log_file run.log
 ```
 
-### 4 — Use from Python
+Or from Python:
 
 ```python
 import hexmaps as hm
 
 handler = hm.PipelineHandler(conf_path="config.txt")
-handler.run_all()  # default: regrid + products only
-
-# Include the optional fits stage
-handler.run_stages(["regrid", "products", "fits"])
-
-# Or a specific subset
-handler.run_stages(["regrid", "products"], targets=["ngc5194"])
+handler.run_all()                                      # regrid + products
+handler.run_stages(["regrid", "products", "fits"])     # include FITS output
+handler.run_stages(["fits"], targets=["ngc5194"])      # re-run one stage only
 ```
 
-> **Migrating from an older version?** TBD
+*For more examples, please refer to the [Documentation](https://hexmaps.readthedocs.io/en/latest/).*
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
 
-## Repository layout
+## Repository Layout
 
 ```
-HexMaps/                            <- git repo - install this with pip
-|-- hexmaps/                        <- installable package
-|   |-- handler_keys.py             reads & validates all key files
-|   |-- handler_sources.py          source geometry lookups
-|   |-- handler_pipeline.py         PipelineHandler: stage orchestration
-|   |-- stage_regrid.py             hex grid generation + convolution + sampling
-|   |-- stage_products.py           spectral masking, moments, shuffled spectra
-|   |-- stage_fits.py               FITS moment-map / map-image writing
-|   |-- utils_fits.py               FITS/WCS helpers (convolution, deprojection, ...)
-|   |-- utils_table.py              table I/O, spectral shuffle, moment computation
-|   |-- hexmapsLogger.py            centralized [HexMaps] [Stage] [LEVEL] logger
-|   |-- init_workdir.py             copies key-file templates (--init)
-|   |-- cli.py                      `hexmaps` console-script entry point
-|   `-- test_hexmaps.py
-|-- config.txt                      <- example / template config file
-|-- keys/                           <- example / template reference tables
-|   |-- target_definitions.txt
-|   `-- hfs_lines.txt
-|-- analysis/                       <- post-processing & plotting helpers
-|   |-- hexmapsAnalysis.py          load .ecsv, quicklook maps/spectra
-|   `-- hexmaps_example.ipynb       example analysis notebook
-|-- data/                           <- example FITS input (NGC 5194)
-|-- run_hexmaps.py                  <- example run script
-|-- pyproject.toml
-`-- README.md
-
-~/my_project/                       <- your working directory (anywhere on disk)
-|-- config.txt                      <- edit this every run
-|-- keys/
-|   |-- target_definitions.txt      <- edit once, reuse across projects
-|   `-- hfs_lines.txt
-|-- data/                           <- your FITS files
-|-- output/                         <- pipeline writes .ecsv tables here
-|-- saved_FITS_files/                  FITS moment/map images land here
-`-- run_hexmaps.py                  <- edit and run this
+PyStructure/                         ← git repository root (pip install this)
+├── hexmaps/                         ← installable package
+│   ├── handler_keys.py              reads & validates config and key files
+│   ├── handler_sources.py           source geometry lookups
+│   ├── handler_pipeline.py          PipelineHandler: stage orchestration
+│   ├── stage_regrid.py              hex grid + convolution + sampling → .ecsv
+│   ├── stage_products.py            spectral masking, moments, shuffled spectra
+│   ├── stage_fits.py                FITS moment maps / cubes / band images
+│   ├── utils_fits.py                FITS/WCS helpers (convolution, reprojection)
+│   ├── utils_table.py               table I/O, spectral shuffle, moments
+│   ├── hexmapsLogger.py             centralised stage-labelled logger
+│   ├── init_workdir.py              --init scaffolding
+│   ├── cli.py                       hexmaps console-script entry point
+│   └── test_hexmaps.py              unit and integration tests
+├── config.txt                       ← example / template config file
+├── keys/
+│   ├── target_definitions.txt       ← source geometry table
+│   └── hfs_lines.txt                ← hyperfine structure definitions
+├── analysis/
+│   ├── hexmaps_analysis.py          HexMapsAnalysis class: quicklook plots
+│   └── hexmaps_example.ipynb        example analysis notebook
+├── conversion_from_pystructure/     ← migration scripts from old PyStructure
+│   ├── config_conversion.py
+│   ├── target_definitions_conversion.py
+│   └── hfs_lines_conversion.py
+├── data/                            ← example FITS input (NGC 5194)
+├── docs/                            ← Sphinx / Read the Docs source
+├── images/                          ← README images (logo, screenshot)
+├── run_hexmaps.py                   ← example run script
+└── pyproject.toml
 ```
 
 ---
 
-## Pipeline stages
+## Pipeline Stages
 
-The pipeline is organized into three stages, always executed in this order
-regardless of the order you list them in:
+The pipeline runs three stages always in this order:
 
 | Stage | Module | Default | Description |
 |-------|--------|---------|-------------|
-| `regrid` | `stage_regrid.py` | ✓ | Generate the hexagonal sampling grid from the overlay cube, then convolve and sample maps & cubes onto it; write the HexMaps `.ecsv` |
-| `products` | `stage_products.py` | ✓ | Build the S/N mask, compute moment maps (mom0/1/2, Tpeak, rms, EW), and shuffled spectra for every line |
-| `fits` | `stage_fits.py` | — optional | Compute PPV-native moment maps directly on the convolved cubes and write FITS files (moment maps, band images, mask cubes) |
+| `regrid` | `stage_regrid.py` | ✓ | Generate the hexagonal sampling grid; convolve and sample all maps & cubes onto it; write the `.ecsv` database |
+| `products` | `stage_products.py` | ✓ | Build the S/N mask; compute moment maps (mom0/1/2, Tpeak, rms, EW) and shuffled spectra |
+| `fits` | `stage_fits.py` | optional | Compute PPV-native moment maps on the convolved cubes; write FITS images |
 
-The default run (`run_all()` / `hexmaps --conf config.txt`) executes only
-**regrid** and **products** — the primary pipeline deliverable is the `.ecsv`
-database. The `fits` stage is an optional bonus that produces convenient FITS
-images; enable it explicitly with `--stages regrid products fits` or
-`run_stages(["regrid", "products", "fits"])`.
-
-The hexagonal sampling grid generation, previously a separate `sampling`
-stage, is now an internal step of `regrid`.
+The default run (`hexmaps --conf config.txt`) executes **regrid + products** only.
+Add `--stages all` to also run the fits stage.
 
 ---
 
-## Logging
-
-All pipeline output goes through a centralized logger
-(`hexmaps.hexmapsLogger`), giving every message a consistent,
-column-aligned format:
-
-```
-YYYY-MM-DD HH:MM:SS[<Stage>][<LEVEL>] <message>
-```
-
-Stages used during a run:
-
-| Stage label | When it's used |
-|-------------|-----------------|
-| `Loading`   | Reading key files, validating configuration, per-source setup |
-| `Regrid`    | Hex grid generation, convolution, reprojection, sampling |
-| `Products`  | Mask construction, moment maps, shuffled spectra |
-| `FITS`      | Writing FITS moment maps and 2D map images |
-| `Return`    | Per-source error reporting and the final run summary |
-
-Example:
-
-```
-YYYY-MM-DD HH:MM:SS [Loading]  [INFO]   Loading key files...
-YYYY-MM-DD HH:MM:SS [Loading]  [INFO]   Loaded 1 source(s): ['ngc5194']
-YYYY-MM-DD HH:MM:SS [Regrid]   [INFO]   Hexagonal grid generated: 1060 sampling points (spacing = 13.5 arcsec).
-YYYY-MM-DD HH:MM:SS [Regrid]   [INFO]   Cube 12co21 sampled successfully.
-YYYY-MM-DD HH:MM:SS [Products] [INFO]   Mask complete. Computing moments.
-YYYY-MM-DD HH:MM:SS [FITS]     [INFO]   Moment map FITS files written to: ./saved_FITS_files/
-YYYY-MM-DD HH:MM:SS [Return]   [INFO]   --- Run summary ---
-```
-
-Pass `--log_file run.log` (CLI) or `PipelineHandler(..., log_file="run.log")`
-(Python) to additionally stream every message to a file. The full log history
-can also be written at any time with `handler.save_log("run.log")`, or
-inspected programmatically via `hexmapsLogger.logger.get_records(...)`.
-
----
-
-## Reading the output
+## Reading the Output
 
 ```python
 from hexmaps.utils_table import load_hexmaps
+import matplotlib.pyplot as plt
 
-table = load_hexmaps("output/ngc5194_data_struct_27as_2025_01_01.ecsv")
+table = load_hexmaps("output/ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
 
-import numpy as np, matplotlib.pyplot as plt
-mom0 = table["MOM0_12CO21"]
-plt.scatter(table["ra_deg"], table["dec_deg"], c=mom0, marker="h")
+plt.figure(figsize=(5, 5))
+plt.scatter(table["ra_deg"], table["dec_deg"],
+            c=table["MOM0_12CO21"], marker="h", s=60, cmap="inferno")
+plt.gca().invert_xaxis()
+plt.xlabel("R.A. [deg]"); plt.ylabel("Dec. [deg]")
 plt.show()
 ```
 
-For richer quicklook plots (maps, spectra, shuffled spectra, radial
-profiles), see `analysis/hexmapsAnalysis.py` and the accompanying
-`analysis/hexmaps_example.ipynb` notebook.
+For richer quicklook plots use the `HexMapsAnalysis` class:
+
+```python
+import sys; sys.path.append("analysis/")
+from hexmaps_analysis import HexMapsAnalysis
+
+db = HexMapsAnalysis("output/ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
+db.quickplot_map("12CO21")
+db.quickplot_spectrum("12CO21")
+print(db.get_config())               # recover config.txt used for this run
+hdr = db.get_input_header("12CO21")  # recover raw FITS header of input cube
+```
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+## Roadmap
+
+- [ ] PyPI release
+- [ ] Expanded documentation and tutorials
+- [ ] Additional analysis utilities in `hexmaps_analysis.py`
+
+See the [open issues](https://github.com/lukas-neumann-astro/PyStructure/issues)
+for a full list of proposed features and known issues.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+## Contributing
+
+Contributions are greatly appreciated! If you have a suggestion that would
+make this better, please fork the repository and create a pull request. You
+can also open an issue with the tag "enhancement".
+
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
 
@@ -227,7 +284,47 @@ profiles), see `analysis/hexmapsAnalysis.py` and the accompanying
 
 Distributed under the MIT License — see [LICENSE](LICENSE) for details.
 
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
 ## Contact
 
-* Dr. Jakob den Brok — jadenbrok@mpia.de
-* Dr. Lukas Neumann — lukas.neumann@eso.org
+Dr. Jakob den Brok — jadenbrok@mpia.de
+
+Dr. Lukas Neumann — lukas.neumann@eso.org
+
+Project Link: [https://github.com/lukas-neumann-astro/PyStructure](https://github.com/lukas-neumann-astro/PyStructure)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+## Acknowledgements
+
+HexMaps builds on the original PyStructure IDL scripts developed within the
+PHANGS collaboration. The routines have been updated, improved, and fully
+rewritten in Python.
+
+The code has been employed in several peer-reviewed publications including
+den Brok et al. (2021, 2022, 2023, 2025), Eibensteiner et al. (2022, 2023),
+Neumann et al. (2023), Stuber et al. (2025), and others. See the
+[documentation](https://hexmaps.readthedocs.io) for the full list.
+
+* [PHANGS collaboration](https://sites.google.com/view/phangs/home)
+* [Prof. Bigiel's research group](https://www.astro.uni-bonn.de/~bigiel/)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- MARKDOWN LINKS & IMAGES -->
+[contributors-shield]: https://img.shields.io/github/contributors/lukas-neumann-astro/PyStructure.svg?style=for-the-badge
+[contributors-url]: https://github.com/lukas-neumann-astro/PyStructure/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/lukas-neumann-astro/PyStructure.svg?style=for-the-badge
+[forks-url]: https://github.com/lukas-neumann-astro/PyStructure/network/members
+[stars-shield]: https://img.shields.io/github/stars/lukas-neumann-astro/PyStructure.svg?style=for-the-badge
+[stars-url]: https://github.com/lukas-neumann-astro/PyStructure/stargazers
+[issues-shield]: https://img.shields.io/github/issues/lukas-neumann-astro/PyStructure.svg?style=for-the-badge
+[issues-url]: https://github.com/lukas-neumann-astro/PyStructure/issues
+[license-shield]: https://img.shields.io/github/license/lukas-neumann-astro/PyStructure.svg?style=for-the-badge
+[license-url]: https://github.com/lukas-neumann-astro/PyStructure/blob/master/LICENSE
+[product-screenshot]: images/screenshot.png
