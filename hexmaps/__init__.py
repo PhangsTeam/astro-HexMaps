@@ -3,7 +3,7 @@ HexMaps Pipeline: homogenize and analyze multi-wavelength astronomical datasets.
 """
 
 __author__ = "J. den Brok & L. Neumann"
-__version__ = "4.3.0"
+__version__ = "5.0.0"
 __email__ = "jadenbrok@mpia.de & lukas.neumann@eso.org"
 __credits__ = ["M. Jimenez-Donaire", "E. Rosolowsky", "A. Leroy", "I. Beslic"]
 
