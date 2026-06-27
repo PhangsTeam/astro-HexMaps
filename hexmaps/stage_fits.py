@@ -79,6 +79,7 @@ from hexmaps.utils_fits import twod_head, conv_with_gauss, reproject_cube
 from hexmaps.stage_regrid import _ensure_ms, _get_vaxis
 from hexmaps.utils_table import get_mom_maps, build_noise_mask
 
+from hexmaps import __version__ as _HEXMAPS_VERSION
 from hexmaps.logger import get_logger
 
 LOG = get_logger("FITS")
@@ -526,7 +527,129 @@ def get_mom_maps_ppv(cube, mask, vaxis, mom_calc, noise_mask=None):
     return mom_maps
 
 
-def save_ppv_mask_to_fits(mask, ov_hdr, source, filename, folder, out_nan_mask=None):
+def make_clean_header(ov_hdr, is_cube=False, bunit=None, btype=None,
+                      line_name=None, line_desc=None, object_name=None,
+                      bmaj_as=None, restfrq=None, meta=None):
+    """
+    Build a clean FITS header containing only the mandatory keywords needed
+    to locate and interpret the data — no residual keywords from the input
+    overlay file.
+
+    Starting from scratch (not from a copy of ov_hdr) guarantees that
+    instrument-specific, history, comment, and pipeline-internal keywords
+    from the original input do not bleed into the output.
+
+    Spatial WCS keywords (CTYPE/CRVAL/CRPIX/CDELT/CUNIT for axes 1 and 2)
+    are copied from *ov_hdr* unchanged.  If the header has a projection
+    keyword EQUINOX or RADESYS those are copied too.
+
+    For 3-D cubes (is_cube=True) the spectral axis keywords (axis 3 plus
+    SPECSYS / VELREF) are also copied from *ov_hdr*.  RESTFRQ is taken from
+    the *restfrq* argument when provided — which should be the value from the
+    raw input cube header — rather than from the overlay, whose RESTFRQ would
+    be wrong for any line other than the overlay line itself.
+
+    Content and provenance keywords follow the order:
+        OBJECT, LINE, BUNIT, BTYPE, ORIGIN, AUTHOR, DATE
+    followed by a COMMENT block crediting the HexMaps package.
+
+    Parameters
+    ----------
+    ov_hdr      : FITS Header — overlay header (2-D or 3-D) used as WCS source
+    is_cube     : bool — True for PPV cubes, False for 2-D images
+    bunit       : str or None — value for BUNIT
+    btype       : str or None — value for BTYPE (moment type); written in upper
+                  case (e.g. "MOM0" not "mom0")
+    line_name   : str or None — short line identifier; only used as a fallback
+                  for LINE when line_desc is not provided
+    line_desc   : str or None — human-readable line description written to LINE
+                  (preferred over line_name; e.g. "12CO(2-1)" instead of "12co21")
+    object_name : str or None — source name for OBJECT keyword
+    bmaj_as     : float or None — beam FWHM in arcsec; overrides ov_hdr BMAJ/BMIN.
+                  When None the beam is copied from ov_hdr if present.
+    restfrq     : float or None — rest frequency in Hz for the output cube.
+                  Should be read from the raw input cube header, not the overlay.
+                  When None, RESTFRQ is copied from ov_hdr if present (cubes only).
+    meta        : dict or None — pipeline meta dict; used for AUTHOR
+
+    Returns
+    -------
+    astropy.io.fits.Header — clean header ready to pass to fits.writeto
+    """
+    h = fits.Header()
+
+    # -- Spatial WCS (axes 1 and 2) ------------------------------------------
+    for ax in ("1", "2"):
+        for kw in ("CTYPE", "CRVAL", "CRPIX", "CDELT", "CUNIT"):
+            key = kw + ax
+            if key in ov_hdr:
+                h[key] = (ov_hdr[key], ov_hdr.comments[key])
+
+    for kw in ("EQUINOX", "RADESYS", "LONPOLE", "LATPOLE"):
+        if kw in ov_hdr:
+            h[kw] = (ov_hdr[kw], ov_hdr.comments[kw])
+
+    # -- Spectral axis (axis 3) — only for cubes -----------------------------
+    if is_cube:
+        for kw in ("CTYPE3", "CRVAL3", "CRPIX3", "CDELT3", "CUNIT3"):
+            if kw in ov_hdr:
+                h[kw] = (ov_hdr[kw], ov_hdr.comments[kw])
+        for kw in ("SPECSYS", "VELREF"):
+            if kw in ov_hdr:
+                h[kw] = (ov_hdr[kw], ov_hdr.comments[kw])
+        # RESTFRQ from the input cube, not the overlay.
+        # Also check the older RESTFREQ keyword (no trailing Q) for
+        # backwards compatibility with pre-FITS-4 files.
+        if restfrq is not None:
+            h["RESTFRQ"] = restfrq
+        elif "RESTFRQ" in ov_hdr:
+            h["RESTFRQ"] = ov_hdr["RESTFRQ"]
+        elif "RESTFREQ" in ov_hdr:
+            h["RESTFRQ"] = ov_hdr["RESTFREQ"]
+
+    # -- Beam ----------------------------------------------------------------
+    if bmaj_as is not None:
+        h["BMAJ"] = bmaj_as / 3600.0
+        h["BMIN"] = bmaj_as / 3600.0
+        h["BPA"]  = 0.0
+    else:
+        for kw in ("BMAJ", "BMIN", "BPA"):
+            if kw in ov_hdr:
+                h[kw] = (ov_hdr[kw], ov_hdr.comments[kw])
+
+    # -- Content and provenance — fixed order: OBJECT LINE BUNIT BTYPE -------
+    #    ORIGIN AUTHOR DATE
+    if object_name is not None:
+        h["OBJECT"] = object_name.upper()
+    # LINE stores the human-readable description (line_desc) when available,
+    # falling back to the short identifier (line_name) otherwise.
+    line_value = line_desc if line_desc else line_name
+    if line_value is not None:
+        h["LINE"] = line_value
+    if bunit is not None:
+        h["BUNIT"] = bunit
+    if btype is not None:
+        h["BTYPE"] = str(btype).upper()
+
+    h["ORIGIN"] = "HexMaps"
+    if meta is not None:
+        author = meta.get("user", "")
+        if author:
+            h["AUTHOR"] = author
+    h["DATE"] = date.today().isoformat()
+
+    # -- Package credit comment ----------------------------------------------
+    h["COMMENT"] = "Created with HexMaps (HEXagonal-grid Multi-data"
+    h["COMMENT"] = f"Analysis and Processing Software) version {_HEXMAPS_VERSION}"
+    h["COMMENT"] = "https://github.com/PhangsTeam/HexMaps"
+    h["COMMENT"] = "Contact: Jakob den Brok <jadenbrok@mpia.de>"
+    h["COMMENT"] = "         Lukas Neumann  <lukas.neumann@eso.org>"
+
+    return h
+
+
+def save_ppv_mask_to_fits(mask, ov_hdr, source, filename, folder,
+                          out_nan_mask=None, meta=None):
     """
     Write a PPV-native velocity-integration mask to a 3-D FITS cube.
 
@@ -551,7 +674,10 @@ def save_ppv_mask_to_fits(mask, ov_hdr, source, filename, folder, out_nan_mask=N
 
     Output filename: {source}_{filename}.fits
     """
-    hdr_out = copy.copy(ov_hdr)
+    hdr_out = make_clean_header(
+        ov_hdr, is_cube=True, bunit="", btype="mask",
+        object_name=source, meta=None,
+    )
     data_out = np.asarray(mask, dtype=float).copy()
     if out_nan_mask is not None:
         data_out[:, out_nan_mask] = np.nan
@@ -757,10 +883,18 @@ def run_moments_ppv(
     # ------------------------------------------------------------------
     # Load every cube's convolved PPV data up front (needed both for mask
     # construction and the per-line moment computation below).
+    # Also read the raw input headers before convolution so we can copy the
+    # correct per-line RESTFRQ into output FITS headers (reprojection
+    # overwrites the cube header with the overlay header, losing RESTFRQ).
     # ------------------------------------------------------------------
     cube_data = {}
+    cube_hdrs = {}
     for _, row in cubes.iterrows():
         name = str(row["line_name"])
+        raw_path = os.path.join(str(row["line_dir"]), source + str(row["line_ext"]))
+        cube_hdrs[name.upper()] = (
+            fits.getheader(raw_path) if os.path.exists(raw_path) else {}
+        )
         data, _ = get_convolved_ppv_cube(
             source,
             name,
@@ -953,23 +1087,36 @@ def run_moments_ppv(
                 "K km/s" if line_unit == "K" else f"{line_unit} km/s",
             ),
             "emom0": (mom_maps["mom0_err"], None),
-            "mom1": (mom_maps["mom1"], "km/s"),
+            "mom1":  (mom_maps["mom1"],     "km/s"),
             "emom1": (mom_maps["mom1_err"], "km/s"),
-            "mom2": (mom_maps["mom2"], "km/s"),
+            "mom2":  (mom_maps["mom2"],     "km/s"),
             "emom2": (mom_maps["mom2_err"], "km/s"),
-            "tpeak": (mom_maps["tpeak"], line_unit),
-            "rms": (mom_maps["rms"], line_unit),
-            "ew": (mom_maps["ew"], "km/s"),
-            "eew": (mom_maps["ew_err"], "km/s"),
+            "tpeak": (mom_maps["tpeak"],    line_unit),
+            "rms":   (mom_maps["rms"],      line_unit),
+            "ew":    (mom_maps["ew"],       "km/s"),
+            "eew":   (mom_maps["ew_err"],   "km/s"),
         }
 
         # out_nan_mask was computed once above, from ov_footprint & edge_mask.
+        _raw_hdr = cube_hdrs.get(line_name.upper(), {})
+        _restfrq = (
+            (_raw_hdr.get("RESTFRQ") or _raw_hdr.get("RESTFREQ"))
+            if _raw_hdr else None
+        )
+
         for quantity, (arr, bunit) in quantities.items():
-            hdr_out = copy.copy(ov_hdr_2d)
-            if bunit:
-                hdr_out["BUNIT"] = bunit
-            hdr_out["LINE"] = meta.get("line_desc", line_desc)
-            hdr_out["BTYPE"] = quantity
+            hdr_out = make_clean_header(
+                ov_hdr_2d,
+                is_cube=False,
+                bunit=bunit,
+                btype=quantity,
+                line_name=line_name,
+                line_desc=line_desc,
+                object_name=source,
+                bmaj_as=target_res_as,
+                restfrq=None,   # 2D moment maps have no spectral axis
+                meta=meta,
+            )
             res_suffix = meta.get("res_suffix", "27p0as")
             fname_fits = os.path.join(
                 folder, f"{source}_{line_name}_{res_suffix}_{quantity}.fits"
@@ -980,9 +1127,6 @@ def run_moments_ppv(
                 else np.asarray(arr, dtype=float).copy()
             )
             data_out[out_nan_mask] = np.nan
-            hdr_out["COMMENT"] = "Created with HexMaps pipeline stage_fits.py"
-            hdr_out["COMMENT"] = f'Author: {meta.get("user")}'
-            hdr_out["COMMENT"] = "Created on: " + date.today().strftime("%Y_%m_%d")
             fits.writeto(fname_fits, data=data_out, header=hdr_out, overwrite=True)
 
         LOG.info(f"Compute moment maps and write to file for line: {line_name}.")
@@ -1158,19 +1302,21 @@ def run_fits(
 
             # --- primary map ---
             try:
-                map_data, map_hdr = get_convolved_map(
-                    source,
-                    map_name,
-                    map_dir,
-                    map_ext,
-                    target_res_as,
-                    ov_hdr,
-                    log=LOG,
+                map_data, _ = get_convolved_map(
+                    source, map_name, map_dir, map_ext,
+                    target_res_as, ov_hdr, log=LOG,
                 )
                 map_data = np.where(_out_nan, np.nan, map_data)
-                fname_map = os.path.join(
-                    folder, f"{source}_{map_name}_{res_suffix}.fits"
+                map_hdr = make_clean_header(
+                    ov_hdr,
+                    is_cube=False,
+                    bunit=str(map_row.get("map_unit", "")),
+                    btype=map_name,
+                    object_name=source,
+                    bmaj_as=target_res_as,
+                    meta=meta,
                 )
+                fname_map = os.path.join(folder, f"{source}_{map_name}_{res_suffix}.fits")
                 fits.writeto(fname_map, data=map_data, header=map_hdr, overwrite=True)
             except FileNotFoundError:
                 LOG.warning(f"Skipping map {map_name}: raw input file not found.")
@@ -1179,22 +1325,24 @@ def run_fits(
             # --- uncertainty map (optional; only if map_uc is defined) ---
             if map_uc and map_uc not in ("nan", ""):
                 try:
-                    unc_data, unc_hdr = get_convolved_map(
-                        source,
-                        map_name,
-                        map_dir,
-                        map_uc,
-                        target_res_as,
-                        ov_hdr,
-                        log=LOG,
+                    unc_data, _ = get_convolved_map(
+                        source, map_name, map_dir, map_uc,
+                        target_res_as, ov_hdr, log=LOG,
                     )
                     unc_data = np.where(_out_nan, np.nan, unc_data)
+                    unc_hdr = make_clean_header(
+                        ov_hdr,
+                        is_cube=False,
+                        bunit=str(map_row.get("map_unit", "")),
+                        btype=f"{map_name}_err",
+                        object_name=source,
+                        bmaj_as=target_res_as,
+                        meta=meta,
+                    )
                     fname_unc = os.path.join(
                         folder, f"{source}_{map_name}_{res_suffix}_err.fits"
                     )
-                    fits.writeto(
-                        fname_unc, data=unc_data, header=unc_hdr, overwrite=True
-                    )
+                    fits.writeto(fname_unc, data=unc_data, header=unc_hdr, overwrite=True)
                 except FileNotFoundError:
                     LOG.warning(
                         f"Skipping uncertainty map for {map_name}: "
@@ -1222,6 +1370,15 @@ def run_fits(
 
         for _, row in cubes.iterrows():
             try:
+                # Read raw header before convolution to preserve the
+                # per-cube rest frequency (RESTFRQ/RESTFREQ), which is
+                # overwritten by the overlay header during reprojection.
+                raw_cube_path = os.path.join(
+                    str(row["line_dir"]), source + str(row["line_ext"])
+                )
+                _raw_hdr = fits.getheader(raw_cube_path) if os.path.exists(raw_cube_path) else {}
+                _restfrq = _raw_hdr.get("RESTFRQ") or _raw_hdr.get("RESTFREQ")
+
                 cube_data, cube_hdr = get_convolved_ppv_cube(
                     source,
                     str(row["line_name"]),
@@ -1239,14 +1396,25 @@ def run_fits(
 
             cube_data[:, _out_nan] = np.nan
 
-            out_hdr = copy.copy(ov_hdr)
-            out_hdr["BMAJ"] = target_res_as / 3600.0
-            out_hdr["BMIN"] = target_res_as / 3600.0
-            out_hdr["LINE"] = str(row["line_name"])
             cube_fits_path = os.path.join(
                 folder, f"{source}_{row['line_name']}_{res_suffix}.fits"
             )
-            fits.writeto(cube_fits_path, data=cube_data, header=out_hdr, overwrite=True)
+            fits.writeto(
+                cube_fits_path,
+                data=cube_data,
+                header=make_clean_header(
+                    ov_hdr,
+                    is_cube=True,
+                    bunit=str(row.get("line_unit", "")),
+                    line_name=str(row["line_name"]),
+                    line_desc=str(row.get("line_desc", "")),
+                    object_name=source,
+                    bmaj_as=target_res_as,
+                    restfrq=_restfrq,
+                    meta=meta,
+                ),
+                overwrite=True,
+            )
             LOG.info(f"Convolved cube written to: {cube_fits_path}")
 
 
