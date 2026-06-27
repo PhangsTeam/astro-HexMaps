@@ -41,8 +41,12 @@ class HexMapsAnalysis:
     def __init__(self, path: str):
         self.struct = Table.read(path)
         self.lines = self._find_lines()
-        self.rgal = np.array(self.struct["rgal_kpc"])
-        self.theta = np.array(self.struct["theta_rad"]) + np.pi
+
+        # rgal and theta are only available for galaxy targets
+        self.rgal  = (np.array(self.struct["rgal_kpc"])
+                      if "rgal_kpc" in self.struct.colnames else None)
+        self.theta = (np.array(self.struct["theta_rad"]) + np.pi
+                      if "theta_rad" in self.struct.colnames else None)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -53,11 +57,45 @@ class HexMapsAnalysis:
         lines = []
         for key in self.struct.keys():
             if key.startswith("SHUFF"):
-                lines.append(key[len("SHUFF") :])
+                lines.append(key[len("SHUFF"):])
             elif key.startswith("MOM0"):
                 lines.append(key.split("_")[1])
         lines = list(dict.fromkeys(lines))  # only keep unique elements
         return lines
+
+    def _coord_cols(self):
+        """
+        Return the names of the two spatial coordinate columns.
+
+        Column names depend on the WCS of the overlay cube used to produce this
+        database (e.g. ``ra_deg``/``dec_deg`` for equatorial,
+        ``glon_deg``/``glat_deg`` for galactic).  Falls back to
+        ``ra_deg``/``dec_deg`` if no matching columns are found.
+        """
+        _skip = {"incl_deg", "posang_deg"}
+        cols = [c for c in self.struct.colnames
+                if c.endswith("_deg") and c not in _skip]
+        if len(cols) >= 2:
+            return cols[0], cols[1]
+        return "ra_deg", "dec_deg"
+
+    def _get_vaxis(self, shuffled: bool = False) -> au.Quantity:
+        """Return the velocity axis for the first line."""
+        if shuffled:
+            return self.struct["SPEC_VAXIS_SHUFF"][0]
+        else:
+            return self.struct["SPEC_VAXIS"][0]
+
+    def _centre_pixel(self) -> int:
+        """Return the index of the sampling point closest to the source centre."""
+        if self.rgal is not None:
+            return int(np.argmin(self.rgal))
+        # Fallback: centre of the bounding box
+        col1, col2 = self._coord_cols()
+        x = np.array(self.struct[col1])
+        y = np.array(self.struct[col2])
+        cx, cy = np.nanmean(x), np.nanmean(y)
+        return int(np.argmin((x - cx)**2 + (y - cy)**2))
 
     def _get_vaxis(self, shuffled: bool = False) -> au.Quantity:
         """Return the velocity axis for the first line."""
@@ -76,17 +114,18 @@ class HexMapsAnalysis:
 
     def get_coordinates(self, center: str = None):
         """
-        Return RA/Dec arrays, or offset coordinates relative to *center*.
+        Return sky coordinate arrays, or offset coordinates relative to *center*.
 
         Parameters
         ----------
         center : str, optional
             Sky coordinate string, e.g. ``"13:29:52.7 47:11:43"``.
-            If given, returns (delta_RA, delta_Dec) in arcseconds.
-            If None, returns absolute (RA, Dec) in degrees.
+            If given, returns (delta_axis1, delta_axis2) in arcseconds.
+            If None, returns absolute coordinates in degrees.
         """
-        ra = np.array(self.struct["ra_deg"])
-        dec = np.array(self.struct["dec_deg"])
+        col1, col2 = self._coord_cols()
+        ra = np.array(self.struct[col1])
+        dec = np.array(self.struct[col2])
 
         if center is None:
             return ra, dec
@@ -100,14 +139,16 @@ class HexMapsAnalysis:
 
     def sky_aspect_factor(self):
         """
-        Aspect ratio correction for plotting RA vs Dec in degrees.
+        Aspect ratio correction for plotting axis 1 vs axis 2 in degrees.
 
-        Returns a value suitable for:
-            ax.set_aspect(factor)
+        Returns a value suitable for ``ax.set_aspect(factor)``.
+        For RA/Dec this is 1/cos(Dec); for galactic or ecliptic coordinates
+        the same formula applies to the latitude axis.
         """
-        dec = np.array(self.struct["dec_deg"])
-        dec0 = np.median(dec)
-        return 1.0 / np.cos(np.deg2rad(dec0))
+        _, col2 = self._coord_cols()
+        lat = np.array(self.struct[col2])
+        lat0 = np.median(lat)
+        return 1.0 / np.cos(np.deg2rad(lat0))
 
     # ------------------------------------------------------------------
     # Quick-look plots
@@ -148,11 +189,13 @@ class HexMapsAnalysis:
 
         if center is not None:
             x, y = self.get_coordinates(center)
-            xlabel, ylabel = r"$\Delta$R.A. [arcsec]", r"$\Delta$Dec. [arcsec]"
+            xlabel, ylabel = r"$\Delta$Axis1 [arcsec]", r"$\Delta$Axis2 [arcsec]"
         else:
-            x = np.array(self.struct["ra_deg"])
-            y = np.array(self.struct["dec_deg"])
-            xlabel, ylabel = "R.A. [deg]", "Dec. [deg]"
+            col1, col2 = self._coord_cols()
+            x = np.array(self.struct[col1])
+            y = np.array(self.struct[col2])
+            xlabel = f"{col1.replace('_deg', '')} [deg]"
+            ylabel = f"{col2.replace('_deg', '')} [deg]"
 
         finite = values[np.isfinite(values)]
         if len(finite) == 0:
@@ -260,7 +303,9 @@ class HexMapsAnalysis:
         ax.set_xlabel(f"Velocity [{vunit}]")
         ax.set_ylabel(f"T$_{{\\rm b}}$ [{unit}]" if unit else "Brightness temperature")
         ax.set_title(
-            f"{line}  —  pixel {idx}  (r$_{{\\rm gal}}$ = {self.rgal[idx]:.2f} kpc)"
+            f"{line}  —  pixel {idx}"
+            + (f"  (r$_{{\\rm gal}}$ = {self.rgal[idx]:.2f} kpc)"
+               if self.rgal is not None else "")
         )
         ax.legend(fontsize=9)
 
@@ -321,6 +366,13 @@ class HexMapsAnalysis:
         col = f"{quantity}_{line.upper()}"
         if col not in self.struct.colnames:
             raise KeyError(f"Column '{col}' not found.")
+
+        if self.rgal is None:
+            raise RuntimeError(
+                "quickplot_radial_profile requires galaxy geometry "
+                "(rgal_kpc), which is not available for this source. "
+                "Add incl_deg, posang_deg, and r25 to target_definitions.txt."
+            )
 
         values = np.array(self.struct[col])
         unit = str(self.struct[col].unit) if hasattr(self.struct[col], "unit") else ""

@@ -1068,15 +1068,6 @@ def run_fits(
     # Build the overlay footprint: True wherever at least one spectral channel
     # is finite. Used as the authoritative NaN/valid mask for all output files.
     ov_footprint = np.any(np.isfinite(ov_cube), axis=0)  # (ny, nx) bool
-    # Float version (1.0 / NaN) for save_to_fits, which multiplies it into
-    # the 2D regridded array.
-    ov_slice = ov_footprint.astype(float)
-    ov_slice[~ov_footprint] = np.nan
-    ov_hdr_2d = twod_head(ov_hdr)
-
-    this_data = Table.read(fname)
-    ra_deg = this_data["ra_deg"]
-    dec_deg = this_data["dec_deg"]
 
     # ------------------------------------------------------------------
     # Determine target resolution in arcseconds

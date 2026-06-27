@@ -79,15 +79,21 @@ class SourceHandler:
 
         Keys
         ----
-        ra_ctr, dec_ctr   — J2000 centre coordinates (degrees)
+        ra_ctr, dec_ctr   — centre coordinates (degrees, in the WCS frame of
+                            the overlay cube — may be RA/Dec, galactic l/b, etc.)
         dist_mpc          — adopted distance (Mpc)
         e_dist_mpc        — distance uncertainty (Mpc)
-        incl_deg          — inclination (degrees)
-        e_incl_deg        — inclination uncertainty (degrees)
-        posang_deg        — position angle E of N (degrees)
-        e_posang_deg      — PA uncertainty (degrees)
-        r25               — optical radius at 25 mag/arcsec² (arcmin)
-        e_r25             — r25 uncertainty (arcmin)
+        incl_deg          — inclination (degrees); NaN if not provided
+        e_incl_deg        — inclination uncertainty (degrees); NaN if not provided
+        posang_deg        — position angle E of N (degrees); NaN if not provided
+        e_posang_deg      — PA uncertainty (degrees); NaN if not provided
+        r25               — optical radius at 25 mag/arcsec² (arcmin); NaN if not provided
+        e_r25             — r25 uncertainty (arcmin); NaN if not provided
+
+        The galaxy-geometry columns (incl_deg, posang_deg, r25 and their
+        uncertainties) are optional — they are NaN when absent from
+        target_definitions.txt.  Use has_galaxy_geometry() to check whether
+        deprojected radii and polar angles can be computed.
 
         Raises
         ------
@@ -96,7 +102,29 @@ class SourceHandler:
         if source not in self._index:
             LOG.error(f"Source '{source}' not found in geometry table.")
             raise KeyError(f"Source '{source}' not found in geometry table.")
-        return self.source_table.loc[self._index[source]].to_dict()
+        row = self.source_table.loc[self._index[source]].to_dict()
+        # Fill any missing optional keys with NaN so callers always get a
+        # complete dict regardless of how many columns the file had
+        for key in ["incl_deg", "e_incl_deg", "posang_deg", "e_posang_deg",
+                    "r25", "e_r25", "dist_mpc", "e_dist_mpc"]:
+            if key not in row or row[key] is None:
+                row.setdefault(key, float("nan"))
+        return row
+
+    def has_galaxy_geometry(self, source: str) -> bool:
+        """
+        Return True if *source* has all three galaxy-geometry values needed for
+        deprojection: ``incl_deg``, ``posang_deg``, and ``r25``.
+
+        When any of these is NaN, rgal/theta columns cannot be computed and the
+        corresponding pipeline steps are skipped with a warning.
+        """
+        import math
+        p = self.get_source_params(source)
+        return not any(
+            math.isnan(float(p.get(k, float("nan"))))
+            for k in ("incl_deg", "posang_deg", "r25")
+        )
 
     # Convenience accessors for the most commonly needed parameters
 

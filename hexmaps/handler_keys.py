@@ -495,6 +495,12 @@ class KeyHandler:
         # Comma-separated, but tolerant of stray spaces/tabs around each
         # field (e.g. "ngc5194,  202.4696,\t47.1952"). A regex separator
         # consumes the comma plus any surrounding whitespace in one go.
+        #
+        # Galaxy geometry columns (incl_deg, posang_deg, r25 and their
+        # uncertainties) are OPTIONAL: rows may omit them entirely, or supply
+        # empty/blank fields. Missing columns are filled with NaN so the rest
+        # of the pipeline can detect absence and skip galaxy-specific
+        # computations with an appropriate warning.
         self.source_table = pd.read_csv(
             geom_path,
             sep=r"\s*,\s*",
@@ -502,6 +508,16 @@ class KeyHandler:
             names=TARGET_COLUMNS,
             comment="#",
         )
+        # Coerce all numeric columns; blank / "nan" / empty strings → NaN
+        for col in TARGET_COLUMNS[1:]:   # skip "source"
+            if col in self.source_table.columns:
+                self.source_table[col] = pd.to_numeric(
+                    self.source_table[col], errors="coerce"
+                )
+        # Fill any columns that are entirely absent (fewer columns in file)
+        for col in TARGET_COLUMNS:
+            if col not in self.source_table.columns:
+                self.source_table[col] = float("nan")
 
     def _load_sources_and_tables(self):
         """

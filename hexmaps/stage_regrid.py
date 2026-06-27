@@ -996,6 +996,49 @@ def _build_fname(source, meta):
     return os.path.join(out_dir, f"{source}_hexmaps_{res_suffix}_{date_str}.ecsv")
 
 
+def _get_coord_names(ov_hdr):
+    """
+    Derive human-readable coordinate column names and descriptions from the
+    spatial WCS axes of the overlay header.
+
+    Reads CTYPE1 / CTYPE2 (e.g. "RA---TAN", "GLAT-CAR", "ELON-ZEA") and
+    strips the projection code to produce clean axis labels.  CUNIT1 /
+    CUNIT2 are inspected so non-degree units can be detected (they are still
+    stored as degrees in the output columns after conversion).
+
+    Returns
+    -------
+    col1_name  : str — column name for axis 1 (e.g. "ra_deg", "glon_deg")
+    col2_name  : str — column name for axis 2 (e.g. "dec_deg", "glat_deg")
+    col1_desc  : str — human-readable description for axis 1
+    col2_desc  : str — human-readable description for axis 2
+    """
+    # Extract the axis type, stripping the projection suffix (e.g. "---TAN")
+    raw1 = str(ov_hdr.get("CTYPE1", "RA")).split("-")[0].strip().upper()
+    raw2 = str(ov_hdr.get("CTYPE2", "DEC")).split("-")[0].strip().upper()
+
+    # Map known FITS type codes to friendly names
+    _name_map = {
+        "RA":   ("ra",   "Right ascension"),
+        "DEC":  ("dec",  "Declination"),
+        "GLON": ("glon", "Galactic longitude"),
+        "GLAT": ("glat", "Galactic latitude"),
+        "ELON": ("elon", "Ecliptic longitude"),
+        "ELAT": ("elat", "Ecliptic latitude"),
+        "HGLN": ("hgln", "Heliographic longitude"),
+        "HGLT": ("hglt", "Heliographic latitude"),
+    }
+    short1, desc1 = _name_map.get(raw1, (raw1.lower(), raw1))
+    short2, desc2 = _name_map.get(raw2, (raw2.lower(), raw2))
+
+    col1_name = f"{short1}_deg"
+    col2_name = f"{short2}_deg"
+    col1_desc = f"{desc1} (degrees)"
+    col2_desc = f"{desc2} (degrees)"
+
+    return col1_name, col2_name, col1_desc, col2_desc
+
+
 def _init_table(
     source,
     params,
@@ -1064,53 +1107,88 @@ def _init_table(
             LOG.warning(f"Could not read config file for metadata: {e}")
     this_data.meta["config_file"] = config_file_content
 
-    # Sky coordinates
-    this_data["ra_deg"] = Column(
-        samp_ra, unit=au.deg, description="Right ascension (J2000)"
+    # ------------------------------------------------------------------
+    # Sky coordinates — derive column names from the overlay WCS so the
+    # table is correct for any coordinate system (RA/Dec, galactic, etc.)
+    # ------------------------------------------------------------------
+    col1_name, col2_name, col1_desc, col2_desc = _get_coord_names(ov_hdr)
+    this_data[col1_name] = Column(
+        samp_ra, unit=au.deg, description=col1_desc
     )
-    this_data["dec_deg"] = Column(
-        samp_dec, unit=au.deg, description="Declination (J2000)"
+    this_data[col2_name] = Column(
+        samp_dec, unit=au.deg, description=col2_desc
     )
 
-    # Source geometry metadata
-    this_data.meta["dist_mpc"] = params["dist_mpc"] * au.Mpc
-    this_data.meta["posang_deg"] = params["posang_deg"] * au.deg
-    this_data.meta["incl_deg"] = params["incl_deg"] * au.deg
-    this_data.meta["beam_as"] = target_res_as * au.arcsec
+    # Source geometry metadata — only the always-available values
+    this_data.meta["dist_mpc"]  = params.get("dist_mpc", float("nan"))  * au.Mpc
+    this_data.meta["beam_as"]   = target_res_as * au.arcsec
+
+    # Optional galaxy geometry (PA, inclination) — stored only when valid
+    incl_deg   = float(params.get("incl_deg",   float("nan")))
+    posang_deg = float(params.get("posang_deg", float("nan")))
+    r25        = float(params.get("r25",        float("nan")))
+    import math
+    has_geom = not any(math.isnan(v) for v in (incl_deg, posang_deg, r25))
+
+    if has_geom:
+        this_data.meta["posang_deg"] = posang_deg * au.deg
+        this_data.meta["incl_deg"]   = incl_deg   * au.deg
 
     # Spectral axis metadata (from the overlay cube header)
     unit_v = ov_hdr.get("CUNIT3", "m/s")
     this_data.meta["SPEC_VCHAN0"] = ov_hdr["CRVAL3"] * au.Unit(unit_v)
     this_data.meta["SPEC_DELTAV"] = ov_hdr["CDELT3"] * au.Unit(unit_v)
-    this_data.meta["SPEC_CRPIX"] = ov_hdr["CRPIX3"]
-    this_data.meta["input_maps"] = ""
+    this_data.meta["SPEC_CRPIX"]  = ov_hdr["CRPIX3"]
+    this_data.meta["input_maps"]  = ""
     this_data.meta["input_cubes"] = ""
 
-    # Deprojected galactocentric coordinates
-    rgal_deg, theta_rad = deproject(
-        samp_ra,
-        samp_dec,
-        [params["posang_deg"], params["incl_deg"], params["ra_ctr"], params["dec_ctr"]],
-        vector=True,
-    )
-    dist_mpc = params["dist_mpc"]
-    r25 = params["r25"]
+    # ------------------------------------------------------------------
+    # Deprojected galactocentric coordinates — galaxy targets only.
+    # Requires incl_deg, posang_deg, and r25 to all be non-NaN in
+    # target_definitions.txt.  Skipped with a warning for Milky Way clouds
+    # or any other source type where these parameters are not meaningful.
+    # ------------------------------------------------------------------
+    if has_geom:
+        ra_ctr  = float(params.get("ra_ctr",  0.0))
+        dec_ctr = float(params.get("dec_ctr", 0.0))
+        dist_mpc = float(params.get("dist_mpc", float("nan")))
 
-    this_data["rgal_as"] = Column(
-        rgal_deg * 3600, unit=au.arcsec, description="Deprojected galactocentric radius"
-    )
-    this_data["rgal_kpc"] = Column(
-        np.deg2rad(rgal_deg) * dist_mpc * 1e3,
-        unit=au.kpc,
-        description="Deprojected galactocentric radius",
-    )
-    this_data["rgal_r25"] = Column(
-        rgal_deg / (r25 / 60.0),
-        description="Deprojected galactocentric radius (r25 units)",
-    )
-    this_data["theta_rad"] = Column(
-        theta_rad, unit=au.rad, description="Deprojected polar angle"
-    )
+        rgal_deg, theta_rad = deproject(
+            samp_ra,
+            samp_dec,
+            [posang_deg, incl_deg, ra_ctr, dec_ctr],
+            vector=True,
+        )
+
+        this_data["rgal_as"] = Column(
+            rgal_deg * 3600,
+            unit=au.arcsec,
+            description="Deprojected galactocentric radius",
+        )
+        if not math.isnan(dist_mpc):
+            this_data["rgal_kpc"] = Column(
+                np.deg2rad(rgal_deg) * dist_mpc * 1e3,
+                unit=au.kpc,
+                description="Deprojected galactocentric radius",
+            )
+        this_data["rgal_r25"] = Column(
+            rgal_deg / (r25 / 60.0),
+            description="Deprojected galactocentric radius (r25 units)",
+        )
+        this_data["theta_rad"] = Column(
+            theta_rad,
+            unit=au.rad,
+            description="Deprojected polar angle",
+        )
+    else:
+        LOG.warning(
+            f"Galaxy geometry columns (incl_deg, posang_deg, r25) are missing "
+            f"or NaN for '{source}' in target_definitions.txt."
+        )
+        LOG.warning(
+            f"Deprojected radius columns (rgal_as, rgal_kpc, rgal_r25, theta_rad) "
+            f"will not be added to the database."
+        )
     return this_data
 
 
@@ -1130,8 +1208,19 @@ def _fill_checker(fname, samp_ra, samp_dec, maps, cubes):
     fill_cubes  : list  — cube names that are already present and can be skipped
     """
     this_data = Table.read(fname)
-    diff = abs(np.nansum(this_data["ra_deg"] - samp_ra * au.deg)) + abs(
-        np.nansum(this_data["dec_deg"] - samp_dec * au.deg)
+
+    # Determine the coordinate column names from the existing table — they
+    # depend on the WCS of the overlay cube and may be ra_deg/dec_deg,
+    # glon_deg/glat_deg, etc.
+    coord_cols = [c for c in this_data.colnames
+                  if c.endswith("_deg") and c not in ("incl_deg", "posang_deg")]
+    if len(coord_cols) >= 2:
+        col1_name, col2_name = coord_cols[0], coord_cols[1]
+    else:
+        col1_name, col2_name = "ra_deg", "dec_deg"
+
+    diff = abs(np.nansum(this_data[col1_name] - samp_ra * au.deg)) + abs(
+        np.nansum(this_data[col2_name] - samp_dec * au.deg)
     )
     if diff > 1e-12 * au.deg:
         LOG.error(

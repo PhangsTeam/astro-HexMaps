@@ -194,6 +194,48 @@ class TestKeyHandler:
         with pytest.raises(KeyError, match="Mandatory key"):
             KeyHandler(str(conf_path))
 
+    def test_optional_galaxy_columns_load_as_nan(self, tmp_path):
+        """
+        Galaxy geometry columns (incl_deg, posang_deg, r25 etc.) are optional.
+        Rows that omit them should load with NaN rather than raising an error.
+        """
+        conf_path = self._write_minimal_config(tmp_path)
+
+        # Write a target_definitions.txt with only the 4 mandatory columns
+        geom = tmp_path / "keys" / "target_definitions.txt"
+        geom.write_text("ngc5194, 202.4696, 47.1952, 8.58\n")
+
+        from hexmaps.handler_keys import KeyHandler
+        kh = KeyHandler(str(conf_path))
+        row = kh.source_table.iloc[0]
+
+        import math
+        assert math.isnan(float(row["incl_deg"]))
+        assert math.isnan(float(row["posang_deg"]))
+        assert math.isnan(float(row["r25"]))
+
+    def test_has_galaxy_geometry_false_when_nan(self, tmp_path):
+        """has_galaxy_geometry() must return False when any column is NaN."""
+        conf_path = self._write_minimal_config(tmp_path)
+        geom = tmp_path / "keys" / "target_definitions.txt"
+        geom.write_text("ngc5194, 202.4696, 47.1952, 8.58\n")
+
+        from hexmaps.handler_keys import KeyHandler
+        from hexmaps.handler_sources import SourceHandler
+        kh = KeyHandler(str(conf_path))
+        sh = SourceHandler(kh.source_table, kh.sources)
+        assert sh.has_galaxy_geometry("ngc5194") is False
+
+    def test_has_galaxy_geometry_true_when_full(self, tmp_path):
+        """has_galaxy_geometry() must return True when all three columns are present."""
+        conf_path = self._write_minimal_config(tmp_path)
+
+        from hexmaps.handler_keys import KeyHandler
+        from hexmaps.handler_sources import SourceHandler
+        kh = KeyHandler(str(conf_path))
+        sh = SourceHandler(kh.source_table, kh.sources)
+        assert sh.has_galaxy_geometry("ngc5194") is True
+
     def test_save_mask_defaults_false(self, tmp_path):
         """save_mask is not set in the minimal fixture, so it must default to False."""
         conf_path = self._write_minimal_config(tmp_path)
@@ -611,6 +653,32 @@ class TestFitsUtils:
 
 
 class TestStageFits:
+
+    def test_get_coord_names_radec(self):
+        """RA/Dec CTYPE values produce ra_deg / dec_deg column names."""
+        from astropy.io import fits
+        from hexmaps.stage_regrid import _get_coord_names
+        hdr = fits.Header()
+        hdr["CTYPE1"] = "RA---TAN"
+        hdr["CTYPE2"] = "DEC--TAN"
+        c1, c2, d1, d2 = _get_coord_names(hdr)
+        assert c1 == "ra_deg"
+        assert c2 == "dec_deg"
+        assert "Right ascension" in d1
+        assert "Declination" in d2
+
+    def test_get_coord_names_galactic(self):
+        """Galactic CTYPE values produce glon_deg / glat_deg column names."""
+        from astropy.io import fits
+        from hexmaps.stage_regrid import _get_coord_names
+        hdr = fits.Header()
+        hdr["CTYPE1"] = "GLON-CAR"
+        hdr["CTYPE2"] = "GLAT-CAR"
+        c1, c2, d1, d2 = _get_coord_names(hdr)
+        assert c1 == "glon_deg"
+        assert c2 == "glat_deg"
+        assert "Galactic longitude" in d1
+        assert "Galactic latitude" in d2
 
     def test_build_edge_mask_erodes_footprint(self):
         """
