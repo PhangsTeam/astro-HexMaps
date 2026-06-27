@@ -94,11 +94,11 @@ def init_workdir(workdir: str = ".", overwrite: bool = False) -> None:
         f"[INFO]       1. Edit config.txt  — paths, sources, maps/cubes, resolution, masking"
     )
     print(
-        f"[INFO]       2. Edit keys/target_definitions.csv  — add your sources (rarely changes)"
+        f"[INFO]       2. Edit keys/target_definitions.csv  — add your sources"
     )
     print(
         f"[INFO]       3. (optional) Edit keys/hfs_lines.csv  — hyperfine structure lines"
     )
     print(
-        f"[INFO]       4. Run:  python run_hexmaps.py  (or:  hexmaps --conf config.txt)"
+        f"[INFO]       4. Run:  hexmaps --conf config.txt  (or:  python run_hexmaps.py)"
     )
