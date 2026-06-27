@@ -387,7 +387,7 @@ def deproject(ra, dec, galpos, vector=False, gal=None):
     vector  : bool       — if True, ra/dec are already paired vectors of the
                            same length; if False, a 2-D grid is computed
     gal     : dict       — alternative to galpos; keys: posang_deg, incl_def,
-                           ra_deg, dec_deg
+                           RA, DEC
 
     Returns
     -------
@@ -399,8 +399,8 @@ def deproject(ra, dec, galpos, vector=False, gal=None):
     if gal is not None:
         pa = np.deg2rad(gal["posang_deg"])
         inc = np.deg2rad(gal["incl_def"])
-        xctr = gal["ra_deg"]
-        yctr = gal["dec_deg"]
+        xctr = gal["RA"]
+        yctr = gal["DEC"]
     elif len(galpos) == 5:
         pa = np.deg2rad(galpos[1])
         inc = np.deg2rad(galpos[2])

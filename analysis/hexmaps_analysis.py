@@ -43,10 +43,10 @@ class HexMapsAnalysis:
         self.lines = self._find_lines()
 
         # rgal and theta are only available for galaxy targets
-        self.rgal  = (np.array(self.struct["rgal_kpc"])
-                      if "rgal_kpc" in self.struct.colnames else None)
-        self.theta = (np.array(self.struct["theta_rad"]) + np.pi
-                      if "theta_rad" in self.struct.colnames else None)
+        self.rgal  = (np.array(self.struct["RGAL_KPC"])
+                      if "RGAL_KPC" in self.struct.colnames else None)
+        self.theta = (np.array(self.struct["THETA_RAD"]) + np.pi
+                      if "THETA_RAD" in self.struct.colnames else None)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -68,16 +68,16 @@ class HexMapsAnalysis:
         Return the names of the two spatial coordinate columns.
 
         Column names depend on the WCS of the overlay cube used to produce this
-        database (e.g. ``ra_deg``/``dec_deg`` for equatorial,
-        ``glon_deg``/``glat_deg`` for galactic).  Falls back to
-        ``ra_deg``/``dec_deg`` if no matching columns are found.
+        database (e.g. ``RA``/``DEC`` for equatorial,
+        ``GLON``/``GLAT`` for galactic).  Falls back to
+        ``RA``/``DEC`` if no matching columns are found.
         """
         _skip = {"incl_deg", "posang_deg"}
         cols = [c for c in self.struct.colnames
                 if c.endswith("_deg") and c not in _skip]
         if len(cols) >= 2:
             return cols[0], cols[1]
-        return "ra_deg", "dec_deg"
+        return "RA", "DEC"
 
     def _get_vaxis(self, shuffled: bool = False) -> au.Quantity:
         """Return the velocity axis for the first line."""
@@ -370,7 +370,7 @@ class HexMapsAnalysis:
         if self.rgal is None:
             raise RuntimeError(
                 "quickplot_radial_profile requires galaxy geometry "
-                "(rgal_kpc), which is not available for this source. "
+                "(RGAL_KPC), which is not available for this source. "
                 "Add incl_deg, posang_deg, and r25 to target_definitions.txt."
             )
 

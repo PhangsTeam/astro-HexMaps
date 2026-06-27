@@ -655,28 +655,28 @@ class TestFitsUtils:
 class TestStageFits:
 
     def test_get_coord_names_radec(self):
-        """RA/Dec CTYPE values produce ra_deg / dec_deg column names."""
+        """RA/Dec CTYPE values produce RA / DEC column names."""
         from astropy.io import fits
         from hexmaps.stage_regrid import _get_coord_names
         hdr = fits.Header()
         hdr["CTYPE1"] = "RA---TAN"
         hdr["CTYPE2"] = "DEC--TAN"
         c1, c2, d1, d2 = _get_coord_names(hdr)
-        assert c1 == "ra_deg"
-        assert c2 == "dec_deg"
+        assert c1 == "RA"
+        assert c2 == "DEC"
         assert "Right ascension" in d1
         assert "Declination" in d2
 
     def test_get_coord_names_galactic(self):
-        """Galactic CTYPE values produce glon_deg / glat_deg column names."""
+        """Galactic CTYPE values produce GLON / GLAT column names."""
         from astropy.io import fits
         from hexmaps.stage_regrid import _get_coord_names
         hdr = fits.Header()
         hdr["CTYPE1"] = "GLON-CAR"
         hdr["CTYPE2"] = "GLAT-CAR"
         c1, c2, d1, d2 = _get_coord_names(hdr)
-        assert c1 == "glon_deg"
-        assert c2 == "glat_deg"
+        assert c1 == "GLON"
+        assert c2 == "GLAT"
         assert "Galactic longitude" in d1
         assert "Galactic latitude" in d2
 

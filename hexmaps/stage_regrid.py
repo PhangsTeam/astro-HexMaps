@@ -28,10 +28,10 @@ MAP_<NAME>   : sampled 2D map intensity
 EMAP_<NAME>  : uncertainty on the 2D map
 SPEC_<NAME>  : sampled spectral cube  (n_pts × n_chan array column)
 ESPEC_<NAME> : uncertainty cube
-rgal_as      : deprojected galactocentric radius in arcseconds
-rgal_kpc     : deprojected galactocentric radius in kpc
-rgal_r25     : deprojected galactocentric radius in units of r25
-theta_rad    : deprojected polar angle in radians
+RGAL_AS      : deprojected galactocentric radius in arcseconds
+RGAL_KPC     : deprojected galactocentric radius in kpc
+RGAL_R25     : deprojected galactocentric radius in units of r25
+THETA_RAD    : deprojected polar angle in radians
 """
 
 import os
@@ -1008,8 +1008,8 @@ def _get_coord_names(ov_hdr):
 
     Returns
     -------
-    col1_name  : str — column name for axis 1 (e.g. "ra_deg", "glon_deg")
-    col2_name  : str — column name for axis 2 (e.g. "dec_deg", "glat_deg")
+    col1_name  : str — column name for axis 1 (e.g. "RA", "GLON")
+    col2_name  : str — column name for axis 2 (e.g. "DEC", "GLAT")
     col1_desc  : str — human-readable description for axis 1
     col2_desc  : str — human-readable description for axis 2
     """
@@ -1028,11 +1028,11 @@ def _get_coord_names(ov_hdr):
         "HGLN": ("hgln", "Heliographic longitude"),
         "HGLT": ("hglt", "Heliographic latitude"),
     }
-    short1, desc1 = _name_map.get(raw1, (raw1.lower(), raw1))
-    short2, desc2 = _name_map.get(raw2, (raw2.lower(), raw2))
+    short1, desc1 = _name_map.get(raw1, (raw1.upper(), raw1))
+    short2, desc2 = _name_map.get(raw2, (raw2.upper(), raw2))
 
-    col1_name = f"{short1}_deg"
-    col2_name = f"{short2}_deg"
+    col1_name = f"{short1.upper()}"
+    col2_name = f"{short2.upper()}"
     col1_desc = f"{desc1} (degrees)"
     col2_desc = f"{desc2} (degrees)"
 
@@ -1139,8 +1139,6 @@ def _init_table(
     this_data.meta["SPEC_VCHAN0"] = ov_hdr["CRVAL3"] * au.Unit(unit_v)
     this_data.meta["SPEC_DELTAV"] = ov_hdr["CDELT3"] * au.Unit(unit_v)
     this_data.meta["SPEC_CRPIX"]  = ov_hdr["CRPIX3"]
-    this_data.meta["input_maps"]  = ""
-    this_data.meta["input_cubes"] = ""
 
     # ------------------------------------------------------------------
     # Deprojected galactocentric coordinates — galaxy targets only.
@@ -1160,22 +1158,22 @@ def _init_table(
             vector=True,
         )
 
-        this_data["rgal_as"] = Column(
+        this_data["RGAL_AS"] = Column(
             rgal_deg * 3600,
             unit=au.arcsec,
             description="Deprojected galactocentric radius",
         )
         if not math.isnan(dist_mpc):
-            this_data["rgal_kpc"] = Column(
+            this_data["RGAL_KPC"] = Column(
                 np.deg2rad(rgal_deg) * dist_mpc * 1e3,
                 unit=au.kpc,
                 description="Deprojected galactocentric radius",
             )
-        this_data["rgal_r25"] = Column(
+        this_data["RGAL_R25"] = Column(
             rgal_deg / (r25 / 60.0),
             description="Deprojected galactocentric radius (r25 units)",
         )
-        this_data["theta_rad"] = Column(
+        this_data["THETA_RAD"] = Column(
             theta_rad,
             unit=au.rad,
             description="Deprojected polar angle",
@@ -1186,7 +1184,7 @@ def _init_table(
             f"or NaN for '{source}' in target_definitions.txt."
         )
         LOG.warning(
-            f"Deprojected radius columns (rgal_as, rgal_kpc, rgal_r25, theta_rad) "
+            f"Deprojected radius columns (RGAL_AS, RGAL_KPC, RGAL_R25, THETA_RAD) "
             f"will not be added to the database."
         )
     return this_data
@@ -1210,14 +1208,14 @@ def _fill_checker(fname, samp_ra, samp_dec, maps, cubes):
     this_data = Table.read(fname)
 
     # Determine the coordinate column names from the existing table — they
-    # depend on the WCS of the overlay cube and may be ra_deg/dec_deg,
-    # glon_deg/glat_deg, etc.
+    # depend on the WCS of the overlay cube and may be RA/DEC,
+    # GLON/GLAT, etc.
     coord_cols = [c for c in this_data.colnames
                   if c.endswith("_deg") and c not in ("incl_deg", "posang_deg")]
     if len(coord_cols) >= 2:
         col1_name, col2_name = coord_cols[0], coord_cols[1]
     else:
-        col1_name, col2_name = "ra_deg", "dec_deg"
+        col1_name, col2_name = "RA", "DEC"
 
     diff = abs(np.nansum(this_data[col1_name] - samp_ra * au.deg)) + abs(
         np.nansum(this_data[col2_name] - samp_dec * au.deg)
