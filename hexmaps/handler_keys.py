@@ -64,7 +64,7 @@ CUBE_COLUMNS = [
     "map_ext",
     "map_uc",
 ]
-MASK_COLUMNS_VEL  = ["mask_name", "mask_desc", "mask_start", "mask_end", "mask_unit"]
+MASK_COLUMNS_VEL = ["mask_name", "mask_desc", "mask_start", "mask_end", "mask_unit"]
 MASK_COLUMNS_FILE = ["mask_name", "mask_desc", "mask_ext", "mask_dir"]
 # Columns for noise-estimation velocity windows (same layout as MASK_COLUMNS_VEL)
 NOISE_MASK_COLUMNS = ["mask_name", "mask_desc", "mask_start", "mask_end", "mask_unit"]
@@ -130,8 +130,8 @@ class KeyHandler:
         self.source_table = None
         self.maps = None
         self.cubes = None
-        self.input_mask  = None
-        self.noise_mask  = None
+        self.input_mask = None
+        self.noise_mask = None
         self.hfs_data = None
 
         self.load()
@@ -566,9 +566,7 @@ class KeyHandler:
                 "This key must be explicitly set — there is no default value."
             )
         self.sources = [
-            s.strip()
-            for s in cfg["sources"]["sources"].split(",")
-            if s.strip()
+            s.strip() for s in cfg["sources"]["sources"].split(",") if s.strip()
         ]
 
         # Overlay file extension — mandatory
@@ -715,8 +713,8 @@ class KeyHandler:
         correct source distance), so the values set here are a best estimate
         available from config-load time onward.
         """
-        resolution   = self.meta.get("resolution", "angular")
-        target_res   = float(self.meta.get("target_res", 27.0))
+        resolution = self.meta.get("resolution", "angular")
+        target_res = float(self.meta.get("target_res", 27.0))
 
         # First source's distance for physical mode and pc conversion.
         if self.source_table is not None and len(self.source_table) > 0:
@@ -738,7 +736,7 @@ class KeyHandler:
 
         elif resolution == "native":
             # Try to read BMAJ/BMIN from the overlay FITS header.
-            data_dir     = self.meta.get("data_dir", "data/")
+            data_dir = self.meta.get("data_dir", "data/")
             overlay_file = self.meta.get("overlay_file", "")
             target_res_as = None
 
@@ -752,6 +750,7 @@ class KeyHandler:
                     if os.path.exists(overlay_fname):
                         try:
                             from astropy.io import fits as _fits
+
                             ov_hdr = _fits.getheader(overlay_fname)
                             candidate = (
                                 max(ov_hdr.get("BMIN", 0), ov_hdr.get("BMAJ", 0))
@@ -789,9 +788,9 @@ class KeyHandler:
         else:
             res_suffix = str(np.round(target_res_as, 1)).replace(".", "p") + "as"
 
-        self.meta["target_res"]    = target_res_as
+        self.meta["target_res"] = target_res_as
         self.meta["target_res_pc"] = target_res_pc
-        self.meta["res_suffix"]    = res_suffix
+        self.meta["res_suffix"] = res_suffix
 
     def _load_hfs_key(self):
         """

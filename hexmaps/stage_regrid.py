@@ -99,20 +99,21 @@ def _ensure_ms(hdr, data=None):
 
     return hdr, data
 
+
 # def _fix_gildas_header(hdr):
 #     """Fix common GILDAS/CLASS FITS header issues for astropy compatibility."""
 #     hdr = hdr.copy()
-    
+
 #     # Fix 1: GLS -> SFL (affects both cubes)
 #     for key in ['CTYPE1', 'CTYPE2']:
 #         if 'GLS' in hdr.get(key, ''):
 #             hdr[key] = hdr[key].replace('GLS', 'SFL')
-    
+
 #     # Fix 2: CRPIX3 = 0 (only source cube, but check both)
 #     if hdr.get('CRPIX3', 1) == 0.0:
 #         hdr['CRVAL3'] = hdr['CRVAL3'] + hdr['CDELT3']
 #         hdr['CRPIX3'] = 1.0
-    
+
 #     return hdr
 
 # def _harmonize_restfreq(hdr_in, hdr_target):
@@ -363,8 +364,10 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
                 "Edge trim radius is <= 0 pixels; no hex grid edge removal applied."
             )
         else:
-            LOG.info("FOV erosion disabled (fov_erosion_beams = 0); "
-                     "full footprint used for hex grid.")
+            LOG.info(
+                "FOV erosion disabled (fov_erosion_beams = 0); "
+                "full footprint used for hex grid."
+            )
 
     pixels_per_beam = meta.get("pixels_per_beam", 2.0)
     max_rad = meta.get("max_rad", "auto")
@@ -641,7 +644,9 @@ def sample_mask(in_data, ra_samp, dec_samp, in_hdr=None, target_hdr=None):
         if is_cube:
             data, _ = reproject_cube((data, hdr_out), trg_hdr, order="nearest-neighbor")
         else:
-            data, _ = reproject_interp((data, hdr_out), trg_hdr, order="nearest-neighbor")
+            data, _ = reproject_interp(
+                (data, hdr_out), trg_hdr, order="nearest-neighbor"
+            )
 
     wcs_t = WCS(trg_hdr)
     if is_cube:
@@ -806,7 +811,9 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
                 str(map_entry["map_dir"]), source + str(map_entry["map_uc"])
             )
             if path.exists(uc_file):
-                input_headers["EMAP_" + map_entry["map_name"].upper()] = fits.getheader(uc_file)
+                input_headers["EMAP_" + map_entry["map_name"].upper()] = fits.getheader(
+                    uc_file
+                )
                 uc_int, _ = sample_at_res(
                     uc_file,
                     samp_ra,
@@ -863,7 +870,9 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
         if map_ext and map_ext not in ("nan", ""):
             b2d_file = path.join(str(cube["line_dir"]), source + map_ext)
             if path.exists(b2d_file):
-                input_headers["MAP_" + cube["line_name"].upper()] = fits.getheader(b2d_file)
+                input_headers["MAP_" + cube["line_name"].upper()] = fits.getheader(
+                    b2d_file
+                )
                 b2d, _ = sample_at_res(
                     b2d_file,
                     samp_ra,
@@ -883,7 +892,9 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
         if map_uc and map_uc not in ("nan", ""):
             uc_file = path.join(str(cube["line_dir"]), source + map_uc)
             if path.exists(uc_file):
-                input_headers["EMAP_" + cube["line_name"].upper()] = fits.getheader(uc_file)
+                input_headers["EMAP_" + cube["line_name"].upper()] = fits.getheader(
+                    uc_file
+                )
                 uc, _ = sample_at_res(
                     uc_file,
                     samp_ra,
@@ -979,9 +990,9 @@ def _build_fname(source, meta):
     The resolution suffix is read from ``meta["res_suffix"]`` which is set
     by handler_keys._resolve_resolution and kept current by run_sampling.
     """
-    out_dir    = meta.get("out_dir", "output/")
+    out_dir = meta.get("out_dir", "output/")
     res_suffix = meta.get("res_suffix", "27p0as")
-    date_str   = date.today().strftime("%Y_%m_%d")
+    date_str = date.today().strftime("%Y_%m_%d")
     return os.path.join(out_dir, f"{source}_hexmaps_{res_suffix}_{date_str}.ecsv")
 
 

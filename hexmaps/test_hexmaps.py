@@ -83,8 +83,8 @@ class TestKeyHandler:
         from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
-        assert kh.meta["target_res"] == 27.0       # arcsec
-        assert kh.meta["target_res_pc"] > 0         # parsec — positive
+        assert kh.meta["target_res"] == 27.0  # arcsec
+        assert kh.meta["target_res_pc"] > 0  # parsec — positive
         assert kh.meta["res_suffix"] == "27p0as"
 
     def test_resolve_resolution_suffix_physical(self, tmp_path):
@@ -99,7 +99,7 @@ class TestKeyHandler:
 
         kh = KeyHandler(str(conf_path))
         assert kh.meta["res_suffix"].endswith("pc")
-        assert kh.meta["target_res"] > 0            # converted to arcsec
+        assert kh.meta["target_res"] > 0  # converted to arcsec
         assert kh.meta["target_res_pc"] == pytest.approx(100.0, rel=1e-3)
 
     def test_find_output_fname_discovers_existing_file(self, tmp_path):
@@ -110,24 +110,30 @@ class TestKeyHandler:
         import os
         from hexmaps.handler_pipeline import PipelineHandler
 
-        handler = PipelineHandler(conf_path=str(tmp_path / "config.txt"),
-                                  verbose=False) if False else None
+        handler = (
+            PipelineHandler(conf_path=str(tmp_path / "config.txt"), verbose=False)
+            if False
+            else None
+        )
 
         conf_path = self._write_minimal_config(tmp_path)
         from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
-        out_dir    = kh.meta["out_dir"]
+        out_dir = kh.meta["out_dir"]
         res_suffix = kh.meta["res_suffix"]
         os.makedirs(out_dir, exist_ok=True)
 
         # Write a fake .ecsv with an older date
-        existing = os.path.join(out_dir, f"ngc5194_hexmaps_{res_suffix}_2024_01_01.ecsv")
+        existing = os.path.join(
+            out_dir, f"ngc5194_hexmaps_{res_suffix}_2024_01_01.ecsv"
+        )
         with open(existing, "w") as f:
             f.write("# fake ecsv\n")
 
         # _find_output_fname should discover this file without needing regrid
         from hexmaps.handler_pipeline import PipelineHandler
+
         handler = PipelineHandler(conf_path=str(conf_path), verbose=False)
         found = handler._find_output_fname("ngc5194")
         assert found == existing
@@ -136,11 +142,14 @@ class TestKeyHandler:
     # Mandatory-key error tests
     # ------------------------------------------------------------------
 
-    @pytest.mark.parametrize("missing_key,section,replace_line", [
-        ("target_res",   "resolution", "target_res = 27.0"),
-        ("resolution",   "resolution", "resolution = angular"),
-        ("ref_line",     "masking",    "ref_line = first"),
-    ])
+    @pytest.mark.parametrize(
+        "missing_key,section,replace_line",
+        [
+            ("target_res", "resolution", "target_res = 27.0"),
+            ("resolution", "resolution", "resolution = angular"),
+            ("ref_line", "masking", "ref_line = first"),
+        ],
+    )
     def test_mandatory_setting_raises_on_missing_key(
         self, tmp_path, missing_key, section, replace_line
     ):
@@ -153,6 +162,7 @@ class TestKeyHandler:
         conf_path.write_text(text)
 
         from hexmaps.handler_keys import KeyHandler
+
         with pytest.raises(KeyError, match="Mandatory key"):
             KeyHandler(str(conf_path))
 
@@ -161,12 +171,11 @@ class TestKeyHandler:
         [sources] / sources is mandatory; omitting it must raise a KeyError.
         """
         conf_path = self._write_minimal_config(tmp_path)
-        text = conf_path.read_text().replace(
-            "[sources]\nsources = ngc5194\n", ""
-        )
+        text = conf_path.read_text().replace("[sources]\nsources = ngc5194\n", "")
         conf_path.write_text(text)
 
         from hexmaps.handler_keys import KeyHandler
+
         with pytest.raises(KeyError, match="Mandatory key"):
             KeyHandler(str(conf_path))
 
@@ -181,6 +190,7 @@ class TestKeyHandler:
         conf_path.write_text(text)
 
         from hexmaps.handler_keys import KeyHandler
+
         with pytest.raises(KeyError, match="Mandatory key"):
             KeyHandler(str(conf_path))
 
@@ -257,20 +267,20 @@ class TestKeyHandler:
         fits.writeto(str(tmp_path / "testsrc_12co21.fits"), cube, hdr)
 
         base_meta = {
-            "data_dir":        str(tmp_path),
-            "out_dir":         str(tmp_path),
-            "overlay_file":    "_12co21.fits",
+            "data_dir": str(tmp_path),
+            "out_dir": str(tmp_path),
+            "overlay_file": "_12co21.fits",
             "pixels_per_beam": 2.0,
-            "max_rad":         "auto",
+            "max_rad": "auto",
         }
         dist_mpc = 10.0
         params = {
-            "ra_ctr":    10.0,
-            "dec_ctr":   20.0,
-            "dist_mpc":  dist_mpc,
-            "incl_deg":  0.0,
+            "ra_ctr": 10.0,
+            "dec_ctr": 20.0,
+            "dist_mpc": dist_mpc,
+            "incl_deg": 0.0,
             "posang_deg": 0.0,
-            "r25":       0.05,
+            "r25": 0.05,
         }
 
         # angular: target_res in arcsec; target_res_pc computed from distance
@@ -285,8 +295,14 @@ class TestKeyHandler:
         meta = {**base_meta, "resolution": "physical", "target_res": 100.0}
         run_sampling("testsrc", params, meta)
         expected_as = 3600.0 * 180.0 / np.pi * 1e-6 * 100.0 / dist_mpc
-        assert abs(meta["target_res"] - expected_as) < 0.01    # now in arcsec
-        assert abs(meta["target_res_pc"] - expected_as / 3600.0 * np.pi / 180.0 * dist_mpc * 1e6) < 0.01
+        assert abs(meta["target_res"] - expected_as) < 0.01  # now in arcsec
+        assert (
+            abs(
+                meta["target_res_pc"]
+                - expected_as / 3600.0 * np.pi / 180.0 * dist_mpc * 1e6
+            )
+            < 0.01
+        )
         assert meta["res_suffix"] == "100pc"
 
         # native: target_res = BMAJ = 30 arcsec; target_res_pc from distance
@@ -908,10 +924,19 @@ class TestStageFits:
         raw_path = tmp_path / "testsrc_co.fits"
         fits.writeto(str(raw_path), cube, hdr)
 
-        meta = {"target_res": 27.0, "target_res_pc": 1000.0,
-                "resolution": "angular", "res_suffix": "27p0as"}
+        meta = {
+            "target_res": 27.0,
+            "target_res_pc": 1000.0,
+            "resolution": "angular",
+            "res_suffix": "27p0as",
+        }
         data, _ = get_convolved_ppv_cube(
-            "testsrc", "co", str(tmp_path), "_co.fits", meta, hdr,
+            "testsrc",
+            "co",
+            str(tmp_path),
+            "_co.fits",
+            meta,
+            hdr,
         )
         assert data.shape == (nv, ny, nx)
 
@@ -923,12 +948,22 @@ class TestStageFits:
         hdr["NAXIS"] = 3
         hdr["NAXIS1"], hdr["NAXIS2"], hdr["NAXIS3"] = 3, 3, 2
 
-        meta = {"target_res": 27.0, "target_res_pc": 1000.0,
-                "resolution": "angular", "res_suffix": "27p0as"}
+        meta = {
+            "target_res": 27.0,
+            "target_res_pc": 1000.0,
+            "resolution": "angular",
+            "res_suffix": "27p0as",
+        }
         with pytest.raises(FileNotFoundError):
             get_convolved_ppv_cube(
-                "testsrc", "co", str(tmp_path), ".fits", meta, hdr,
+                "testsrc",
+                "co",
+                str(tmp_path),
+                ".fits",
+                meta,
+                hdr,
             )
+
 
 # ---------------------------------------------------------------------------
 # utils.table_utils

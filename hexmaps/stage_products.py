@@ -535,7 +535,10 @@ def run_products(source, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
             hex_noise_mask[:n_pts_l] if hex_noise_mask is not None else None
         )
         mom_maps = get_mom_maps(
-            this_spec, active_mask, this_vaxis, mom_calc,
+            this_spec,
+            active_mask,
+            this_vaxis,
+            mom_calc,
             noise_mask=line_noise_mask,
         )
         line_desc = str(cubes["line_desc"].iloc[jj])

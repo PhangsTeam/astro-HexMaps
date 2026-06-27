@@ -475,16 +475,17 @@ def build_noise_mask(noise_mask_df, vaxis, shape):
 
     for _, row in noise_mask_df.iterrows():
         try:
-            mask_unit  = str(row["mask_unit"]).strip()
+            mask_unit = str(row["mask_unit"]).strip()
             mask_start = float(row["mask_start"]) * _au.Unit(mask_unit)
-            mask_end   = float(row["mask_end"])   * _au.Unit(mask_unit)
+            mask_end = float(row["mask_end"]) * _au.Unit(mask_unit)
             vaxis_conv = vaxis.to(_au.Unit(mask_unit))
-            window     = (vaxis_conv >= mask_start) & (vaxis_conv <= mask_end)
-            chan_mask  |= window.value if hasattr(window, "value") else np.asarray(window)
+            window = (vaxis_conv >= mask_start) & (vaxis_conv <= mask_end)
+            chan_mask |= (
+                window.value if hasattr(window, "value") else np.asarray(window)
+            )
         except Exception as e:
             LOG.warning(
-                f"Could not parse noise velocity window row "
-                f"{row.to_dict()} — {e}"
+                f"Could not parse noise velocity window row " f"{row.to_dict()} — {e}"
             )
 
     if not chan_mask.any():

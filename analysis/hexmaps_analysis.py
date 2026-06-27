@@ -201,7 +201,12 @@ class HexMapsAnalysis:
             plt.show()
 
     def quickplot_spectrum(
-        self, line: str, idx: int = None, show_mask: bool = True, show_rms: bool = True, ax=None
+        self,
+        line: str,
+        idx: int = None,
+        show_mask: bool = True,
+        show_rms: bool = True,
+        ax=None,
     ):
         """
         Plot a single spectrum from the native velocity grid.
@@ -430,8 +435,10 @@ class HexMapsAnalysis:
         """
         raw = self.struct.meta.get("config_file", "")
         if not raw:
-            print("[WARNING] No config_file entry found in the database metadata. "
-                  "This file may have been produced by an older pipeline version.")
+            print(
+                "[WARNING] No config_file entry found in the database metadata. "
+                "This file may have been produced by an older pipeline version."
+            )
             return ""
 
         # Decode the newline escape used when storing in the ECSV header
@@ -439,6 +446,7 @@ class HexMapsAnalysis:
 
         if save_to is not None:
             from pathlib import Path
+
             Path(save_to).write_text(content, encoding="utf-8")
             print(f"[INFO] Config file written to {save_to}")
 
@@ -470,9 +478,7 @@ class HexMapsAnalysis:
         """
         prefix = "input_header_"
         return sorted(
-            k[len(prefix):]
-            for k in self.struct.meta
-            if k.startswith(prefix)
+            k[len(prefix) :] for k in self.struct.meta if k.startswith(prefix)
         )
 
     def get_input_header(self, label: str):
@@ -515,7 +521,7 @@ class HexMapsAnalysis:
         # Accept both the bare label and the full meta key
         if label.startswith("input_header_"):
             key = label
-            label = label[len("input_header_"):]
+            label = label[len("input_header_") :]
         else:
             key = f"input_header_{label}"
 

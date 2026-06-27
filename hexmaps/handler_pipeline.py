@@ -314,18 +314,16 @@ class PipelineHandler:
         physical 100 pc    → ngc5194_hexmaps_100pc_2025_06_01.ecsv
         native 12.8 arcsec → ngc5194_hexmaps_12p8as_2025_06_01.ecsv
         """
-        meta       = self.key_handler.meta
-        out_dir    = meta.get("out_dir", "output/")
+        meta = self.key_handler.meta
+        out_dir = meta.get("out_dir", "output/")
         res_suffix = meta.get("res_suffix", "27p0as")
-        date_str   = date.today().strftime("%Y_%m_%d")
-        fname      = os.path.join(
-            out_dir, f"{source}_hexmaps_{res_suffix}_{date_str}.ecsv"
-        )
+        date_str = date.today().strftime("%Y_%m_%d")
+        fname = os.path.join(out_dir, f"{source}_hexmaps_{res_suffix}_{date_str}.ecsv")
 
         # In archive mode, bump the version number if the file already exists
         if "archive" in meta.get("structure_creation", "") and os.path.exists(fname):
             version = 1
-            base    = fname[:-5]
+            base = fname[:-5]
             while os.path.exists(f"{base}_v{version}.ecsv"):
                 version += 1
             fname = f"{base}_v{version}.ecsv"
@@ -344,11 +342,12 @@ class PipelineHandler:
         after a prior regrid just works without needing to supply the date.
         """
         import glob
-        meta       = self.key_handler.meta
-        out_dir    = meta.get("out_dir", "output/")
+
+        meta = self.key_handler.meta
+        out_dir = meta.get("out_dir", "output/")
         res_suffix = meta.get("res_suffix", "27p0as")
-        pattern    = os.path.join(out_dir, f"{source}_hexmaps_{res_suffix}_*.ecsv")
-        matches    = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
+        pattern = os.path.join(out_dir, f"{source}_hexmaps_{res_suffix}_*.ecsv")
+        matches = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
         if matches:
             LOG_LOADING.info(f"Found existing database for {source}: {matches[0]}")
             return matches[0]

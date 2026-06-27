@@ -877,20 +877,19 @@ from astropy.io import fits
 from astropy.wcs import WCS, FITSFixedWarning
 from reproject import reproject_interp
 
-
 # ─── Internal helpers ────────────────────────────────────────────────────────
+
 
 def _extract_data_header(input_data, hdu_in):
     """Return (ndarray, Header) from any input type accepted by reproject_interp."""
-    if isinstance(input_data, (str,)) or hasattr(input_data, '__fspath__'):
+    if isinstance(input_data, (str,)) or hasattr(input_data, "__fspath__"):
         with fits.open(input_data) as hdul:
             hdu = hdul[hdu_in]
             return hdu.data.copy(), hdu.header.copy()
     if isinstance(input_data, fits.HDUList):
         hdu = input_data[hdu_in]
         return hdu.data.copy(), hdu.header.copy()
-    if isinstance(input_data, (fits.PrimaryHDU, fits.ImageHDU,
-                               fits.CompImageHDU)):
+    if isinstance(input_data, (fits.PrimaryHDU, fits.ImageHDU, fits.CompImageHDU)):
         return input_data.data.copy(), input_data.header.copy()
     if isinstance(input_data, tuple) and len(input_data) == 2:
         arr, meta = input_data
@@ -898,18 +897,18 @@ def _extract_data_header(input_data, hdu_in):
             return np.asarray(arr), meta.copy()
         # WCS object — convert to a minimal header
         hdr = meta.to_header(relax=True)
-        hdr['NAXIS'] = arr.ndim
+        hdr["NAXIS"] = arr.ndim
         for i, n in enumerate(np.asarray(arr).shape[::-1], 1):
-            hdr[f'NAXIS{i}'] = n
+            hdr[f"NAXIS{i}"] = n
         return np.asarray(arr), hdr
     # NDData
-    if hasattr(input_data, 'data') and hasattr(input_data, 'wcs'):
+    if hasattr(input_data, "data") and hasattr(input_data, "wcs"):
         hdr = input_data.wcs.to_header(relax=True)
-        hdr['NAXIS'] = input_data.data.ndim
+        hdr["NAXIS"] = input_data.data.ndim
         for i, n in enumerate(input_data.data.shape[::-1], 1):
-            hdr[f'NAXIS{i}'] = n
+            hdr[f"NAXIS{i}"] = n
         return np.asarray(input_data.data), hdr
-    raise TypeError(f'Unsupported input_data type: {type(input_data)}')
+    raise TypeError(f"Unsupported input_data type: {type(input_data)}")
 
 
 def _extract_output_header(output_projection, shape_out):
@@ -918,9 +917,9 @@ def _extract_output_header(output_projection, shape_out):
         return output_projection.copy()
     hdr = output_projection.to_header(relax=True)
     if shape_out is not None:
-        hdr['NAXIS'] = len(shape_out)
+        hdr["NAXIS"] = len(shape_out)
         for i, n in enumerate(shape_out[::-1], 1):
-            hdr[f'NAXIS{i}'] = n
+            hdr[f"NAXIS{i}"] = n
     return hdr
 
 
@@ -933,13 +932,13 @@ def _fix_gls(hdr):
     - CRPIX3 = 0 → CRPIX3 = 1, CRVAL3 shifted by one CDELT3
       (FITS pixel coordinates are 1-based; CLASS writes 0)
     """
-    for key in ('CTYPE1', 'CTYPE2'):
-        val = str(hdr.get(key, ''))
-        if 'GLS' in val:
-            hdr[key] = val.strip().replace('GLS', 'SFL')
-    if 'CRPIX3' in hdr and float(hdr['CRPIX3']) == 0.0:
-        hdr['CRVAL3'] = float(hdr['CRVAL3']) + float(hdr['CDELT3'])
-        hdr['CRPIX3'] = 1.0
+    for key in ("CTYPE1", "CTYPE2"):
+        val = str(hdr.get(key, ""))
+        if "GLS" in val:
+            hdr[key] = val.strip().replace("GLS", "SFL")
+    if "CRPIX3" in hdr and float(hdr["CRPIX3"]) == 0.0:
+        hdr["CRVAL3"] = float(hdr["CRVAL3"]) + float(hdr["CDELT3"])
+        hdr["CRPIX3"] = 1.0
     return hdr
 
 
@@ -951,10 +950,10 @@ def _restfreq(hdr):
     and ``RESTFRQ`` (the 8-character FITS standard keyword) so that neither
     spelling is silently missed.
     """
-    if 'RESTFREQ' in hdr:
-        return float(hdr['RESTFREQ'])
-    if 'RESTFRQ' in hdr:
-        return float(hdr['RESTFRQ'])
+    if "RESTFREQ" in hdr:
+        return float(hdr["RESTFREQ"])
+    if "RESTFRQ" in hdr:
+        return float(hdr["RESTFRQ"])
     return None
 
 
@@ -971,10 +970,10 @@ def _normalize_spectral_ctype(hdr):
       when one cube has been fixed and the other hasn't)
     - ``VELOCITY``  → ``VRAD``  (another informal alias)
     """
-    _VELO_ALIASES = {'VELO-LSR', 'VELO-HEL', 'VELO-OBS', 'VELOCITY'}
-    ctype3 = str(hdr.get('CTYPE3', '')).strip().upper()
+    _VELO_ALIASES = {"VELO-LSR", "VELO-HEL", "VELO-OBS", "VELOCITY"}
+    ctype3 = str(hdr.get("CTYPE3", "")).strip().upper()
     if ctype3 in _VELO_ALIASES:
-        hdr['CTYPE3'] = 'VRAD'
+        hdr["CTYPE3"] = "VRAD"
     return hdr
 
 
@@ -985,10 +984,10 @@ def _velo_grid(hdr):
     Uses the standard FITS linear WCS: v[i] = CRVAL3 + (i+1 - CRPIX3)*CDELT3
     (channels are 1-based in FITS).
     """
-    n     = int(hdr['NAXIS3'])
-    crval = float(hdr['CRVAL3'])
-    cdelt = float(hdr['CDELT3'])
-    crpix = float(hdr['CRPIX3'])
+    n = int(hdr["NAXIS3"])
+    crval = float(hdr["CRVAL3"])
+    cdelt = float(hdr["CDELT3"])
+    crpix = float(hdr["CRPIX3"])
     return crval + (np.arange(1, n + 1) - crpix) * cdelt
 
 
@@ -996,25 +995,28 @@ def _spatial_footprints_overlap(src_hdr, tgt_hdr):
     """Return True if at least one corner of the source falls inside the target."""
     try:
         with warnings.catch_warnings():
-            warnings.simplefilter('ignore', FITSFixedWarning)
+            warnings.simplefilter("ignore", FITSFixedWarning)
             wcs_s = WCS(src_hdr).celestial
             wcs_t = WCS(tgt_hdr).celestial
-        ny = int(src_hdr['NAXIS2'])
-        nx = int(src_hdr['NAXIS1'])
+        ny = int(src_hdr["NAXIS2"])
+        nx = int(src_hdr["NAXIS1"])
         corners = np.array([[0, 0], [nx, 0], [0, ny], [nx, ny]], float)
-        sky    = wcs_s.pixel_to_world(corners[:, 0], corners[:, 1])
+        sky = wcs_s.pixel_to_world(corners[:, 0], corners[:, 1])
         px, py = wcs_t.world_to_pixel(sky)
         inside = (
-            np.isfinite(px) & np.isfinite(py)
-            & (px >= 0) & (px <= tgt_hdr['NAXIS1'])
-            & (py >= 0) & (py <= tgt_hdr['NAXIS2'])
+            np.isfinite(px)
+            & np.isfinite(py)
+            & (px >= 0)
+            & (px <= tgt_hdr["NAXIS1"])
+            & (py >= 0)
+            & (py <= tgt_hdr["NAXIS2"])
         )
         return bool(inside.any())
     except Exception:
         return False
 
 
-def _resample_spectral_axis(cube, v_in, v_out, kind='linear'):
+def _resample_spectral_axis(cube, v_in, v_out, kind="linear"):
     """
     Resample *cube* (shape: n_in × ny × nx) along axis 0 from the velocity
     grid *v_in* onto *v_out*.
@@ -1033,23 +1035,24 @@ def _resample_spectral_axis(cube, v_in, v_out, kind='linear'):
     out : ndarray, shape (n_out, ny, nx)
         Channels outside *v_in* are NaN.
     """
-    n_out      = len(v_out)
-    ny, nx     = cube.shape[1], cube.shape[2]
-    out        = np.full((n_out, ny, nx), np.nan, dtype=np.float64)
+    n_out = len(v_out)
+    ny, nx = cube.shape[1], cube.shape[2]
+    out = np.full((n_out, ny, nx), np.nan, dtype=np.float64)
 
     # Only interpolate pixels that have at least one finite value
-    has_data   = np.any(np.isfinite(cube), axis=0)   # (ny, nx)
-    ys, xs     = np.where(has_data)
+    has_data = np.any(np.isfinite(cube), axis=0)  # (ny, nx)
+    ys, xs = np.where(has_data)
     if len(ys) == 0:
         return out
 
     # Replace NaN with 0 for the interpolator (NaN-aware interp1d is slow);
     # the footprint mask will handle the spatial NaN correctly afterwards.
-    spectra    = cube[:, ys, xs].copy()              # (n_in, n_valid)
+    spectra = cube[:, ys, xs].copy()  # (n_in, n_valid)
     spectra[~np.isfinite(spectra)] = 0.0
 
-    interp     = scipy.interpolate.interp1d(
-        v_in, spectra,
+    interp = scipy.interpolate.interp1d(
+        v_in,
+        spectra,
         axis=0,
         kind=kind,
         bounds_error=False,
@@ -1060,8 +1063,16 @@ def _resample_spectral_axis(cube, v_in, v_out, kind='linear'):
     return out
 
 
-def _reproject_2d_planes(data, src_hdr, tgt_hdr, order, roundtrip_coords,
-                          block_size, parallel, spectral_order):
+def _reproject_2d_planes(
+    data,
+    src_hdr,
+    tgt_hdr,
+    order,
+    roundtrip_coords,
+    block_size,
+    parallel,
+    spectral_order,
+):
     """
     Reproject a 3-D cube by:
       1. Reprojecting each spatial plane onto the target spatial grid.
@@ -1072,33 +1083,34 @@ def _reproject_2d_planes(data, src_hdr, tgt_hdr, order, roundtrip_coords,
     """
     # Build pure 2-D spatial headers (celestial only, no spectral axis)
     with warnings.catch_warnings():
-        warnings.simplefilter('ignore', FITSFixedWarning)
+        warnings.simplefilter("ignore", FITSFixedWarning)
         src_hdr_2d = WCS(src_hdr).celestial.to_header()
         tgt_hdr_2d = WCS(tgt_hdr).celestial.to_header()
 
     for h, ref in ((src_hdr_2d, src_hdr), (tgt_hdr_2d, tgt_hdr)):
-        h['NAXIS']  = 2
-        h['NAXIS1'] = ref['NAXIS1']
-        h['NAXIS2'] = ref['NAXIS2']
+        h["NAXIS"] = 2
+        h["NAXIS1"] = ref["NAXIS1"]
+        h["NAXIS2"] = ref["NAXIS2"]
 
     # ── Step 1: spatial reprojection ────────────────────────────────────────
     n_src_chan = data.shape[0]
-    ny_out     = int(tgt_hdr['NAXIS2'])
-    nx_out     = int(tgt_hdr['NAXIS1'])
-    spatial    = np.full((n_src_chan, ny_out, nx_out), np.nan, dtype=np.float64)
-    footprint  = np.zeros((n_src_chan, ny_out, nx_out), dtype=np.float64)
+    ny_out = int(tgt_hdr["NAXIS2"])
+    nx_out = int(tgt_hdr["NAXIS1"])
+    spatial = np.full((n_src_chan, ny_out, nx_out), np.nan, dtype=np.float64)
+    footprint = np.zeros((n_src_chan, ny_out, nx_out), dtype=np.float64)
 
     for i in range(n_src_chan):
         plane_hdu = fits.PrimaryHDU(data=data[i], header=src_hdr_2d)
         plane_out, plane_fp = reproject_interp(
-            plane_hdu, tgt_hdr_2d,
+            plane_hdu,
+            tgt_hdr_2d,
             order=order,
             roundtrip_coords=roundtrip_coords,
             block_size=block_size,
             parallel=parallel,
             return_footprint=True,
         )
-        spatial[i]   = plane_out
+        spatial[i] = plane_out
         footprint[i] = plane_fp
 
     # ── Step 2: spectral resampling onto target velocity grid ────────────────
@@ -1108,21 +1120,31 @@ def _reproject_2d_planes(data, src_hdr, tgt_hdr, order, roundtrip_coords,
     out_arr = _resample_spectral_axis(spatial, v_src, v_tgt, kind=spectral_order)
 
     # Resample footprint the same way (nearest is fine for a binary mask)
-    out_fp  = _resample_spectral_axis(footprint, v_src, v_tgt, kind='nearest')
-    out_fp  = np.where(np.isfinite(out_fp), out_fp, 0.0)
+    out_fp = _resample_spectral_axis(footprint, v_src, v_tgt, kind="nearest")
+    out_fp = np.where(np.isfinite(out_fp), out_fp, 0.0)
 
     return out_arr, out_fp
 
 
 # ─── Public API ──────────────────────────────────────────────────────────────
 
-def reproject_cube(input_data, output_projection, shape_out=None,
-                    hdu_in=0, order='bilinear', roundtrip_coords=True,
-                    output_array=None, output_footprint=None,
-                    return_footprint=True, block_size=None,
-                    parallel=False, return_type=None, 
-                    # dask_method=None,
-                    spectral_order='linear'):
+
+def reproject_cube(
+    input_data,
+    output_projection,
+    shape_out=None,
+    hdu_in=0,
+    order="bilinear",
+    roundtrip_coords=True,
+    output_array=None,
+    output_footprint=None,
+    return_footprint=True,
+    block_size=None,
+    parallel=False,
+    return_type=None,
+    # dask_method=None,
+    spectral_order="linear",
+):
     """
     Drop-in replacement for ``reproject.reproject_interp`` with automatic
     fixes for various historic FITS cube conventions (e.g. GILDAS/CLASS).
@@ -1214,7 +1236,7 @@ def reproject_cube(input_data, output_projection, shape_out=None,
     """
     # -- Extract arrays and headers ------------------------------------------
     data, src_hdr = _extract_data_header(input_data, hdu_in)
-    tgt_hdr       = _extract_output_header(output_projection, shape_out)
+    tgt_hdr = _extract_output_header(output_projection, shape_out)
 
     # -- Apply header fixes to both headers ----------------------------------
     src_hdr = _fix_gls(src_hdr)
@@ -1225,30 +1247,40 @@ def reproject_cube(input_data, output_projection, shape_out=None,
     # -- Decide whether we need the 2-D + spectral-resample path -------------
     is_3d = (
         data.ndim == 3
-        and int(src_hdr.get('NAXIS', data.ndim)) == 3
-        and int(tgt_hdr.get('NAXIS', 3)) == 3
+        and int(src_hdr.get("NAXIS", data.ndim)) == 3
+        and int(tgt_hdr.get("NAXIS", 3)) == 3
     )
 
     use_2d_path = False
     if is_3d:
         rf_src = _restfreq(src_hdr)
         rf_tgt = _restfreq(tgt_hdr)
-        if (rf_src is not None and rf_tgt is not None
-                and not np.isclose(rf_src, rf_tgt, rtol=1e-6)):
+        if (
+            rf_src is not None
+            and rf_tgt is not None
+            and not np.isclose(rf_src, rf_tgt, rtol=1e-6)
+        ):
             use_2d_path = True
 
     # -- 2-D spatial + spectral resample path --------------------------------
     if use_2d_path:
         out_arr, out_fp = _reproject_2d_planes(
-            data, src_hdr, tgt_hdr,
-            order, roundtrip_coords, block_size, parallel, spectral_order,
+            data,
+            src_hdr,
+            tgt_hdr,
+            order,
+            roundtrip_coords,
+            block_size,
+            parallel,
+            spectral_order,
         )
         return (out_arr, out_fp) if return_footprint else out_arr
 
     # -- Standard path (GLS already fixed) -----------------------------------
     fixed_hdu = fits.PrimaryHDU(data=data, header=src_hdr)
     result = reproject_interp(
-        fixed_hdu, tgt_hdr,
+        fixed_hdu,
+        tgt_hdr,
         shape_out=shape_out,
         order=order,
         roundtrip_coords=roundtrip_coords,
@@ -1258,17 +1290,24 @@ def reproject_cube(input_data, output_projection, shape_out=None,
         block_size=block_size,
         parallel=parallel,
         return_type=return_type,
-        #dask_method=dask_method,
+        # dask_method=dask_method,
     )
 
     # -- Safety net: fall back if still all-NaN despite spatial overlap ------
     if is_3d:
         arr_check = result[0] if return_footprint else result
-        if (np.isnan(arr_check).mean() > 0.99
-                and _spatial_footprints_overlap(src_hdr, tgt_hdr)):
+        if np.isnan(arr_check).mean() > 0.99 and _spatial_footprints_overlap(
+            src_hdr, tgt_hdr
+        ):
             out_arr, out_fp = _reproject_2d_planes(
-                data, src_hdr, tgt_hdr,
-                order, roundtrip_coords, block_size, parallel, spectral_order,
+                data,
+                src_hdr,
+                tgt_hdr,
+                order,
+                roundtrip_coords,
+                block_size,
+                parallel,
+                spectral_order,
             )
             return (out_arr, out_fp) if return_footprint else out_arr
 

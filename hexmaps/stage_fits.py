@@ -126,7 +126,9 @@ def get_convolved_ppv_cube(
         )
 
     data, hdr = fits.getdata(raw_path, header=True)
-    data, hdr = convolve_cube_to_target(data, hdr, meta.get("target_res", 27.0), log=log)
+    data, hdr = convolve_cube_to_target(
+        data, hdr, meta.get("target_res", 27.0), log=log
+    )
     data, hdr = reproject_cube_to_overlay(data, hdr, ov_hdr, log=log)
     return data, hdr
 
@@ -193,7 +195,9 @@ def reproject_map_to_overlay(data, hdr, ov_hdr, log=None):
     return data, trg_hdr
 
 
-def get_convolved_map(source, map_name, map_dir, map_ext, target_res_as, ov_hdr, log=None):
+def get_convolved_map(
+    source, map_name, map_dir, map_ext, target_res_as, ov_hdr, log=None
+):
     """
     Obtain a convolved 2-D map for *map_name*, reprojected onto the overlay WCS.
 
@@ -235,7 +239,9 @@ def get_convolved_map(source, map_name, map_dir, map_ext, target_res_as, ov_hdr,
     if "BMAJ" not in hdr:
         log.warning(f"No BMAJ in header for {map_name}; skipping convolution.")
     elif hdr["BMAJ"] >= 0.99 * target_res_as / 3600.0:
-        log.info(f"Map {map_name} already at or above target resolution; skipping convolution.")
+        log.info(
+            f"Map {map_name} already at or above target resolution; skipping convolution."
+        )
     else:
         data, hdr = conv_with_gauss(
             in_data=data,
@@ -510,7 +516,9 @@ def get_mom_maps_ppv(cube, mask, vaxis, mom_calc, noise_mask=None):
         else None
     )
 
-    mom_maps_pts = get_mom_maps(cube_pts, mask_pts, vaxis, mom_calc, noise_mask=noise_pts)
+    mom_maps_pts = get_mom_maps(
+        cube_pts, mask_pts, vaxis, mom_calc, noise_mask=noise_pts
+    )
 
     mom_maps = {}
     for key, val in mom_maps_pts.items():
@@ -627,8 +635,15 @@ def build_edge_mask(ov_footprint, ov_hdr, target_res_as, fov_erosion_beams=0.5):
 
 
 def run_moments_ppv(
-    source, meta, cubes, input_mask, hfs_data, params, folder,
-    save_mask=False, noise_mask_df=None
+    source,
+    meta,
+    cubes,
+    input_mask,
+    hfs_data,
+    params,
+    folder,
+    save_mask=False,
+    noise_mask_df=None,
 ):
     """
     Compute and write PPV-native moment maps for every cube of *source*.
@@ -788,7 +803,9 @@ def run_moments_ppv(
     # grid extent.
     # ------------------------------------------------------------------
     edge_mask = build_edge_mask(
-        ov_footprint, ov_hdr, target_res_as,
+        ov_footprint,
+        ov_hdr,
+        target_res_as,
         fov_erosion_beams=meta.get("fov_erosion_beams", 0.5),
     )
 
@@ -878,14 +895,11 @@ def run_moments_ppv(
 
     if save_mask:
         save_ppv_mask_to_fits(
-            mask, 
-            ov_hdr, 
-            source, 
-            "mask", 
-            folder, 
-            out_nan_mask=out_nan_mask
+            mask, ov_hdr, source, "mask", folder, out_nan_mask=out_nan_mask
         )
-        LOG.info(f"PPV mask cube written to: {os.path.join(folder, f'{source}_mask.fits')}")
+        LOG.info(
+            f"PPV mask cube written to: {os.path.join(folder, f'{source}_mask.fits')}"
+        )
 
     # ------------------------------------------------------------------
     # Compute and write moments for every line.
@@ -911,7 +925,9 @@ def run_moments_ppv(
                         folder,
                         out_nan_mask=out_nan_mask,
                     )
-                    LOG.info(f"PPV mask cube for {line_name} written to: {os.path.join(folder, f'{source}_{hfs_mask_name}.fits')}")
+                    LOG.info(
+                        f"PPV mask cube for {line_name} written to: {os.path.join(folder, f'{source}_{hfs_mask_name}.fits')}"
+                    )
 
         mom_maps = get_mom_maps_ppv(
             cube_data[line_name.upper()],
@@ -920,8 +936,7 @@ def run_moments_ppv(
             mom_calc,
             noise_mask=(
                 build_noise_mask(
-                    _noise_mask_df, vaxis,
-                    cube_data[line_name.upper()].shape
+                    _noise_mask_df, vaxis, cube_data[line_name.upper()].shape
                 )
                 if _noise_mask_df is not None
                 else None
@@ -956,24 +971,33 @@ def run_moments_ppv(
             hdr_out["LINE"] = meta.get("line_desc", line_desc)
             hdr_out["BTYPE"] = quantity
             res_suffix = meta.get("res_suffix", "27p0as")
-            fname_fits = os.path.join(folder, f"{source}_{line_name}_{res_suffix}_{quantity}.fits")
+            fname_fits = os.path.join(
+                folder, f"{source}_{line_name}_{res_suffix}_{quantity}.fits"
+            )
             data_out = (
                 arr.value.copy()
                 if hasattr(arr, "value")
                 else np.asarray(arr, dtype=float).copy()
             )
             data_out[out_nan_mask] = np.nan
-            hdr_out["COMMENT"] = 'Created with HexMaps pipeline stage_fits.py'
+            hdr_out["COMMENT"] = "Created with HexMaps pipeline stage_fits.py"
             hdr_out["COMMENT"] = f'Author: {meta.get("user")}'
-            hdr_out["COMMENT"] = 'Created on: ' + date.today().strftime("%Y_%m_%d")
+            hdr_out["COMMENT"] = "Created on: " + date.today().strftime("%Y_%m_%d")
             fits.writeto(fname_fits, data=data_out, header=hdr_out, overwrite=True)
 
         LOG.info(f"Compute moment maps and write to file for line: {line_name}.")
 
 
 def run_fits(
-    source, fname, meta, maps, cubes, params,
-    input_mask=None, hfs_data=None, noise_mask_df=None
+    source,
+    fname,
+    meta,
+    maps,
+    cubes,
+    params,
+    input_mask=None,
+    hfs_data=None,
+    noise_mask_df=None,
 ):
     """
     Write FITS moment maps, 2D map images, and mask cube(s) for *source*.
@@ -1010,9 +1034,9 @@ def run_fits(
                 (required if use_hfs_lines is set)
     """
     save_mom_maps = meta.get("save_mom_maps", True)
-    save_maps     = meta.get("save_maps", True)
-    save_mask     = meta.get("save_mask", True)
-    save_cubes    = meta.get("save_cubes", True)
+    save_maps = meta.get("save_maps", True)
+    save_mask = meta.get("save_mask", True)
+    save_cubes = meta.get("save_cubes", True)
     folder = meta.get("folder_savefits", "./saved_fits_files/")
 
     if not (save_mom_maps or save_maps or save_mask or save_cubes):
@@ -1127,7 +1151,9 @@ def run_fits(
     # ------------------------------------------------------------------
     if save_maps:
         _edge = build_edge_mask(
-            ov_footprint, ov_hdr, target_res_as,
+            ov_footprint,
+            ov_hdr,
+            target_res_as,
             fov_erosion_beams=meta.get("fov_erosion_beams", 0.5),
         )
         _out_nan = ~(ov_footprint & _edge.astype(bool))
@@ -1135,18 +1161,25 @@ def run_fits(
 
         for _, map_row in maps.iterrows():
             map_name = str(map_row["map_name"])
-            map_dir  = str(map_row["map_dir"])
-            map_ext  = str(map_row["map_ext"])
-            map_uc   = str(map_row.get("map_uc", "")).strip()
+            map_dir = str(map_row["map_dir"])
+            map_ext = str(map_row["map_ext"])
+            map_uc = str(map_row.get("map_uc", "")).strip()
 
             # --- primary map ---
             try:
                 map_data, map_hdr = get_convolved_map(
-                    source, map_name, map_dir, map_ext,
-                    target_res_as, ov_hdr, log=LOG,
+                    source,
+                    map_name,
+                    map_dir,
+                    map_ext,
+                    target_res_as,
+                    ov_hdr,
+                    log=LOG,
                 )
                 map_data = np.where(_out_nan, np.nan, map_data)
-                fname_map = os.path.join(folder, f"{source}_{map_name}_{res_suffix}.fits")
+                fname_map = os.path.join(
+                    folder, f"{source}_{map_name}_{res_suffix}.fits"
+                )
                 fits.writeto(fname_map, data=map_data, header=map_hdr, overwrite=True)
             except FileNotFoundError:
                 LOG.warning(f"Skipping map {map_name}: raw input file not found.")
@@ -1156,14 +1189,21 @@ def run_fits(
             if map_uc and map_uc not in ("nan", ""):
                 try:
                     unc_data, unc_hdr = get_convolved_map(
-                        source, map_name, map_dir, map_uc,
-                        target_res_as, ov_hdr, log=LOG,
+                        source,
+                        map_name,
+                        map_dir,
+                        map_uc,
+                        target_res_as,
+                        ov_hdr,
+                        log=LOG,
                     )
                     unc_data = np.where(_out_nan, np.nan, unc_data)
                     fname_unc = os.path.join(
                         folder, f"{source}_{map_name}_{res_suffix}_err.fits"
                     )
-                    fits.writeto(fname_unc, data=unc_data, header=unc_hdr, overwrite=True)
+                    fits.writeto(
+                        fname_unc, data=unc_data, header=unc_hdr, overwrite=True
+                    )
                 except FileNotFoundError:
                     LOG.warning(
                         f"Skipping uncertainty map for {map_name}: "
@@ -1181,7 +1221,9 @@ def run_fits(
     # ------------------------------------------------------------------
     if save_cubes:
         _edge = build_edge_mask(
-            ov_footprint, ov_hdr, target_res_as,
+            ov_footprint,
+            ov_hdr,
+            target_res_as,
             fov_erosion_beams=meta.get("fov_erosion_beams", 0.5),
         )
         _out_nan = ~(ov_footprint & _edge.astype(bool))
@@ -1213,8 +1255,7 @@ def run_fits(
             cube_fits_path = os.path.join(
                 folder, f"{source}_{row['line_name']}_{res_suffix}.fits"
             )
-            fits.writeto(cube_fits_path, data=cube_data,
-                         header=out_hdr, overwrite=True)
+            fits.writeto(cube_fits_path, data=cube_data, header=out_hdr, overwrite=True)
             LOG.info(f"Convolved cube written to: {cube_fits_path}")
 
 
