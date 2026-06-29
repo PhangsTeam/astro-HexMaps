@@ -47,7 +47,7 @@ folder_savefits = ./saved_fits_files/
 
 
 # -----------------------------------------------------------------------------
-# [sources] / [overlay] / maps / cubes / mask — what to process (was data_key.txt)
+# [sources] / [overlay] / maps / cubes / mask — what to process
 # -----------------------------------------------------------------------------
 # SECTION [sources]   : comma-separated list of sources to process
 # SECTION [overlay]   : extension of the overlay FITS file (used to define the
@@ -108,8 +108,7 @@ spire250,  SPIRE 250 um,      MJy/sr,  _spire250_gauss21.fits,  data/
 
 # -----------------------------------------------------------------------------
 # [resolution] / [masking] / [spectral] / [output] / [structure]
-# (was config_key.txt) — all values have sensible defaults; only override
-# what you need.
+#  - all values have sensible defaults; only override what you need.
 # -----------------------------------------------------------------------------
 
 [resolution]
