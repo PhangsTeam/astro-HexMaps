@@ -75,7 +75,7 @@ from scipy.ndimage import label, binary_erosion
 from skimage.morphology import disk
 from datetime import date
 
-from hexmaps.utils_fits import twod_head, conv_with_gauss, reproject_cube
+from hexmaps.utils_fits import twod_head, conv_with_gauss, reproject_cube, resolve_meta_resolution
 from hexmaps.stage_regrid import _ensure_ms, _get_vaxis
 from hexmaps.utils_table import get_mom_maps, build_noise_mask
 
@@ -844,9 +844,10 @@ def run_moments_ppv(
     ov_data, ov_hdr = fits.getdata(overlay_fname, header=True)
     ov_hdr, _ = _ensure_ms(copy.copy(ov_hdr))
 
-    # Resolve target resolution now that ov_hdr is available (needed for
-    # native mode, which reads BMAJ/BMIN directly from the overlay header).
-    target_res_as = _resolve_target_res(params, meta, ov_hdr=ov_hdr)
+    # Resolve per-source target resolution in-place so res_suffix and
+    # target_res are correct for this source regardless of which stages ran.
+    resolve_meta_resolution(source, params, meta, ov_hdr=ov_hdr, log=LOG)
+    target_res_as = meta["target_res"]
 
     delta_v_kms = (
         (ov_hdr["CDELT3"] * au.Unit(ov_hdr.get("CUNIT3", "m/s"))).to(au.km / au.s).value
@@ -1205,9 +1206,12 @@ def run_fits(
     LOG.info(f"Overlay file: {overlay_fname}")
     ov_cube, ov_hdr = fits.getdata(overlay_fname, header=True)
 
-    # Resolve target resolution now that ov_hdr is available (needed for
-    # native mode, which reads BMAJ/BMIN directly from the overlay header).
-    target_res_as = _resolve_target_res(params, meta, ov_hdr=ov_hdr)
+    # Resolve per-source target resolution (target_res, target_res_pc,
+    # res_suffix) from the overlay header and source params.  This handles
+    # all three modes (angular / physical / native) correctly without
+    # requiring the regrid stage to have run first.
+    resolve_meta_resolution(source, params, meta, ov_hdr=ov_hdr, log=LOG)
+    target_res_as = meta["target_res"]
 
     # Build the overlay footprint: True wherever at least one spectral channel
     # is finite. Used as the authoritative NaN/valid mask for all output files.

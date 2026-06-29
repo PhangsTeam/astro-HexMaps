@@ -345,60 +345,12 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
     ov_footprint = np.sum(np.isfinite(ov_cube), axis=0) >= 1
     mask_hdr = twod_head(ov_hdr)
 
-    # ------------------------------------------------------------------
-    # Resolve the target resolution for this source.
-    # Logged here, per source, after the overlay file is open.
-    # ------------------------------------------------------------------
-    resolution = meta.get("resolution", "angular")
-    dist_mpc = float(params.get("dist_mpc", 1.0))
-
-    if resolution == "native":
-        # Read the beam size from this source's overlay header, replacing
-        # the placeholder set at config-load time.
-        candidate = max(ov_hdr.get("BMIN", 0), ov_hdr.get("BMAJ", 0)) * 3600.0
-        if candidate > 0:
-            target_res_as = candidate
-            LOG.info(
-                f"[{source}] Native resolution: {target_res_as:.1f} arcsec "
-                f"(from {path.basename(overlay_fname)})."
-            )
-        else:
-            target_res_as = meta.get("target_res", 27.0)
-            LOG.warning(
-                f"[{source}] Native resolution: no BMAJ/BMIN in overlay header; "
-                f"using placeholder {target_res_as:.1f} arcsec."
-            )
-
-    elif resolution == "physical":
-        # Re-convert pc → arcsec using this source's distance.
-        # meta["target_res_config"] holds the original pc value from config;
-        # meta["target_res"] holds the arcsec estimate from load time.
-        target_res_pc_config = meta.get("target_res_config",
-                                        meta.get("target_res", 27.0))
-        target_res_as = (
-            3600.0 * 180.0 / np.pi * 1e-6 * target_res_pc_config / dist_mpc
-        )
-        LOG.info(
-            f"[{source}] Physical resolution: "
-            f"{target_res_pc_config:.1f} pc = {target_res_as:.1f} arcsec "
-            f"(distance {dist_mpc:.2f} Mpc)."
-        )
-
-    else:
-        # Angular: config value is already in arcseconds — use as-is.
-        target_res_as = meta.get("target_res", 27.0)
-        LOG.info(f"[{source}] Angular resolution: {target_res_as:.1f} arcsec.")
-
-    # Update meta with per-source-correct values so all downstream steps
-    # (run_regrid, stage_products, stage_fits) see the right resolution.
-    import math as _math
-    meta["target_res"]    = target_res_as
-    meta["target_res_pc"] = target_res_as / 3600.0 * _math.pi / 180.0 * dist_mpc * 1e6
-    if resolution == "physical":
-        meta["res_suffix"] = str(int(round(meta.get("target_res_config",
-                                           target_res_as)))) + "pc"
-    else:
-        meta["res_suffix"] = str(np.round(target_res_as, 1)).replace(".", "p") + "as"
+    # Resolve per-source target resolution (target_res, target_res_pc,
+    # res_suffix) — single authoritative implementation shared with the
+    # fits stage so both stages always compute the same values.
+    from hexmaps.utils_fits import resolve_meta_resolution
+    resolve_meta_resolution(source, params, meta, ov_hdr=ov_hdr, log=LOG)
+    target_res_as = meta["target_res"]
     # Apply configurable FOV erosion to the hex grid footprint so that the
     # hex grid and all FITS products share the same effective footprint.
     # fov_erosion_beams is read from meta (set by handler_keys); default 0.5

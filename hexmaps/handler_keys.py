@@ -768,6 +768,7 @@ class KeyHandler:
         self.meta["target_res"]    = target_res_as
         self.meta["target_res_pc"] = target_res_pc
         self.meta["res_suffix"]    = res_suffix
+        
     def _load_hfs_key(self):
         """
         Load the optional keys/hfs_lines.txt file.

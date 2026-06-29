@@ -1312,3 +1312,87 @@ def reproject_cube(
             return (out_arr, out_fp) if return_footprint else out_arr
 
     return result
+
+
+def resolve_meta_resolution(source, params, meta, ov_hdr=None, log=None):
+    """
+    Resolve the per-source target resolution and write the results back into
+    *meta* in-place.
+
+    This is the single authoritative implementation used by all pipeline
+    stages (regrid, products, fits) to ensure ``meta["target_res"]``,
+    ``meta["target_res_pc"]``, and ``meta["res_suffix"]`` are correct for
+    *source* before any stage-specific processing begins.
+
+    Parameters
+    ----------
+    source  : str — source name (used only in log messages)
+    params  : dict — source geometry from SourceHandler.get_source_params()
+    meta    : dict — pipeline settings; updated in-place
+    ov_hdr  : FITS Header or None — overlay cube header; required for
+              ``resolution == "native"`` to read BMAJ/BMIN.  When None
+              and the resolution is native, a warning is logged and the
+              existing placeholder value is kept.
+    log     : logger, optional
+
+    Updated meta keys
+    -----------------
+    target_res    : float — target beam FWHM in arcseconds
+    target_res_pc : float — target beam FWHM in parsecs
+    res_suffix    : str   — filename suffix, e.g. "27p0as" or "100pc"
+    """
+    import math as _math
+    if log is None:
+        log = get_logger("Loading")
+
+    resolution = meta.get("resolution", "angular")
+    dist_mpc   = float(params.get("dist_mpc", 1.0))
+
+    if resolution == "native":
+        if ov_hdr is not None:
+            candidate = max(ov_hdr.get("BMIN", 0), ov_hdr.get("BMAJ", 0)) * 3600.0
+            if candidate > 0:
+                target_res_as = candidate
+                log.info(
+                    f"[{source}] Native resolution: {target_res_as:.1f} arcsec "
+                    f"(from overlay header)."
+                )
+            else:
+                target_res_as = meta.get("target_res", 27.0)
+                log.warning(
+                    f"[{source}] Native resolution: no BMAJ/BMIN in overlay header; "
+                    f"using placeholder {target_res_as:.1f} arcsec."
+                )
+        else:
+            target_res_as = meta.get("target_res", 27.0)
+            log.warning(
+                f"[{source}] Native resolution: overlay header not available; "
+                f"using placeholder {target_res_as:.1f} arcsec."
+            )
+
+    elif resolution == "physical":
+        target_res_pc_config = meta.get("target_res_config",
+                                        meta.get("target_res", 27.0))
+        target_res_as = (
+            3600.0 * 180.0 / _math.pi * 1e-6 * target_res_pc_config / dist_mpc
+        )
+        log.info(
+            f"[{source}] Physical resolution: "
+            f"{target_res_pc_config:.1f} pc = {target_res_as:.1f} arcsec "
+            f"(distance {dist_mpc:.2f} Mpc)."
+        )
+
+    else:
+        target_res_as = meta.get("target_res", 27.0)
+        log.info(f"[{source}] Angular resolution: {target_res_as:.1f} arcsec.")
+
+    meta["target_res"]    = target_res_as
+    meta["target_res_pc"] = target_res_as / 3600.0 * _math.pi / 180.0 * dist_mpc * 1e6
+    if resolution == "physical":
+        meta["res_suffix"] = (
+            str(int(round(meta.get("target_res_config", target_res_as)))) + "pc"
+        )
+    else:
+        meta["res_suffix"] = (
+            str(np.round(target_res_as, 1)).replace(".", "p") + "as"
+        )
