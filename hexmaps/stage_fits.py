@@ -840,7 +840,7 @@ def run_moments_ppv(
     if not os.path.exists(overlay_fname):
         LOG.error(f"Overlay file not found: {overlay_fname}")
         raise FileNotFoundError(f"Overlay file not found: {overlay_fname}")
-    LOG.info(f"Overlay file: {overlay_fname}")
+    #LOG.info(f"Overlay file: {overlay_fname}")
     ov_data, ov_hdr = fits.getdata(overlay_fname, header=True)
     ov_hdr, _ = _ensure_ms(copy.copy(ov_hdr))
 

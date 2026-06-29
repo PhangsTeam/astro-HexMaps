@@ -278,8 +278,13 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
     Steps
     -----
     1. Load the overlay FITS cube and check it is 3-D.
-    2. Determine the target resolution in arcseconds (angular, physical, or
-       native mode).
+    2. Determine the target resolution in arcseconds for this source:
+
+       * ``angular``  — use ``meta["target_res"]`` directly (arcseconds).
+       * ``physical`` — convert ``meta["target_res_config"]`` (parsecs) to
+                        arcseconds using this source's ``dist_mpc``.
+       * ``native``   — read BMAJ/BMIN from this source's overlay header.
+
     3. Collapse the cube along the spectral axis to create a binary footprint
        mask (True where at least one channel is finite).
     4. Build the hexagonal grid centred on the source and clip it to the mask.
@@ -337,11 +342,63 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
     # Build the footprint mask and generate the hex grid
     # ------------------------------------------------------------------
     # The mask is True wherever at least one spectral channel is finite.
-    # This clips the grid to the mapped area without relying on a separate mask file.
     ov_footprint = np.sum(np.isfinite(ov_cube), axis=0) >= 1
     mask_hdr = twod_head(ov_hdr)
-    target_res_as = meta.get("target_res", 27.0)
 
+    # ------------------------------------------------------------------
+    # Resolve the target resolution for this source.
+    # Logged here, per source, after the overlay file is open.
+    # ------------------------------------------------------------------
+    resolution = meta.get("resolution", "angular")
+    dist_mpc = float(params.get("dist_mpc", 1.0))
+
+    if resolution == "native":
+        # Read the beam size from this source's overlay header, replacing
+        # the placeholder set at config-load time.
+        candidate = max(ov_hdr.get("BMIN", 0), ov_hdr.get("BMAJ", 0)) * 3600.0
+        if candidate > 0:
+            target_res_as = candidate
+            LOG.info(
+                f"[{source}] Native resolution: {target_res_as:.1f} arcsec "
+                f"(from {path.basename(overlay_fname)})."
+            )
+        else:
+            target_res_as = meta.get("target_res", 27.0)
+            LOG.warning(
+                f"[{source}] Native resolution: no BMAJ/BMIN in overlay header; "
+                f"using placeholder {target_res_as:.1f} arcsec."
+            )
+
+    elif resolution == "physical":
+        # Re-convert pc → arcsec using this source's distance.
+        # meta["target_res_config"] holds the original pc value from config;
+        # meta["target_res"] holds the arcsec estimate from load time.
+        target_res_pc_config = meta.get("target_res_config",
+                                        meta.get("target_res", 27.0))
+        target_res_as = (
+            3600.0 * 180.0 / np.pi * 1e-6 * target_res_pc_config / dist_mpc
+        )
+        LOG.info(
+            f"[{source}] Physical resolution: "
+            f"{target_res_pc_config:.1f} pc = {target_res_as:.1f} arcsec "
+            f"(distance {dist_mpc:.2f} Mpc)."
+        )
+
+    else:
+        # Angular: config value is already in arcseconds — use as-is.
+        target_res_as = meta.get("target_res", 27.0)
+        LOG.info(f"[{source}] Angular resolution: {target_res_as:.1f} arcsec.")
+
+    # Update meta with per-source-correct values so all downstream steps
+    # (run_regrid, stage_products, stage_fits) see the right resolution.
+    import math as _math
+    meta["target_res"]    = target_res_as
+    meta["target_res_pc"] = target_res_as / 3600.0 * _math.pi / 180.0 * dist_mpc * 1e6
+    if resolution == "physical":
+        meta["res_suffix"] = str(int(round(meta.get("target_res_config",
+                                           target_res_as)))) + "pc"
+    else:
+        meta["res_suffix"] = str(np.round(target_res_as, 1)).replace(".", "p") + "as"
     # Apply configurable FOV erosion to the hex grid footprint so that the
     # hex grid and all FITS products share the same effective footprint.
     # fov_erosion_beams is read from meta (set by handler_keys); default 0.5
@@ -372,7 +429,7 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
     pixels_per_beam = meta.get("pixels_per_beam", 2.0)
     max_rad = meta.get("max_rad", "auto")
     # Spacing in degrees: one beam FWHM divided by pixels_per_beam
-    spacing = meta.get("target_res", 27.0) / 3600.0 / float(pixels_per_beam)
+    spacing = target_res_as / 3600.0 / float(pixels_per_beam)
 
     samp_ra, samp_dec = make_sampling_points(
         ra_ctr=params["ra_ctr"],
