@@ -844,9 +844,6 @@ def run_moments_ppv(
     ov_data, ov_hdr = fits.getdata(overlay_fname, header=True)
     ov_hdr, _ = _ensure_ms(copy.copy(ov_hdr))
 
-    # Resolve per-source target resolution in-place so res_suffix and
-    # target_res are correct for this source regardless of which stages ran.
-    resolve_meta_resolution(source, params, meta, ov_hdr=ov_hdr, log=LOG)
     target_res_as = meta["target_res"]
 
     delta_v_kms = (
@@ -1216,38 +1213,6 @@ def run_fits(
     # Build the overlay footprint: True wherever at least one spectral channel
     # is finite. Used as the authoritative NaN/valid mask for all output files.
     ov_footprint = np.any(np.isfinite(ov_cube), axis=0)  # (ny, nx) bool
-
-    # ------------------------------------------------------------------
-    # Determine target resolution in arcseconds
-    # ------------------------------------------------------------------
-    resolution = meta.get("resolution", "angular")
-    target_res = meta.get("target_res", 27.0)
-
-    if resolution == "native":
-        # Use the native beam of the overlay cube
-        target_res_as = max(ov_hdr.get("BMIN", 0), ov_hdr.get("BMAJ", 0)) * 3600.0
-        LOG.info(f"Native resolution: {target_res_as:.1f} arcsec.")
-    elif resolution == "physical":
-        # Convert target_res (parsecs) to arcseconds using the source distance
-        dist_mpc = params.get("dist_mpc", 1.0)
-        target_res_as = 3600.0 * 180.0 / np.pi * 1e-6 * float(target_res) / dist_mpc
-        LOG.info(
-            f"Physical resolution: {target_res} pc "
-            f"= {target_res_as:.1f} arcsec at {dist_mpc} Mpc."
-        )
-    else:
-        # Angular: use target_res directly in arcseconds
-        target_res_as = float(target_res)
-        LOG.info(f"Angular resolution: {target_res_as:.1f} arcsec.")
-
-    # Write resolved values back into meta:
-    #   meta["target_res"]    → always arcseconds (single source of truth for math)
-    #   meta["target_res_pc"] → always parsecs (for display/filenames/physical analysis)
-    # Both are computed from target_res_as and the source distance (dist_mpc).
-    dist_mpc = params.get("dist_mpc", 1.0)
-    target_res_pc = target_res_as / 3600.0 * np.pi / 180.0 * dist_mpc * 1e6
-    meta["target_res"] = target_res_as
-    meta["target_res_pc"] = target_res_pc
 
     # ------------------------------------------------------------------
     # Moment maps — PPV-native, NOT from the hex-grid .ecsv table.

@@ -1354,19 +1354,19 @@ def resolve_meta_resolution(source, params, meta, ov_hdr=None, log=None):
             if candidate > 0:
                 target_res_as = candidate
                 log.info(
-                    f"[{source}] Native resolution: {target_res_as:.1f} arcsec "
+                    f"Native resolution: {target_res_as:.1f} arcsec "
                     f"(from overlay header)."
                 )
             else:
                 target_res_as = meta.get("target_res", 27.0)
                 log.warning(
-                    f"[{source}] Native resolution: no BMAJ/BMIN in overlay header; "
+                    f"Native resolution: no BMAJ/BMIN in overlay header; "
                     f"using placeholder {target_res_as:.1f} arcsec."
                 )
         else:
             target_res_as = meta.get("target_res", 27.0)
             log.warning(
-                f"[{source}] Native resolution: overlay header not available; "
+                f"Native resolution: overlay header not available; "
                 f"using placeholder {target_res_as:.1f} arcsec."
             )
 
@@ -1377,14 +1377,14 @@ def resolve_meta_resolution(source, params, meta, ov_hdr=None, log=None):
             3600.0 * 180.0 / _math.pi * 1e-6 * target_res_pc_config / dist_mpc
         )
         log.info(
-            f"[{source}] Physical resolution: "
+            f"Physical resolution: "
             f"{target_res_pc_config:.1f} pc = {target_res_as:.1f} arcsec "
             f"(distance {dist_mpc:.2f} Mpc)."
         )
 
     else:
         target_res_as = meta.get("target_res", 27.0)
-        log.info(f"[{source}] Angular resolution: {target_res_as:.1f} arcsec.")
+        log.info(f"Angular resolution: {target_res_as:.1f} arcsec.")
 
     meta["target_res"]    = target_res_as
     meta["target_res_pc"] = target_res_as / 3600.0 * _math.pi / 180.0 * dist_mpc * 1e6
