@@ -623,6 +623,14 @@ def run_products(source, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
     # ------------------------------------------------------------------
     # Write enriched table back to disk
     # ------------------------------------------------------------------
+    # Update the embedded pipeline log so it covers both the regrid and
+    # products stages when they are run together.
+    from hexmaps.logger import logger as _logger
+    try:
+        this_data.meta["pipeline_log"] = _logger.as_text().replace("\n", "\\n")
+    except Exception as e:
+        LOG.warning(f"Could not update pipeline log in metadata: {e}")
+
     this_data.write(fname, format="ascii.ecsv", overwrite=True)
     LOG.info(f"Spectra processing complete for {source}.")
     LOG.info(f"Database written to: {fname}")

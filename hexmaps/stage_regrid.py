@@ -979,6 +979,17 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
         except Exception as e:
             LOG.warning(f"Could not serialise header for {label}: {e}")
 
+    # Store the complete pipeline log up to this point in the table metadata.
+    # Newlines are encoded as "\\n" (two characters) for the same ECSV
+    # round-trip reason as config_file. Decode with:
+    #   text = table.meta["pipeline_log"].replace("\\n", "\n")
+    from hexmaps.logger import logger as _logger
+    try:
+        this_data.meta["pipeline_log"] = _logger.as_text().replace("\n", "\\n")
+    except Exception as e:
+        LOG.warning(f"Could not embed pipeline log in metadata: {e}")
+        this_data.meta["pipeline_log"] = ""
+
     os.makedirs(meta.get("out_dir", "output/"), exist_ok=True)
     this_data.write(fname, format="ascii.ecsv", overwrite=True)
     LOG.info(f"Database written to: {fname}")

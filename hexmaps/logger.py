@@ -161,6 +161,24 @@ class PipelineLogger:
     # Output
     # ------------------------------------------------------------------
 
+    def as_text(self) -> str:
+        """
+        Return the full log history as a plain-text string.
+
+        Same format as ``save()`` — one line per record:
+            YYYY-MM-DD HH:MM:SS [Stage]   [LEVEL]   <message>
+
+        Returns
+        -------
+        str — the complete log output, with real newlines between lines.
+        """
+        lines = []
+        for r in self.records:
+            stage_field = f"[{r['stage']}]".ljust(_STAGE_COL_WIDTH)
+            level_field = f"[{r['level']}]".ljust(_LEVEL_COL_WIDTH)
+            lines.append(f"{r['time']} {stage_field}{level_field}{r['message']}")
+        return "\n".join(lines)
+
     def save(self, path: str):
         """
         Write the full log history to *path*, overwriting any existing file.

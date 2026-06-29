@@ -504,6 +504,53 @@ class HexMapsAnalysis:
 
         return content
 
+    def get_log(self, save_to: str = None) -> str:
+        """
+        Return the pipeline log that was embedded in the .ecsv at run time.
+
+        The log is stored in ``table.meta["pipeline_log"]`` as a single line
+        with newlines encoded as the two-character sequence ``\\n`` (same
+        encoding as ``config_file``).  This method decodes it back to the
+        original multi-line string.
+
+        Parameters
+        ----------
+        save_to : str, optional
+            If given, write the log content to this file path.
+
+        Returns
+        -------
+        str
+            The full pipeline log produced during the run that created this
+            database, or an empty string if the metadata key is absent
+            (e.g. files produced by an older pipeline version).
+
+        Examples
+        --------
+        >>> hm = HexMapsAnalysis("ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
+        >>> print(hm.get_log())
+        2025-01-01 12:00:00 [Loading]  [INFO]    Loading config file ...
+        ...
+        >>> hm.get_log(save_to="run.log")
+        """
+        raw = self.struct.meta.get("pipeline_log", "")
+        if not raw:
+            print(
+                "[WARNING] No pipeline_log entry found in the database metadata. "
+                "This file may have been produced by an older pipeline version."
+            )
+            return ""
+
+        # Decode the newline escape used when storing in the ECSV header
+        content = raw.replace("\\n", "\n")
+
+        if save_to is not None:
+            from pathlib import Path
+            Path(save_to).write_text(content, encoding="utf-8")
+            print(f"[INFO] Pipeline log written to {save_to}")
+
+        return content
+
     def list_input_headers(self) -> list:
         """
         Return the labels of all input FITS headers embedded in this database.
