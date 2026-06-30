@@ -1,0 +1,25 @@
+# =============================================================================
+# HexMaps target_definitions.txt
+# =============================================================================
+# Comma-separated table of source geometric parameters.
+# Spaces and tabs around each comma are ignored; so feel free to align
+# columns with extra whitespace for readability.
+# All sources that may ever be used should be listed here.
+# The sources actually processed are defined in config.txt [sources].
+#
+# Columns (comma-separated; no header row):
+#   source       - source name (must match the FITS filename prefix)
+#   ra_ctr       - RA of source centre (degrees; J2000)
+#   dec_ctr      - Dec of source centre (degrees; J2000)
+#   dist_mpc     - Distance (Mpc)
+#   e_dist_mpc   - Uncertainty on distance (Mpc)
+#   incl_deg     - Inclination (degrees)
+#   e_incl_deg   - Uncertainty on inclination (degrees)
+#   posang_deg   - Position angle (degrees; East of North)
+#   e_posang_deg - Uncertainty on position angle (degrees)
+#   r25          - Optical radius r25 (arcmin)
+#   e_r25        - Uncertainty on r25 (arcmin)
+# =============================================================================
+# source,   ra_ctr,     dec_ctr,    dist_mpc,   e_dist_mpc, incl_deg,   e_incl_deg, posang_deg, e_posang_deg,   r25,    e_r25
+ngc5194,	202.4696,   47.1952,    8.58,	    0.10,	    22.0,	    3.0,	    173.0,	    3.0,	        3.54,   0.05
+ngc5457,    210.8025,   54.3492,    6.70,       0.32,       18.0,       5.0,        39.0,       5.0,            13.46,  0.50

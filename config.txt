@@ -1,0 +1,229 @@
+# =============================================================================
+# HexMaps config.txt
+# =============================================================================
+# Single configuration file for a HexMaps run. Combines what used to be
+# master_key.txt + data_key.txt + config_key.txt.
+#
+# Run with:
+#   hexmaps --conf config.txt
+#
+# Two files are intentionally kept SEPARATE from this one, in a fixed `keys/`
+# subfolder next to this config.txt, because they change far less often than
+# everything below:
+#   keys/target_definitions.txt   — source geometry (RA, Dec, distance, ...)
+#   keys/hfs_lines.txt             — hyperfine structure line definitions (optional)
+#
+# Lines starting with '#' are comments.
+# =============================================================================
+
+[meta]
+# Your name — stored in the output table metadata
+user = Dr. Blocksberg
+
+# Free-form comment stored in the output table metadata
+comments = Example HexMaps run
+
+# -----------------------------------------------------------------------------
+# [paths] — data/output locations and metadata
+# -----------------------------------------------------------------------------
+[paths]
+# Directory containing the input FITS files
+data_dir = data/
+
+# Directory for output .ecsv HexMaps files
+out_dir = output/
+
+# Required: path to the source geometry table (RA, Dec, distance, ...).
+# Defaults to keys/target_definitions.txt next to this file if not set.
+# geom_file = keys/target_definitions.txt
+
+# Optional: path to hyperfine structure file (comment out if not needed)
+# Defaults to keys/hfs_lines.txt next to this file if not set, but is only
+# used if that file actually exists.
+# hfs_file = keys/hfs_lines.txt
+
+# Directory for output FITS maps
+folder_savefits = ./saved_fits_files/
+
+
+# -----------------------------------------------------------------------------
+# [sources] / [overlay] / maps / cubes / mask — what to process
+# -----------------------------------------------------------------------------
+# SECTION [sources]   : comma-separated list of sources to process
+# SECTION [overlay]   : extension of the overlay FITS file (used to define the
+#                       sampling grid and spectral axis)
+#
+# MAP TABLE (after "# ---- maps ----")
+#   col 1: short name (used as database key, e.g. MAP_SPIRE250)
+#   col 2: description
+#   col 3: units
+#   col 4: file extension  (source name is prepended automatically)
+#   col 5: directory
+#   col 6: uncertainty file extension (optional, leave blank if none)
+#
+# CUBE TABLE (after "# ---- cubes ----")
+#   col 1: short name (e.g. SPEC_12CO21)
+#   col 2: description
+#   col 3: units
+#   col 4: file extension
+#   col 5: directory
+#   col 6: 2D moment map extension (optional)
+#   col 7: 2D uncertainty extension (optional)
+#
+# MASK TABLE (after "# ---- mask ----")
+#   For file mask  : name, description, file_extension, directory
+#   For fixed-vel  : name, description, start_vel, end_vel, unit
+#   (leave section empty if no external mask is used)
+
+[sources]
+sources = ngc5194
+
+[overlay]
+overlay_file = _12co21.fits
+
+# ---- maps ----
+spire250,  SPIRE 250 um,      MJy/sr,  _spire250_gauss21.fits,  data/
+# Add more maps below, one per line:
+# w4,      WISE Band 4,       MJy/sr,  _w4_gauss21.fits,         data/
+
+# ---- cubes ----
+12co21,    12CO(2-1),          K,       _12co21.fits,            data/
+12co10,    12CO(1-0),          K,       _12co10.fits,            data/
+# Add more cubes below, one per line:
+# 13co21,  13CO(2-1),          K,       _13co21.fits,            data/
+
+# ---- mask ----
+# Example file mask (comment out if unused):
+# co_mask, CO signal mask, _co_mask.fits, data/
+#
+# Example fixed-velocity mask (comment out if unused):
+#vel_mask, Fixed velocity window, -100, 100, km/s
+
+# Example noise velocity windows (comment out if unused):
+# Specify one or more line-free velocity ranges for noise (RMS) estimation.
+# Multiple windows are combined (OR) into a single noise channel mask.
+#noise_mask, Noise window (blue), -200, -100, km/s
+#noise_mask, Noise window (red),   100,  200, km/s
+
+
+# -----------------------------------------------------------------------------
+# [resolution] / [masking] / [spectral] / [output] / [structure]
+#  - all values have sensible defaults; only override what you need.
+# -----------------------------------------------------------------------------
+
+[resolution]
+# Target angular resolution in arcseconds (used when resolution = angular)
+target_res = 27.0
+
+# How to interpret target_res:
+#   angular  - use target_res directly in arcseconds  (default)
+#   physical - convert target_res (in pc) to arcseconds using source distance
+#   native   - use the native resolution of the overlay image
+resolution = angular
+
+# Number of sampling points per beam diameter (default 2 = half-beam spacing)
+pixels_per_beam = 2
+
+# Maximum map radius in degrees.  Set to 'auto' to derive from the overlay.
+max_rad = auto
+
+# Spectral axis parameters for the shuffled spectra output
+NAXIS_shuff = 200
+CDELT_SHUFF = 4000.0
+
+
+[masking]
+# Reference line for mask construction:
+#   first        - use the first cube in the cube list above
+#   <LINE_NAME>  - use that specific line
+#   all          - use all cubes
+#   n            - use first n cubes
+#   ref+HI       - use first cube and HI
+ref_line         = first
+
+# Signal-to-noise thresholds for the two-step mask: [low, high]
+SN_processing = 2, 4
+
+# If true, apply a strict spatial consistency check on the mask
+strict_mask = false
+
+# Use an external mask FITS file defined in the [mask] table above
+use_input_mask = false
+
+# Use a fixed velocity window defined in the [mask] table above
+use_fixed_vel_mask = false
+
+# Use explicit velocity windows (noise_mask rows in the [mask] table) for
+# noise (RMS) estimation instead of using channels outside the signal mask.
+# Useful when the line-free baseline is contaminated by other lines.
+use_fixed_noise_mask = false
+
+# Use hyperfine structure correction (requires hfs_file in [paths])
+use_hfs_lines = false
+
+# FOV edge erosion: trim the effective field-of-view by this multiple of the
+# beam FWHM before computing moments and writing FITS outputs. This removes
+# pixels near the map edge where the convolution is unreliable because the
+# beam extends beyond the observed area.
+#
+#   0    — disable erosion entirely (keep full FOV)
+#   0.5  — default; trim by half a beam (conventional minimum safe margin)
+#   1.0  — conservative; trim by one full beam
+#
+# The same value is applied to both the hex-grid footprint and the FITS outputs
+# so they always share the same effective FOV.
+fov_erosion_beams = 0.5
+
+# S/N threshold for moment-1, moment-2, and EW computation
+mom_thresh = 5
+
+# Minimum number of consecutive channels above threshold for a valid mask
+conseq_channels = 3
+
+# Moment-2 output definition:
+#   fwhm  - convert sigma to FWHM  (default)
+#   sqrt  - return sqrt(mom2)
+#   math  - mathematical definition of moment 2
+mom2_method = fwhm
+
+
+[spectral]
+# Spectral smoothing mode:
+#   default  - no smoothing
+#   overlay  - smooth to spectral resolution of the overlay cube
+#   <float>  - convolve to this resolution in km/s
+spec_smooth = default
+
+# Method for spectral smoothing (when spec_smooth != default):
+#   binned    - bin channels to nearest integer ratio  (default)
+#   gauss     - Gaussian kernel convolution
+#   combined  - binned first, then Gaussian for the remainder
+spec_smooth_method = binned
+
+
+[output]
+# Save convolved PPV cubes as FITS files in the fits stage.
+# When true, each convolved cube is written to folder_savefits with the
+# filename pattern: {source}_{line_name}_{res_suffix}.fits
+save_cubes = true
+
+# Save moment maps as FITS files
+save_mom_maps = true
+
+# Save 2D map FITS files
+save_maps = true
+
+# Save the velocity-integration mask(s) as a 3D FITS cube (one file for the
+# combined SPEC_MASK, plus one per SPEC_MASK_<LINE> if present)
+save_mask = true
+
+
+[structure]
+# How to handle existing output files:
+#   default  - create / overwrite the output file each run
+#   fill     - open existing file and add missing maps/cubes
+#   archive  - create a new versioned copy each run (never overwrite)
+structure_creation = default
+
+# When structure_creation = fill, you can optionally pin the filename:
+# fname_fill = ngc5194_hexmaps_27p0as_2025_01_01.ecsv

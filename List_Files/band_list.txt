@@ -1,7 +1,0 @@
-# Column 1: short name of band
-# Column 2: description for database
-# Column 3: units
-# Column 4: extension
-# Column 5: path to files
-# Column 6: extension to uc file
-spire250,	SPIRE250,	MJy/sr,	_spire250_gauss21.fits,	./data/,	_spire250_gauss21_unc.fits
