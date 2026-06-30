@@ -1,219 +1,496 @@
-<!-- Improved compatibility of back to top link: See: https://github.com/othneildrew/Best-README-Template/pull/73 -->
+<<<<<<< HEAD
+<!-- back-to-top anchor -->
 <a name="readme-top"></a>
-<!--
-*** Thanks for checking out the Best-README-Template. If you have a suggestion
-*** that would make this better, please fork the repo and create a pull request
-*** or simply open an issue with the tag "enhancement".
-*** Don't forget to give the project a star!
-*** Thanks again! Now go create something AMAZING! :D
--->
 
+<!-- PROJECT LOGO -->
+<br />
+<div align="center">
+  <!-- <a href="https://github.com/lukas-neumann-astro/PyStructure">
+    <img src="images/logo.png" alt="Logo" width="250" height="300">
+  </a> -->
 
+  <h3 align="center">HexMaps</h3>
 
-<!-- PROJECT SHIELDS -->
-<!--
-*** I'm using markdown "reference style" links for readability.
-*** Reference links are enclosed in brackets [ ] instead of parentheses ( ).
-*** See the bottom of this document for the declaration of the reference variables
-*** for contributors-url, forks-url, etc. This is an optional, concise syntax you may use.
-*** https://www.markdownguide.org/basic-syntax/#reference-style-links
--->
+  <p align="center">
+    Hexagonal-grid Multi-data Analysis and Processing Software
+    <br />
+    <a href="https://hexmaps.readthedocs.io/en/latest/"><strong>Explore the docs »</strong></a>
+    <br /><br />
+    <a href="https://hexmaps.readthedocs.io/en/latest/quickstart.html">View Demo</a>
+    ·
+    <a href="https://github.com/lukas-neumann-astro/PyStructure/issues">Report Bug</a>
+    ·
+    <a href="https://github.com/lukas-neumann-astro/PyStructure/issues">Request Feature</a>
+  </p>
+</div>
+
 [![Contributors][contributors-shield]][contributors-url]
 [![Forks][forks-shield]][forks-url]
 [![Stargazers][stars-shield]][stars-url]
 [![Issues][issues-shield]][issues-url]
 [![MIT License][license-shield]][license-url]
 
+---
 
+## About the Project
 
-<!-- PROJECT LOGO -->
-<br />
-<div align="center">
-  <a href="https://github.com/jdenbrok/PyStructure">
-    <img src="images/logo.png" alt="Logo" width="100" height="100">
-  </a>
+[![HexMaps screenshot][product-screenshot]](https://hexmaps.readthedocs.io/en/latest/)
 
-<h3 align="center">PyStructure Code</h3>
+**HexMaps** is a Python package for homogenizing and analysing
+multi-wavelength astronomical datasets on hexagonal grids. It is ideally
+suited for combining a heterogeneous set of 2D maps and 3D spectral cubes
+observed at different angular resolutions and pixel scales into a single,
+science-ready table for sightline-by-sightline analysis.
 
-  <p align="center">
-    Python-based script ideally suited to homogenize and work with a multitude of different 3D or 2D astronomical datasets.
-    <br />
-    <a href="https://pystructure.readthedocs.io/en/latest/"><strong>Explore the docs »</strong></a>
-    <br />
-    <br />
-    <a href="https://pystructure.readthedocs.io/en/latest/quickstart.html">View Demo</a>
-    ·
-    <a href="https://github.com/jdenbrok/PyStructure/issues">Report Bug</a>
-    ·
-    <a href="https://github.com/jdenbrok/PyStructure/issues">Request Feature</a>
-  </p>
-</div>
+Given a set of input data, HexMaps:
 
+1. **Regrids** all maps and cubes onto a common hexagonal sampling grid at a
+   user-specified angular resolution, convolving each dataset to a common
+   beam.
+2. **Processes** each spectral cube: builds an S/N mask from a reference line,
+   then computes moment maps (integrated intensity, mean velocity, line width,
+   peak temperature, rms, equivalent width) and shuffled spectra for every
+   line.
+3. **Writes FITS** output: PPV-native moment maps, optionally convolved cubes,
+   and 2D band images — all on the same pixel grid as the overlay cube.
 
+The primary deliverable is an Astropy `.ecsv` table with one row per
+hexagonal sightline, containing all spectra, moment maps, and 2D map values
+side by side. This makes line-ratio analysis, radial profile extraction, and
+spectral stacking straightforward with standard Python tools.
 
-<!-- TABLE OF CONTENTS -->
-<details>
-  <summary>Table of Contents</summary>
-  <ol>
-    <li>
-      <a href="#about-the-project">About The Project</a>
-    </li>
-    <li>
-      <a href="#getting-started">Getting Started</a>
-      <ul>
-        <li><a href="#prerequisites">Prerequisites</a></li>
-        <li><a href="#installation">Installation</a></li>
-      </ul>
-    </li>
-    <li><a href="#usage">Usage</a></li>
-    <li><a href="#roadmap">Roadmap</a></li>
-    <li><a href="#license">License</a></li>
-    <li><a href="#contact">Contact</a></li>
-    <li><a href="#acknowledgments">Acknowledgments</a></li>
-    <li><a href="#contributing">Contributing</a></li>
-  </ol>
-</details>
+HexMaps is the successor to
+[PyStructure (PhangsTeam)](https://github.com/PhangsTeam/PyStructure),
+refactored into a pip-installable package with a clean CLI, an INI-style
+single configuration file, and a modular stage architecture.
+=======
+# PyStructure
 
+[![Contributors](https://img.shields.io/github/contributors/jdenbrok/PyStructure.svg?style=for-the-badge)](https://github.com/jdenbrok/PyStructure/graphs/contributors)
+[![MIT License](https://img.shields.io/github/license/jdenbrok/PyStructure.svg?style=for-the-badge)](LICENSE)
 
+A Python package for homogenizing and analyzing multi-wavelength astronomical
+datasets on hexagonal grids.  Samples 2D images (bands) and 3D spectral cubes
+at a common resolution and grid, producing Astropy Table output (`.ecsv`) along
+with optional FITS moment and band maps.
 
-<!-- ABOUT THE PROJECT -->
-## About The Project
+---
 
-[![Product Name Screen Shot][product-screenshot]](https://example.com)
+## Installation
 
+```bash
+# From PyPI (once published)
+pip install pystructure
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+# From GitHub (latest)
+pip install git+https://github.com/PhangsTeam/PyStructure.git
 
+# Editable / development install (from inside the cloned repo)
+git clone https://github.com/lukas-neumann-astro/PyStructure.git
+cd PyStructure
+pip install -e ".[dev]"
+```
 
+The installed package lives in your Python environment (e.g. your conda env).
+Your data, key files, and outputs live separately in a **working directory**
+that you control.
 
+---
 
-<!-- GETTING STARTED -->
+## Quick start
+
+### 1 — Set up a working directory
+
+```bash
+# Creates keys/ and run_pystructure.py in the current folder
+pystructure --init
+
+# Or choose a destination
+pystructure --init --workdir ~/projects/my_galaxy_survey
+cd ~/projects/my_galaxy_survey
+```
+
+This copies four editable key files and a ready-to-run script into your
+working directory. The installed package is never modified.
+
+### 2 — Edit the key files
+
+| File | What to edit |
+|------|-------------|
+| `keys/master_key.txt` | `data_dir`, `out_dir`, your name |
+| `keys/target_definitions.txt` | RA, Dec, distance, inclination for each galaxy |
+| `keys/imaging_key.txt` | Source list, overlay image, band and cube file definitions |
+| `keys/config_key.txt` | Target resolution, masking thresholds, output flags |
+>>>>>>> 966eb65 (further cleanup of the repository)
+
+### 3 — Run
+
+<<<<<<< HEAD
+---
+
 ## Getting Started
-
-The PyStructure is a Python-based script. Tested on Python 3.6 – 3.11. 
 
 ### Prerequisites
 
-A list of the required python modules and their versions is provided in the `requirements.txt` file.
+HexMaps requires **Python ≥ 3.9**. All Python dependencies are installed
+automatically by pip:
 
-### Installation
+```
+astropy  numpy  pandas  scipy  matplotlib
+reproject  radio_beam  spectral_cube  scikit-image
+```
+=======
+```bash
+# Edit and run the script in your working directory
+python run_pystructure.py
 
-Clone the repo
-   ```sh
-   git clone https://github.com/jdenbrok/PyStructure.git
-   ```
-That's it. Now you have the necessary files to run the script
+# Or use the CLI directly
+pystructure --key_dir keys/
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+# Specific stages only
+pystructure --key_dir keys/ --stages sampling regrid
 
+# Single source
+pystructure --key_dir keys/ --targets ngc5194
+```
 
+### 4 — Use from Python
 
-<!-- USAGE EXAMPLES -->
+```python
+import pystructure as pys
+
+handler = pys.PipelineHandler(key_dir="keys/")
+handler.run_all()
+>>>>>>> 966eb65 (further cleanup of the repository)
+
+# Or selectively
+handler.run_stages(["regrid", "spectra"], targets=["ngc5194"])
+```
+
+<<<<<<< HEAD
+```bash
+# From PyPI (once published)
+pip install hexmaps
+
+# From GitHub — latest development version
+pip install git+https://github.com/lukas-neumann-astro/PyStructure.git@rename/hexmaps
+
+# Editable / development install
+git clone -b rename/hexmaps https://github.com/lukas-neumann-astro/PyStructure.git
+cd PyStructure
+pip install -e ".[dev]"
+```
+=======
+---
+>>>>>>> 966eb65 (further cleanup of the repository)
+
+## Repository layout
+
+<<<<<<< HEAD
+---
+
 ## Usage
 
-* **Step 1**: Make sure your galaxy is listed in the `geometry.txt` file (No need to comment out galaxies that are not used).
+### 1 — Initialise a working directory
 
-* **Step 2**: Follow the description of the steps in the `PyStructure.conf` file and define the variables accordingly.
+```bash
+# Creates config.txt, keys/, and run_hexmaps.py in the current folder
+hexmaps --init
 
-* **Step 3**: Run in the terminal with the following command:
+# Or target a specific directory
+hexmaps --init --workdir ~/my_survey
+cd ~/my_survey
+```
 
-`python3 create_database.py --config PyStructure.conf`
+This copies template configuration files into your working directory.
+The installed package is never modified.
 
+### 2 — Edit your configuration
 
-_For more examples, please refer to the [Documentation](https://pystructure.readthedocs.io/en/latest/)_
+| File | What to configure | How often |
+|------|-------------------|-----------|
+| `config.txt` | data directory, source list, overlay cube, maps/cubes, target resolution, masking, output flags | every run |
+| `keys/target_definitions.txt` | RA, Dec, distance, inclination per source | once — shared across projects |
+| `keys/hfs_lines.txt` *(optional)* | Hyperfine structure line definitions | rarely |
+
+`config.txt` replaces the three separate files of the old PyStructure
+(`master_key.txt`, `data_key.txt`, `config_key.txt`).
+
+> **Migrating from PyStructure?** Use the conversion scripts:
+>
+> ```bash
+> python conversion_from_pystructure/config_conversion.py PyStructure.conf config.txt
+> python conversion_from_pystructure/target_definitions_conversion.py geometry.txt keys/target_definitions.txt
+> python conversion_from_pystructure/hfs_lines_conversion.py hfs_lines.txt keys/hfs_lines.txt
+> ```
+
+### 3 — Run
+
+```bash
+# Default: regrid + products (writes .ecsv database)
+hexmaps --conf config.txt
+
+# All stages including FITS output
+hexmaps --conf config.txt --stages all
+
+# Single source
+hexmaps --conf config.txt --targets ngc5194
+
+# Also write a log file
+hexmaps --conf config.txt --log_file run.log
+```
+
+Or from Python:
+
+```python
+import hexmaps as hm
+
+handler = hm.PipelineHandler(conf_path="config.txt")
+handler.run_all()                                      # regrid + products
+handler.run_stages(["regrid", "products", "fits"])     # include FITS output
+handler.run_stages(["fits"], targets=["ngc5194"])      # re-run one stage only
+```
+
+*For more examples, please refer to the [Documentation](https://hexmaps.readthedocs.io/en/latest/).*
+=======
+```
+PyStructure/                 ← git repo — install this with pip
+├── pystructure/             ← installable package
+│   ├── handlers/
+│   │   ├── key_handler.py       reads all key files
+│   │   ├── target_handler.py    galaxy geometry lookups
+│   │   └── pipeline_handler.py  stage orchestration
+│   ├── stages/
+│   │   ├── stage_sampling.py    hexagonal grid generation
+│   │   ├── stage_regrid.py      convolution and sampling
+│   │   ├── stage_spectra.py     spectral processing and moments
+│   │   └── stage_output.py      FITS map writing
+│   ├── utils/
+│   │   ├── fits_utils.py
+│   │   └── table_utils.py
+│   ├── templates/           ← bundled templates (copied by --init)
+│   │   ├── keys/
+│   │   │   ├── master_key.txt
+│   │   │   ├── target_definitions.txt
+│   │   │   ├── imaging_key.txt
+│   │   │   └── config_key.txt
+│   │   └── run_pystructure.py
+│   ├── init_workdir.py
+│   └── cli.py
+├── tests/
+├── pyproject.toml
+└── README.md
+
+~/my_project/                ← your working directory (anywhere on disk)
+├── keys/
+│   ├── master_key.txt       ← edit these
+│   ├── target_definitions.txt
+│   ├── imaging_key.txt
+│   └── config_key.txt
+├── data/                    ← your FITS files
+├── Output/                  ← pipeline writes .ecsv tables here
+├── saved_FITS_files/        ← FITS moment/band maps land here
+└── run_pystructure.py       ← edit and run this
+```
+
+---
+
+## Pipeline stages
+
+| Stage | Description |
+|-------|-------------|
+| `sampling` | Generate hexagonal sampling grid from the overlay cube |
+| `regrid` | Convolve and sample bands & cubes; write the PyStructure `.ecsv` |
+| `spectra` | Mask spectra, compute moments (mom0/1/2, EW), shuffle |
+| `output` | Write FITS moment maps and band maps |
+
+---
+
+## Reading the output
+
+```python
+from pystructure.utils import load_pystructure
+
+table = load_pystructure("Output/ngc5194_data_struct_27as_2025_01_01.ecsv")
+>>>>>>> 966eb65 (further cleanup of the repository)
+
+import numpy as np, matplotlib.pyplot as plt
+mom0 = np.nansum(table["SPEC_12CO21"], axis=1)
+plt.scatter(table["ra_deg"], table["dec_deg"], c=mom0, marker="h")
+plt.show()
+```
+
+---
+
+<<<<<<< HEAD
+## Repository Layout
+
+```
+PyStructure/                         ← git repository root (pip install this)
+├── hexmaps/                         ← installable package
+│   ├── handler_keys.py              reads & validates config and key files
+│   ├── handler_sources.py           source geometry lookups
+│   ├── handler_pipeline.py          PipelineHandler: stage orchestration
+│   ├── stage_regrid.py              hex grid + convolution + sampling → .ecsv
+│   ├── stage_products.py            spectral masking, moments, shuffled spectra
+│   ├── stage_fits.py                FITS moment maps / cubes / band images
+│   ├── utils_fits.py                FITS/WCS helpers (convolution, reprojection)
+│   ├── utils_table.py               table I/O, spectral shuffle, moments
+│   ├── hexmapsLogger.py             centralised stage-labelled logger
+│   ├── init_workdir.py              --init scaffolding
+│   ├── cli.py                       hexmaps console-script entry point
+│   └── test_hexmaps.py              unit and integration tests
+├── config.txt                       ← example / template config file
+├── keys/
+│   ├── target_definitions.txt       ← source geometry table
+│   └── hfs_lines.txt                ← hyperfine structure definitions
+├── analysis/
+│   ├── hexmaps_analysis.py          HexMapsAnalysis class: quicklook plots
+│   └── hexmaps_example.ipynb        example analysis notebook
+├── conversion_from_pystructure/     ← migration scripts from old PyStructure
+│   ├── config_conversion.py
+│   ├── target_definitions_conversion.py
+│   └── hfs_lines_conversion.py
+├── data/                            ← example FITS input (NGC 5194)
+├── docs/                            ← Sphinx / Read the Docs source
+├── images/                          ← README images (logo, screenshot)
+├── run_hexmaps.py                   ← example run script
+└── pyproject.toml
+```
+
+---
+
+## Pipeline Stages
+
+The pipeline runs three stages always in this order:
+
+| Stage | Module | Default | Description |
+|-------|--------|---------|-------------|
+| `regrid` | `stage_regrid.py` | ✓ | Generate the hexagonal sampling grid; convolve and sample all maps & cubes onto it; write the `.ecsv` database |
+| `products` | `stage_products.py` | ✓ | Build the S/N mask; compute moment maps (mom0/1/2, Tpeak, rms, EW) and shuffled spectra |
+| `fits` | `stage_fits.py` | optional | Compute PPV-native moment maps on the convolved cubes; write FITS images |
+
+The default run (`hexmaps --conf config.txt`) executes **regrid + products** only.
+Add `--stages all` to also run the fits stage.
+
+---
+
+## Reading the Output
+
+```python
+from hexmaps.utils_table import load_hexmaps
+import matplotlib.pyplot as plt
+
+table = load_hexmaps("output/ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
+
+plt.figure(figsize=(5, 5))
+plt.scatter(table["ra_deg"], table["dec_deg"],
+            c=table["MOM0_12CO21"], marker="h", s=60, cmap="inferno")
+plt.gca().invert_xaxis()
+plt.xlabel("R.A. [deg]"); plt.ylabel("Dec. [deg]")
+plt.show()
+```
+
+For richer quicklook plots use the `HexMapsAnalysis` class:
+
+```python
+import sys; sys.path.append("analysis/")
+from hexmaps_analysis import HexMapsAnalysis
+
+db = HexMapsAnalysis("output/ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
+db.quickplot_map("12CO21")
+db.quickplot_spectrum("12CO21")
+print(db.get_config())               # recover config.txt used for this run
+hdr = db.get_input_header("12CO21")  # recover raw FITS header of input cube
+```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
+---
 
-
-<!-- ROADMAP -->
 ## Roadmap
 
-- [ ] Improve Documentation after transition to Astropy Tables.
+- [ ] PyPI release
+- [ ] Expanded documentation and tutorials
+- [ ] Additional analysis utilities in `hexmaps_analysis.py`
 
-See the [open issues](https://github.com/jdenbrok/PyStructure/issues) for a full list of proposed features (and known issues).
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-
-
-<!-- LICENSE -->
-## License
-
-Distributed under the MIT License. See `LICENSE.txt` for more information.
+See the [open issues](https://github.com/lukas-neumann-astro/PyStructure/issues)
+for a full list of proposed features and known issues.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
+---
 
-
-<!-- CONTACT -->
-## Contact
-
-Dr. Jakob den Brok - jadenbrok@mpia.de
-
-Dr. Lukas Neumann - lukas.neumann@eso.org
-
-Project Link: [https://github.com/jdenbrok/PyStructure](https://github.com/jdenbrok/PyStructure)
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-
-<!-- ACKNOWLEDGMENTS -->
-## Acknowledgments
-
-* [IDL Structure code]()
-* [PHANGS collaboration]()
-* [Prof. Bigiel's research group']()
-
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-<!-- CONTRIBUTING -->
 ## Contributing
 
-We **greatly appreciate** any suggestions or contributions.
-
-If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also simply open an issue with the tag "enhancement".
-Don't forget to give the project a star! Thanks again!
+Contributions are greatly appreciated! If you have a suggestion that would
+make this better, please fork the repository and create a pull request. You
+can also open an issue with the tag "enhancement".
 
 1. Fork the Project
 2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+3. Commit your Changes (`git commit -m 'Add AmazingFeature'`)
 4. Push to the Branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
+---
 
+=======
+>>>>>>> 966eb65 (further cleanup of the repository)
+## License
+
+Distributed under the MIT License — see [LICENSE](LICENSE) for details.
+
+<<<<<<< HEAD
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+## Contact
+
+Dr. Jakob den Brok — jadenbrok@mpia.de
+
+Dr. Lukas Neumann — lukas.neumann@eso.org
+
+Project Link: [https://github.com/lukas-neumann-astro/PyStructure](https://github.com/lukas-neumann-astro/PyStructure)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+## Acknowledgements
+
+HexMaps builds on the original PyStructure IDL scripts developed within the
+PHANGS collaboration. The routines have been updated, improved, and fully
+rewritten in Python.
+
+The code has been employed in several peer-reviewed publications including
+den Brok et al. (2021, 2022, 2023, 2025), Eibensteiner et al. (2022, 2023),
+Neumann et al. (2023), Stuber et al. (2025), and others. See the
+[documentation](https://hexmaps.readthedocs.io) for the full list.
+
+* [PHANGS collaboration](https://sites.google.com/view/phangs/home)
+* [Prof. Bigiel's research group](https://www.astro.uni-bonn.de/~bigiel/)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- MARKDOWN LINKS & IMAGES -->
-<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[contributors-shield]: https://img.shields.io/github/contributors/jdenbrok/PyStructure.svg?style=for-the-badge
-[contributors-url]: https://github.com/jdenbrok/PyStructure/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/jdenbrok/PyStructure.svg?style=for-the-badge
-[forks-url]: https://github.com/jdenbrok/PyStructure/network/members
-[stars-shield]: https://img.shields.io/github/stars/jdenbrok/PyStructure.svg?style=for-the-badge
-[stars-url]: https://github.com/jdenbrok/PyStructure/stargazers
-[issues-shield]: https://img.shields.io/github/issues/jdenbrok/PyStructure.svg?style=for-the-badge
-[issues-url]: https://github.com/jdenbrok/PyStructure/issues
-[license-shield]: https://img.shields.io/github/license/jdenbrok/PyStructure.svg?style=for-the-badge
-[license-url]: https://github.com/jdenbrok/PyStructure/blob/master/LICENSE.txt
+[contributors-shield]: https://img.shields.io/github/contributors/lukas-neumann-astro/PyStructure.svg?style=for-the-badge
+[contributors-url]: https://github.com/lukas-neumann-astro/PyStructure/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/lukas-neumann-astro/PyStructure.svg?style=for-the-badge
+[forks-url]: https://github.com/lukas-neumann-astro/PyStructure/network/members
+[stars-shield]: https://img.shields.io/github/stars/lukas-neumann-astro/PyStructure.svg?style=for-the-badge
+[stars-url]: https://github.com/lukas-neumann-astro/PyStructure/stargazers
+[issues-shield]: https://img.shields.io/github/issues/lukas-neumann-astro/PyStructure.svg?style=for-the-badge
+[issues-url]: https://github.com/lukas-neumann-astro/PyStructure/issues
+[license-shield]: https://img.shields.io/github/license/lukas-neumann-astro/PyStructure.svg?style=for-the-badge
+[license-url]: https://github.com/lukas-neumann-astro/PyStructure/blob/master/LICENSE
 [product-screenshot]: images/screenshot.png
-[Next.js]: https://img.shields.io/badge/next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white
-[Next-url]: https://nextjs.org/
-[React.js]: https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB
-[React-url]: https://reactjs.org/
-[Vue.js]: https://img.shields.io/badge/Vue.js-35495E?style=for-the-badge&logo=vuedotjs&logoColor=4FC08D
-[Vue-url]: https://vuejs.org/
-[Angular.io]: https://img.shields.io/badge/Angular-DD0031?style=for-the-badge&logo=angular&logoColor=white
-[Angular-url]: https://angular.io/
-[Svelte.dev]: https://img.shields.io/badge/Svelte-4A4A55?style=for-the-badge&logo=svelte&logoColor=FF3E00
-[Svelte-url]: https://svelte.dev/
-[Laravel.com]: https://img.shields.io/badge/Laravel-FF2D20?style=for-the-badge&logo=laravel&logoColor=white
-[Laravel-url]: https://laravel.com
-[Bootstrap.com]: https://img.shields.io/badge/Bootstrap-563D7C?style=for-the-badge&logo=bootstrap&logoColor=white
-[Bootstrap-url]: https://getbootstrap.com
-[JQuery.com]: https://img.shields.io/badge/jQuery-0769AD?style=for-the-badge&logo=jquery&logoColor=white
-[JQuery-url]: https://jquery.com 
+=======
+## Contact
+
+Dr. Jakob den Brok — jadenbrok@mpia.de  
+Dr. Lukas Neumann — lukas.neumann@eso.org
+>>>>>>> 966eb65 (further cleanup of the repository)
