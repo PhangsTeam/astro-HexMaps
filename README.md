@@ -59,7 +59,7 @@ side by side. This makes line-ratio analysis, radial profile extraction, and
 spectral stacking straightforward with standard Python tools.
 
 HexMaps is the successor to
-[PyStructure (PhangsTeam)](https://github.com/PhangsTeam/PyStructure),
+[PyStructure (PhangsTeam)](https://github.com/PhangsTeam/astro-HexMaps),
 refactored into a pip-installable package with a clean CLI, an INI-style
 single configuration file, and a modular stage architecture.
 
@@ -86,10 +86,10 @@ reproject  radio_beam  spectral_cube  scikit-image
 pip install hexmaps
 
 # From GitHub — latest development version
-pip install git+https://github.com/PhangsTeam/PyStructure.git@main
+pip install git+https://github.com/PhangsTeam/astro-HexMaps.git@main
 
 # Editable / development install
-git clone -b rename/hexmaps https://github.com/PhangsTeam/PyStructure.git
+git clone -b rename/hexmaps https://github.com/PhangsTeam/astro-HexMaps.git
 cd PyStructure
 pip install -e ".[dev]"
 ```
@@ -122,8 +122,7 @@ The installed package is never modified.
 | `keys/target_definitions.txt` | RA, Dec, distance, inclination per source | once — shared across projects |
 | `keys/hfs_lines.txt` *(optional)* | Hyperfine structure line definitions | rarely |
 
-`config.txt` replaces the three separate files of the old PyStructure
-(`master_key.txt`, `data_key.txt`, `config_key.txt`).
+`config.txt` replaces the `Pystructure.conf` file of the old PyStructure
 
 > **Migrating from PyStructure?** Use the conversion scripts:
 >
@@ -160,7 +159,7 @@ handler.run_stages(["regrid", "products", "fits"])     # include FITS output
 handler.run_stages(["fits"], targets=["ngc5194"])      # re-run one stage only
 ```
 
-*For more examples, please refer to the [Documentation](https://hexmaps.readthedocs.io/en/latest/).*
+*For more examples, please refer to the [Documentation](https://astro-hexmaps.readthedocs.io/en/latest/).*
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -257,7 +256,7 @@ hdr = db.get_input_header("12CO21")  # recover raw FITS header of input cube
 - [ ] Additional analysis utilities in `hexmaps_analysis.py`
 - [ ] Various feature updates (e.g. "island-method" masking, chunking for large data sets)
 
-See the [open issues](https://github.com/PhangsTeam/PyStructure/issues)
+See the [open issues](https://github.com/PhangsTeam/astro-HexMaps/issues)
 for a full list of proposed features and known issues.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -294,7 +293,7 @@ Dr. Jakob den Brok — jadenbrok@mpia.de
 
 Dr. Lukas Neumann — lukas.neumann@eso.org
 
-Project Link: [https://github.com/PhangsTeam/PyStructure](https://github.com/PhangsTeam/PyStructure)
+Project Link: [https://github.com/PhangsTeam/PyStructure](https://github.com/PhangsTeam/astro-HexMaps)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -309,7 +308,7 @@ rewritten in Python.
 The code has been employed in several peer-reviewed publications including
 den Brok et al. (2021, 2022, 2023, 2025), Eibensteiner et al. (2022, 2023),
 Neumann et al. (2023), Stuber et al. (2025), and others. See the
-[documentation](https://hexmaps.readthedocs.io) for the full list.
+[documentation](https://astro-hexmaps.readthedocs.io) for the full list.
 
 * [PHANGS collaboration](https://sites.google.com/view/phangs/home)
 * [Prof. Bigiel's research group](https://www.astro.uni-bonn.de/~bigiel/)
@@ -317,14 +316,14 @@ Neumann et al. (2023), Stuber et al. (2025), and others. See the
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- MARKDOWN LINKS & IMAGES -->
-[contributors-shield]: https://img.shields.io/github/contributors/PhangsTeam/PyStructure.svg?style=for-the-badge
-[contributors-url]: https://github.com/PhangsTeam/PyStructure/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/PhangsTeam/PyStructure.svg?style=for-the-badge
-[forks-url]: https://github.com/PhangsTeam/PyStructure/network/members
-[stars-shield]: https://img.shields.io/github/stars/PhangsTeam/PyStructure.svg?style=for-the-badge
-[stars-url]: https://github.com/PhangsTeam/PyStructure/stargazers
-[issues-shield]: https://img.shields.io/github/issues/PhangsTeam/PyStructure.svg?style=for-the-badge
-[issues-url]: https://github.com/PhangsTeam/PyStructure/issues
-[license-shield]: https://img.shields.io/github/license/PhangsTeam/PyStructure.svg?style=for-the-badge
-[license-url]: https://github.com/PhangsTeam/PyStructure/blob/master/LICENSE
+[contributors-shield]: https://img.shields.io/github/contributors/PhangsTeam/astro-HexMaps.svg?style=for-the-badge
+[contributors-url]: https://github.com/PhangsTeam/astro-HexMaps/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/PhangsTeam/astro-HexMaps.svg?style=for-the-badge
+[forks-url]: https://github.com/PhangsTeam/astro-HexMaps/network/members
+[stars-shield]: https://img.shields.io/github/stars/PhangsTeam/astro-HexMaps.svg?style=for-the-badge
+[stars-url]: https://github.com/PhangsTeam/astro-HexMaps/stargazers
+[issues-shield]: https://img.shields.io/github/issues/PhangsTeam/astro-HexMaps.svg?style=for-the-badge
+[issues-url]: https://github.com/PhangsTeam/astro-HexMaps/issues
+[license-shield]: https://img.shields.io/github/license/PhangsTeam/astro-HexMaps.svg?style=for-the-badge
+[license-url]: https://github.com/PhangsTeam/astro-HexMaps/blob/master/LICENSE
 [product-screenshot]: images/screenshot.png
