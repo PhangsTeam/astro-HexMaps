@@ -313,6 +313,8 @@ def construct_individual_mask(line_names, this_data, SN_processing, use_hfs_line
 
         line_masks[line.upper()] = mask
         line_vmeans[line.upper()] = vmean
+        
+        LOG.info(f"Completed mask for line: {line}.")
 
     return line_masks, line_vmeans
 
@@ -386,75 +388,85 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
         LOG.info(f"Using external mask: {mask_tag}.")
 
     else:
-        # Build mask automatically from the reference line
-        LOG.info(f"Building velocity mask from {ref_line}.")
-        mask, ref_line_vmean, _ = construct_mask(ref_line, this_data, SN_processing)
-        this_data["SPEC_MASK_" + ref_line] = Column(
-            mask,
-            unit=u.dimensionless_unscaled,
-            description=f"Velocity-integration mask for {ref_line}",
-        )
 
-        # Optionally combine masks from additional lines
-        if ref_line_method == "all":
-            n_mask = n_lines
-        elif isinstance(ref_line_method, int):
-            n_mask = min(n_lines, ref_line_method)
-        else:
-            n_mask = 0  # "first": only the reference line
-
-        for n_mask_i in range(1, n_mask + 1):
-            line_i = line_names[n_mask_i].upper()
-            mask_i, _, _ = construct_mask(line_i, this_data, SN_processing)
-            this_data["SPEC_MASK_" + line_i] = Column(
-                mask_i,
-                unit=u.dimensionless_unscaled,
-                description=f"Velocity-integration mask for {line_i}",
-            )
-            mask = (
-                mask.value.astype(int) | mask_i.value.astype(int)
-            ) * u.dimensionless_unscaled
-            LOG.info(f"Combined mask includes {line_i}.")
-
-        # Special case: combine reference line mask with HI mask,
-        # using HI at large radii (rgal_r25 > 0.23) and the reference line at small radii
-        if ref_line_method == "ref+HI":
-            if "hi" in line_names:
-                mask_hi, vmean_hi, _ = construct_mask("HI", this_data, SN_processing)
-                mask = (
-                    mask.value.astype(int) | mask_hi.value.astype(int)
-                ) * u.dimensionless_unscaled
-                if "rgal_r25" not in this_data.colnames:
-                    LOG.warning(
-                        "ref+HI mode requires rgal_r25 to select the radial "
-                        "transition, but galaxy geometry is not available for "
-                        "this target. Falling back to using HI mask everywhere."
-                    )
-                    rgal = None
-                else:
-                    rgal = this_data["rgal_r25"]
-                n_pts = len(mask)
-                vmean_comb = np.zeros(n_pts) * np.nan
-                for jj in range(n_pts):
-                    vmean_comb[jj] = (
-                        ref_line_vmean[jj].value
-                        if (rgal is None or rgal[jj] < 0.23)3
-                        else vmean_hi[jj].value
-                    )
-                ref_line_vmean = vmean_comb
-                LOG.info(f"ref+HI mask: using HI at r > 0.23 r25.")
-            else:
-                LOG.warning(f"HI not found in HexMaps; " "ignoring ref+HI option.")
-
-        # Special case: create mask for each line individually
+        # Create mask for each line individually
         if ref_line_method == "individual":
+            LOG.info(f"Building individual masks for {', '.join(line_names)}.")
             line_masks, line_vmeans = construct_individual_mask(line_names, this_data, SN_processing, use_hfs_lines, hfs_data, velocity_window)
 
-        # Optional strict spatial connectivity filter
-        if strict_mask:
-            LOG.info(f"Applying strict spatial mask filter.")
-            mask_arr = _apply_strict_mask(mask.value.astype(int), this_data)
-            mask = mask_arr * u.dimensionless_unscaled
+        else:
+            # Build mask automatically from the reference line
+            LOG.info(f"Building velocity mask from {ref_line}.")
+            mask, ref_line_vmean, _ = construct_mask(ref_line, this_data, SN_processing)
+            this_data["SPEC_MASK_" + ref_line] = Column(
+                mask,
+                unit=u.dimensionless_unscaled,
+                description=f"Velocity-integration mask for {ref_line}",
+            )
+
+            # Optionally combine masks from additional lines
+            if ref_line_method == "all":
+                n_mask = n_lines
+            elif isinstance(ref_line_method, int):
+                n_mask = min(n_lines, ref_line_method)
+            else:
+                n_mask = 0  # "first": only the reference line
+
+            for n_mask_i in range(1, n_mask + 1):
+                line_i = line_names[n_mask_i].upper()
+                mask_i, _, _ = construct_mask(line_i, this_data, SN_processing)
+                this_data["SPEC_MASK_" + line_i] = Column(
+                    mask_i,
+                    unit=u.dimensionless_unscaled,
+                    description=f"Velocity-integration mask for {line_i}",
+                )
+                mask = (
+                    mask.value.astype(int) | mask_i.value.astype(int)
+                ) * u.dimensionless_unscaled
+                LOG.info(f"Combined mask includes {line_i}.")
+
+            # Special case: combine reference line mask with HI mask,
+            # using HI at large radii (rgal_r25 > 0.23) and the reference line at small radii
+            if ref_line_method == "ref+HI":
+                if "hi" in line_names:
+                    mask_hi, vmean_hi, _ = construct_mask("HI", this_data, SN_processing)
+                    mask = (
+                        mask.value.astype(int) | mask_hi.value.astype(int)
+                    ) * u.dimensionless_unscaled
+                    if "rgal_r25" not in this_data.colnames:
+                        LOG.warning(
+                            "ref+HI mode requires rgal_r25 to select the radial "
+                            "transition, but galaxy geometry is not available for "
+                            "this target. Falling back to using HI mask everywhere."
+                        )
+                        rgal = None
+                    else:
+                        rgal = this_data["rgal_r25"]
+                    n_pts = len(mask)
+                    vmean_comb = np.zeros(n_pts) * np.nan
+                    for jj in range(n_pts):
+                        vmean_comb[jj] = (
+                            ref_line_vmean[jj].value
+                            if (rgal is None or rgal[jj] < 0.23)
+                            else vmean_hi[jj].value
+                        )
+                    ref_line_vmean = vmean_comb
+                    LOG.info(f"ref+HI mask: using HI at r > 0.23 r25.")
+                else:
+                    LOG.warning(f"HI not found in HexMaps; " "ignoring ref+HI option.")
+
+            # Optional strict spatial connectivity filter
+            if strict_mask:
+                LOG.info(f"Applying strict spatial mask filter.")
+                mask_arr = _apply_strict_mask(mask.value.astype(int), this_data)
+                mask = mask_arr * u.dimensionless_unscaled
+
+            # Store the combined mask that will be used for integration
+            this_data["SPEC_MASK"] = Column(
+                mask,
+                unit=u.dimensionless_unscaled,
+                description="Velocity-integration mask (used for all integrated products)",
+            )
 
     # HFS mask extension
     lines_hfs = (
@@ -476,14 +488,7 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
                         description=f"HFS mask for {line_names[jj].upper()}",
                     )
 
-    # Store the combined mask that will be used for integration
-    this_data["SPEC_MASK"] = Column(
-        mask,
-        unit=u.dimensionless_unscaled,
-        description="Velocity-integration mask (used for all integrated products)",
-    )
-
-    LOG.info(f"Mask complete. Computing moments.")
+    LOG.info(f"Mask(s) complete. Computing moments.")
 
     # ------------------------------------------------------------------
     # Velocity axis columns
@@ -648,7 +653,7 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
         shuffled = shuffle(
             spec=this_spec,
             vaxis=this_vaxis,
-            zero=line_vmean #ref_line_vmean,
+            zero=line_vmean, #ref_line_vmean,
             new_vaxis=new_vaxis,
             interp=0,  # nearest-neighbour to preserve noise statistics
         )
