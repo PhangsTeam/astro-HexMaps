@@ -55,7 +55,7 @@ from astropy import units as u
 from astropy.stats import median_absolute_deviation
 from astropy.table import Table, Column
 
-from hexmaps.utils_table import shuffle, get_mom_maps, build_noise_mask
+from hexmaps.utils_table import shuffle, get_mom_maps, build_noise_mask, resolve_mask_lines
 
 from hexmaps.logger import get_logger
 
@@ -94,7 +94,7 @@ def construct_mask(ref_line, this_data, SN_processing):
     The per-spectrum MAD is estimated using only channels below 3× the global
     MAD (a two-pass approach to avoid contamination from strong emission).
     """
-    ref_line_data = this_data["SPEC_" + ref_line]
+    ref_line_data = this_data[f"SPEC_{ref_line.upper()}"]
     n_pts = np.shape(ref_line_data)[0]
     n_chan = np.shape(ref_line_data)[1]
 
@@ -296,10 +296,10 @@ def construct_individual_mask(line_names, this_data, SN_processing, use_hfs_line
 
     for line in line_names:
 
-        mask, vmean, vaxis = construct_mask(line.upper(), this_data, SN_processing)
+        mask, vmean, vaxis = construct_mask(line, this_data, SN_processing)
         # special case for lines with HFS
         if use_hfs_lines and hfs_data is not None:
-            mask_hfs = _build_hfs_mask(mask.value, line.upper(), hfs_data, this_data)
+            mask_hfs = _build_hfs_mask(mask.value, line, hfs_data, this_data)
 
             if mask_hfs is not None:
                 mask = mask_hfs
@@ -311,8 +311,8 @@ def construct_individual_mask(line_names, this_data, SN_processing, use_hfs_line
             # broadcast to (n_pix, n_chan)
             mask = mask * vmask
 
-        line_masks[line.upper()] = mask
-        line_vmeans[line.upper()] = vmean
+        line_masks[line] = mask
+        line_vmeans[line] = vmean
 
     return line_masks, line_vmeans
 
@@ -363,12 +363,12 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
 
     # Determine the reference line (default: first cube in the list)
     ref_line = (
-        ref_line_method.upper()
+        ref_line_method
         if ref_line_method in line_names
-        else line_names[0].upper()
+        else line_names[0]
     )
 
-    n_chan = np.shape(this_data["SPEC_" + ref_line])[1]
+    n_chan = np.shape(this_data[f"SPEC_{ref_line.upper()}"])[1]
 
     # ------------------------------------------------------------------
     # Mask construction
@@ -386,42 +386,43 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
         LOG.info(f"Using external mask: {mask_tag}.")
 
     else:
+        # ------------------------------------------------------------------
+        # Resolve which lines feed into the mask using the shared helper.
+        # resolve_mask_lines returns None for "individual" mode, or a list
+        # of uppercase line names to OR-combine for all other modes.
+        # ------------------------------------------------------------------
+        mask_lines = resolve_mask_lines(ref_line_method, line_names)
 
-        # Create mask for each line individually
-        if ref_line_method == "individual":
+        if mask_lines is None:
+            # individual: build one mask per line, used per-line below
             LOG.info(f"Building individual masks for {', '.join(line_names)}.")
-            line_masks, line_vmeans = construct_individual_mask(line_names, this_data, SN_processing, use_hfs_lines, hfs_data, velocity_window)
-
-        else:
-            # Build mask automatically from the reference line
-            LOG.info(f"Building velocity mask from {ref_line}.")
-            mask, ref_line_vmean, _ = construct_mask(ref_line, this_data, SN_processing)
-            this_data["SPEC_MASK_" + ref_line] = Column(
-                mask,
-                unit=u.dimensionless_unscaled,
-                description=f"Velocity-integration mask for {ref_line}",
+            line_masks, line_vmeans = construct_individual_mask(
+                line_names, this_data, SN_processing, use_hfs_lines, hfs_data, velocity_window
             )
 
-            # Optionally combine masks from additional lines
-            if ref_line_method == "all":
-                n_mask = n_lines
-            elif isinstance(ref_line_method, int):
-                n_mask = min(n_lines, ref_line_method)
-            else:
-                n_mask = 0  # "first": only the reference line
-
-            for n_mask_i in range(1, n_mask + 1):
-                line_i = line_names[n_mask_i].upper()
-                mask_i, _, _ = construct_mask(line_i, this_data, SN_processing)
-                this_data["SPEC_MASK_" + line_i] = Column(
-                    mask_i,
+        else:
+            # Build the combined mask by looping over the resolved lines
+            LOG.info(
+                f"Building velocity mask from: {', '.join(mask_lines)}."
+            )
+            mask = None
+            ref_line_vmean = None
+            for line in mask_lines:
+                mask_line, vmean_line, _ = construct_mask(line, this_data, SN_processing)
+                this_data[f"SPEC_MASK_{line.upper()}"] = Column(
+                    mask_line,
                     unit=u.dimensionless_unscaled,
-                    description=f"Velocity-integration mask for {line_i}",
+                    description=f"Velocity-integration mask for {line}",
                 )
-                mask = (
-                    mask.value.astype(int) | mask_i.value.astype(int)
-                ) * u.dimensionless_unscaled
-                LOG.info(f"Combined mask includes {line_i}.")
+                if mask is None:
+                    mask = mask_line
+                    ref_line_vmean = vmean_line
+                    LOG.info(f"Building mask for line: {line}.")
+                else:
+                    mask = (
+                        mask.value.astype(int) | mask_line.value.astype(int)
+                    ) * u.dimensionless_unscaled
+                    LOG.info(f"Adding line to mask: {line}.")
 
             # Optional strict spatial connectivity filter
             if strict_mask:
@@ -429,7 +430,7 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
                 mask_arr = _apply_strict_mask(mask.value.astype(int), this_data)
                 mask = mask_arr * u.dimensionless_unscaled
 
-            # Store the combined mask that will be used for integration
+            # Store the combined mask used for integration
             this_data["SPEC_MASK"] = Column(
                 mask,
                 unit=u.dimensionless_unscaled,
@@ -521,7 +522,7 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
     # ------------------------------------------------------------------
     for jj in range(n_lines):
         line_name = line_names[jj]
-        tag_spec = "SPEC_" + line_name.upper()
+        tag_spec = f"SPEC_{line_name.upper()}"
 
         if tag_spec not in this_data.keys():
             LOG.error(f"{tag_spec} not found in table; skipping {line_name}.")
@@ -546,10 +547,10 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
         ).to(u.km / u.s)
 
         # Choose the appropriate mask for this line
-        # (HFS lines get their own extended mask if available)
+        # (individual mode: per-line mask; all others: combined mask)
         if ref_line_method == "individual":
-            active_mask = line_masks[line_name.upper()]
-            line_vmean = line_vmeans[line_name.upper()]
+            active_mask = line_masks[line_name]
+            line_vmean = line_vmeans[line_name]
         else:
             if use_hfs_lines and line_name in lines_hfs:
                 hfs_tag = f"SPEC_MASK_{line_name.upper()}"

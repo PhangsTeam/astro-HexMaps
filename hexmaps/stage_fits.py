@@ -77,7 +77,7 @@ from datetime import date
 
 from hexmaps.utils_fits import twod_head, conv_with_gauss, reproject_cube, resolve_meta_resolution
 from hexmaps.stage_regrid import _ensure_ms, _get_vaxis
-from hexmaps.utils_table import get_mom_maps, build_noise_mask
+from hexmaps.utils_table import get_mom_maps, build_noise_mask, resolve_mask_lines
 
 from hexmaps import __version__ as _HEXMAPS_VERSION
 from hexmaps.logger import get_logger
@@ -823,9 +823,9 @@ def run_moments_ppv(
     n_lines = len(line_names)
 
     ref_line = (
-        ref_line_method.upper()
+        ref_line_method
         if ref_line_method in line_names
-        else line_names[0].upper()
+        else line_names[0]
     )
 
     # ------------------------------------------------------------------
@@ -890,7 +890,7 @@ def run_moments_ppv(
     for _, row in cubes.iterrows():
         name = str(row["line_name"])
         raw_path = os.path.join(str(row["line_dir"]), target + str(row["line_ext"]))
-        cube_hdrs[name.upper()] = (
+        cube_hdrs[name] = (
             fits.getheader(raw_path) if os.path.exists(raw_path) else {}
         )
         data, _ = get_convolved_ppv_cube(
@@ -902,14 +902,12 @@ def run_moments_ppv(
             ov_hdr,
             log=LOG,
         )
-        cube_data[name.upper()] = data * au.Unit(str(row["line_unit"]))
+        cube_data[name] = data * au.Unit(str(row["line_unit"]))
 
-    if ref_line.upper() not in cube_data:
-        LOG.error(
-            f"Reference line {ref_line} not found among loaded cubes for {target}."
-        )
-        raise FileNotFoundError(
-            f"Reference line {ref_line} not found among loaded cubes for {target}."
+    if ref_line not in cube_data:
+        LOG.warning(
+            f"Nominal reference line {ref_line} not found; "
+            f"mask construction will use available cubes via resolve_mask_lines."
         )
 
     # ------------------------------------------------------------------
@@ -968,50 +966,55 @@ def run_moments_ppv(
             mask = external_mask_ppv(mask_file, ov_hdr, log=LOG)
             LOG.info("External mask sampled onto PPV grid.")
     else:
-        # ppv_line_masks is populated only in individual mode; empty otherwise.
+        # ------------------------------------------------------------------
+        # Resolve which lines feed into the mask using the shared helper.
+        # Returns None for "individual" mode, or a list of line names to 
+        # OR-combine for all other modes.
+        # ------------------------------------------------------------------
         ppv_line_masks = {}
-        if ref_line_method == "individual":
-            # Build one independent S/N mask per line from that line's own cube.
-            # Each line's mask is stored in ppv_line_masks; active_mask is set
-            # per-line inside the moment-computation loop below.
+        mask_lines = resolve_mask_lines(ref_line_method, line_names)
+
+        if mask_lines is None:
+            # individual: one independent mask per line
             LOG.info(
                 f"Building individual PPV masks for {', '.join(line_names)}."
             )
-            ppv_line_masks = {}
-            for ln in line_names:
-                ln_upper = ln.upper()
-                if ln_upper not in cube_data:
+            for line in line_names:
+                if line not in cube_data:
                     continue
-                line_mask = construct_mask_ppv(cube_data[ln_upper].value, SN_processing)
+                line_mask = construct_mask_ppv(cube_data[line].value, SN_processing)
                 if strict_mask:
                     line_mask = apply_strict_mask_ppv(line_mask.astype(int))
-                ppv_line_masks[ln_upper] = line_mask
-                LOG.info(f"Individual PPV mask built for {ln}.")
-            # Use the OR-union of all per-line masks as the combined mask
-            # (for saving and for edge-erosion application below).
-            mask_union = np.zeros_like(next(iter(ppv_line_masks.values())), dtype=int)
+                ppv_line_masks[line] = line_mask
+                LOG.info(f"Individual PPV mask built for {line}.")
+            # Combined union mask for edge-erosion and the saved mask file
+            mask = np.zeros_like(
+                next(iter(ppv_line_masks.values())), dtype=int
+            )
             for lm in ppv_line_masks.values():
-                mask_union = mask_union | np.asarray(lm).astype(int)
-            mask = mask_union
+                mask = mask | np.asarray(lm).astype(int)
 
         else:
-            LOG.info(f"Building PPV velocity mask from {ref_line}.")
-            mask = construct_mask_ppv(cube_data[ref_line].value, SN_processing)
-
-            if ref_line_method == "all":
-                n_mask = n_lines
-            elif isinstance(ref_line_method, int):
-                n_mask = min(n_lines, ref_line_method)
-            else:
-                n_mask = 0  # "first": only the reference line
-
-            for n_mask_i in range(1, n_mask + 1):
-                line_i = line_names[n_mask_i].upper()
-                if line_i not in cube_data:
+            # Build the combined mask by looping over the resolved lines
+            LOG.info(
+                f"Building PPV velocity mask from: {', '.join(mask_lines)}."
+            )
+            mask = None
+            for line in mask_lines:
+                if line not in cube_data:
+                    LOG.warning(f"Mask line {line} not in loaded cubes; skipping.")
                     continue
-                mask_i = construct_mask_ppv(cube_data[line_i].value, SN_processing)
-                mask = mask.astype(int) | mask_i.astype(int)
-                LOG.info(f"Combined PPV mask includes {line_i}.")
+                mask_line = construct_mask_ppv(cube_data[line].value, SN_processing)
+                if mask is None:
+                    mask = mask_line.astype(int)
+                else:
+                    mask = mask | mask_line.astype(int)
+                    LOG.info(f"Combined PPV mask includes {line}.")
+
+            if mask is None:
+                LOG.error("No valid mask lines found; using empty mask.")
+                ref_shape = next(iter(cube_data.values())).shape
+                mask = np.zeros(ref_shape, dtype=int)
 
             if strict_mask:
                 LOG.info(
@@ -1052,15 +1055,15 @@ def run_moments_ppv(
             f"PPV mask cube written to: {os.path.join(folder, f'{target}_mask.fits')}"
         )
         if ref_line_method == "individual":
-            for ln, lm in ppv_line_masks.items():
+            for line, lm in ppv_line_masks.items():
                 lm_edge = (np.asarray(lm) * edge_mask[None, :, :]).astype(int)
                 save_ppv_mask_to_fits(
-                    lm_edge, ov_hdr, target, f"mask_{ln.lower()}",
+                    lm_edge, ov_hdr, target, f"mask_{line.lower()}",
                     folder, out_nan_mask=out_nan_mask,
                 )
                 LOG.info(
-                    f"Individual PPV mask for {ln} written to: "
-                    f"{os.path.join(folder, f'{target}_mask_{ln.lower()}.fits')}"
+                    f"Individual PPV mask for {line} written to: "
+                    f"{os.path.join(folder, f'{target}_mask_{line.lower()}.fits')}"
                 )
 
     # ------------------------------------------------------------------
@@ -1068,13 +1071,13 @@ def run_moments_ppv(
     # ------------------------------------------------------------------
     for jj, row in cubes.iterrows():
         line_name = str(row["line_name"])
-        if line_name.upper() not in cube_data:
+        if line_name not in cube_data:
             continue
 
         active_mask = mask
         if ref_line_method == "individual":
             # Use this line's own mask, falling back to the union mask if absent.
-            active_mask = ppv_line_masks.get(line_name.upper(), mask)
+            active_mask = ppv_line_masks.get(line_name, mask)
         elif use_hfs_lines and hfs_data is not None:
             mask_hfs = build_hfs_mask_ppv(mask, line_name, hfs_data, delta_v_kms)
             if mask_hfs is not None:
@@ -1095,13 +1098,13 @@ def run_moments_ppv(
                     )
 
         mom_maps = get_mom_maps_ppv(
-            cube_data[line_name.upper()],
+            cube_data[line_name],
             active_mask,
             vaxis,
             mom_calc,
             noise_mask=(
                 build_noise_mask(
-                    _noise_mask_df, vaxis, cube_data[line_name.upper()].shape
+                    _noise_mask_df, vaxis, cube_data[line_name].shape
                 )
                 if _noise_mask_df is not None
                 else None
@@ -1129,7 +1132,7 @@ def run_moments_ppv(
         }
 
         # out_nan_mask was computed once above, from ov_footprint & edge_mask.
-        _raw_hdr = cube_hdrs.get(line_name.upper(), {})
+        _raw_hdr = cube_hdrs.get(line_name, {})
         _restfrq = (
             (_raw_hdr.get("RESTFRQ") or _raw_hdr.get("RESTFREQ"))
             if _raw_hdr else None
