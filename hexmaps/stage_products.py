@@ -313,8 +313,6 @@ def construct_individual_mask(line_names, this_data, SN_processing, use_hfs_line
 
         line_masks[line.upper()] = mask
         line_vmeans[line.upper()] = vmean
-        
-        LOG.info(f"Completed mask for line: {line}.")
 
     return line_masks, line_vmeans
 
