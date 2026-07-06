@@ -4,7 +4,7 @@
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <!-- <a href="https://github.com/PhangsTeam/PyStructure">
+  <!-- <a href="https://github.com/PhangsTeam/astro-HexMaps">
     <img src="images/logo.png" alt="Logo" width="100" height="100">
   </a> -->
 
@@ -13,13 +13,13 @@
   <p align="center">
     Hexagonal-grid Multi-data Analysis and Processing Software
     <br />
-    <a href="https://hexmaps.readthedocs.io/en/latest/"><strong>Explore the docs »</strong></a>
+    <a href="https://astro-hexmaps.readthedocs.io/en/latest/"><strong>Explore the docs »</strong></a>
     <br /><br />
-    <a href="https://hexmaps.readthedocs.io/en/latest/quickstart.html">View Demo</a>
+    <a href="https://astro-hexmaps.readthedocs.io/en/latest/quickstart.html">View Demo</a>
     ·
-    <a href="https://github.com/PhangsTeam/PyStructure/issues">Report Bug</a>
+    <a href="https://github.com/PhangsTeam/astro-HexMaps/issues">Report Bug</a>
     ·
-    <a href="https://github.com/PhangsTeam/PyStructure/issues">Request Feature</a>
+    <a href="https://github.com/PhangsTeam/astro-HexMaps/issues">Request Feature</a>
   </p>
 </div>
 
@@ -33,7 +33,7 @@
 
 ## About the Project
 
-[![HexMaps screenshot][product-screenshot]](https://hexmaps.readthedocs.io/en/latest/)
+[![HexMaps screenshot][product-screenshot]](https://astro-hexmaps.readthedocs.io/en/latest/)
 
 **HexMaps** is a Python package for homogenizing and analysing
 multi-wavelength astronomical datasets on hexagonal grids. It is ideally
@@ -59,7 +59,7 @@ side by side. This makes line-ratio analysis, radial profile extraction, and
 spectral stacking straightforward with standard Python tools.
 
 HexMaps is the successor to
-[PyStructure (PhangsTeam)](https://github.com/PhangsTeam/astro-HexMaps),
+[PyStructure (PhangsTeam)](https://github.com/PhangsTeam/PyStructure),
 refactored into a pip-installable package with a clean CLI, an INI-style
 single configuration file, and a modular stage architecture.
 
@@ -83,14 +83,14 @@ reproject  radio_beam  spectral_cube  scikit-image
 
 ```bash
 # From PyPI (once published)
-pip install hexmaps
+pip install astro-hexmaps
 
 # From GitHub — latest development version
-pip install git+https://github.com/PhangsTeam/astro-HexMaps.git@main
+pip install git+https://github.com/PhangsTeam/astro-HexMaps.git
 
 # Editable / development install
-git clone -b rename/hexmaps https://github.com/PhangsTeam/astro-HexMaps.git
-cd PyStructure
+git clone https://github.com/PhangsTeam/astro-HexMaps.git
+cd astro-HexMaps
 pip install -e ".[dev]"
 ```
 
@@ -107,22 +107,42 @@ pip install -e ".[dev]"
 hexmaps --init
 
 # Or target a specific directory
-hexmaps --init --workdir ~/my_survey
+hexmaps --init (optionally --workdir ~/my_survey)
 cd ~/my_survey
 ```
 
 This copies template configuration files into your working directory.
 The installed package is never modified.
 
-### 2 — Edit your configuration
+### 2 — Download the example dataset *(optional)*
+
+To try the pipeline immediately with real data, download the bundled
+NGC 5194 example dataset (~46 MB):
+
+```bash
+hexmaps --download-example (optionally --workdir ~/my_survey)
+```
+
+This fetches six FITS files (CO(2–1) cube, CO(1–0) cube, SPIRE 250 µm map,
+and their associated products) into `~/my_survey/data/`. The bundled
+`config.txt` is already configured to use these files, so you can run the
+pipeline straight away after downloading.
+
+Use `--force` to overwrite files that already exist:
+
+```bash
+hexmaps --download-example (optionally --workdir ~/my_survey) --force
+```
+
+### 3 — Edit your configuration
 
 | File | What to configure | How often |
-|------|-------------------|-----------|
+|------|-------------------|-----------| 
 | `config.txt` | data directory, source list, overlay cube, maps/cubes, target resolution, masking, output flags | every run |
-| `keys/target_definitions.txt` | RA, Dec, distance, inclination per source | once — shared across projects |
+| `keys/target_definitions.txt` | sky coordinates, distance, inclination per target | only edit if new target used in config |
 | `keys/hfs_lines.txt` *(optional)* | Hyperfine structure line definitions | rarely |
 
-`config.txt` replaces the `Pystructure.conf` file of the old PyStructure
+`config.txt` replaces the `PyStructure.conf` file of the old PyStructure.
 
 > **Migrating from PyStructure?** Use the conversion scripts:
 >
@@ -132,7 +152,7 @@ The installed package is never modified.
 > python conversion_from_pystructure/hfs_lines_conversion.py hfs_lines.txt keys/hfs_lines.txt
 > ```
 
-### 3 — Run
+### 4 — Run
 
 ```bash
 # Default: regrid + products (writes .ecsv database)
@@ -168,7 +188,7 @@ handler.run_stages(["fits"], targets=["ngc5194"])      # re-run one stage only
 ## Repository Layout
 
 ```
-PyStructure/                         ← git repository root (pip install this)
+astro-HexMaps/                       ← git repository root (pip install this)
 ├── hexmaps/                         ← installable package
 │   ├── handler_keys.py              reads & validates config and key files
 │   ├── handler_sources.py           source geometry lookups
@@ -178,10 +198,17 @@ PyStructure/                         ← git repository root (pip install this)
 │   ├── stage_fits.py                FITS moment maps / cubes / band images
 │   ├── utils_fits.py                FITS/WCS helpers (convolution, reprojection)
 │   ├── utils_table.py               table I/O, spectral shuffle, moments
-│   ├── hexmapsLogger.py             centralised stage-labelled logger
+│   ├── logger.py                    centralised stage-labelled logger
 │   ├── init_workdir.py              --init scaffolding
+│   ├── download_example.py          --download-example data fetcher
 │   ├── cli.py                       hexmaps console-script entry point
-│   └── test_hexmaps.py              unit and integration tests
+│   ├── test_hexmaps.py              unit and integration tests
+│   └── templates/                   ← template files to initialise working directory
+│   │   ├── config.txt              
+│   │   ├── run_hexmaps.py              
+│   │   ├── keys                    
+│   │   │   ├── target_definitions.txt  
+│   │   │   ├── hfs_lines.txt           
 ├── config.txt                       ← example / template config file
 ├── keys/
 │   ├── target_definitions.txt       ← source geometry table
@@ -242,8 +269,12 @@ from hexmaps_analysis import HexMapsAnalysis
 db = HexMapsAnalysis("output/ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
 db.quickplot_map("12CO21")
 db.quickplot_spectrum("12CO21")
+
+# Recover provenance information embedded at run time
 print(db.get_config())               # recover config.txt used for this run
+print(db.get_log())                  # recover the full pipeline log
 hdr = db.get_input_header("12CO21")  # recover raw FITS header of input cube
+print(db.list_input_headers())       # list all embedded headers
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -252,9 +283,10 @@ hdr = db.get_input_header("12CO21")  # recover raw FITS header of input cube
 
 ## Roadmap
 
+- [ ] PyPI release
 - [ ] Expanded documentation and tutorials
 - [ ] Additional analysis utilities in `hexmaps_analysis.py`
-- [ ] Various feature updates (e.g. "island-method" masking, chunking for large data sets)
+- [ ] Various feature updates (e.g. "island-method" masking, chunking for large datasets)
 
 See the [open issues](https://github.com/PhangsTeam/astro-HexMaps/issues)
 for a full list of proposed features and known issues.
@@ -293,7 +325,7 @@ Dr. Jakob den Brok — jadenbrok@mpia.de
 
 Dr. Lukas Neumann — lukas.neumann@eso.org
 
-Project Link: [https://github.com/PhangsTeam/PyStructure](https://github.com/PhangsTeam/astro-HexMaps)
+Project Link: [https://github.com/PhangsTeam/astro-HexMaps](https://github.com/PhangsTeam/astro-HexMaps)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
