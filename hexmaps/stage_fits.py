@@ -968,29 +968,56 @@ def run_moments_ppv(
             mask = external_mask_ppv(mask_file, ov_hdr, log=LOG)
             LOG.info("External mask sampled onto PPV grid.")
     else:
-        LOG.info(f"Building PPV velocity mask from {ref_line}.")
-        mask = construct_mask_ppv(cube_data[ref_line].value, SN_processing)
-
-        if ref_line_method == "all":
-            n_mask = n_lines
-        elif isinstance(ref_line_method, int):
-            n_mask = min(n_lines, ref_line_method)
-        else:
-            n_mask = 0  # "first": only the reference line
-
-        for n_mask_i in range(1, n_mask + 1):
-            line_i = line_names[n_mask_i].upper()
-            if line_i not in cube_data:
-                continue
-            mask_i = construct_mask_ppv(cube_data[line_i].value, SN_processing)
-            mask = mask.astype(int) | mask_i.astype(int)
-            LOG.info(f"Combined PPV mask includes {line_i}.")
-
-        if strict_mask:
+        # ppv_line_masks is populated only in individual mode; empty otherwise.
+        ppv_line_masks = {}
+        if ref_line_method == "individual":
+            # Build one independent S/N mask per line from that line's own cube.
+            # Each line's mask is stored in ppv_line_masks; active_mask is set
+            # per-line inside the moment-computation loop below.
             LOG.info(
-                "Applying strict spatial mask filter (connected-component, PPV grid)."
+                f"Building individual PPV masks for {', '.join(line_names)}."
             )
-            mask = apply_strict_mask_ppv(mask.astype(int))
+            ppv_line_masks = {}
+            for ln in line_names:
+                ln_upper = ln.upper()
+                if ln_upper not in cube_data:
+                    continue
+                line_mask = construct_mask_ppv(cube_data[ln_upper].value, SN_processing)
+                if strict_mask:
+                    line_mask = apply_strict_mask_ppv(line_mask.astype(int))
+                ppv_line_masks[ln_upper] = line_mask
+                LOG.info(f"Individual PPV mask built for {ln}.")
+            # Use the OR-union of all per-line masks as the combined mask
+            # (for saving and for edge-erosion application below).
+            mask_union = np.zeros_like(next(iter(ppv_line_masks.values())), dtype=int)
+            for lm in ppv_line_masks.values():
+                mask_union = mask_union | np.asarray(lm).astype(int)
+            mask = mask_union
+
+        else:
+            LOG.info(f"Building PPV velocity mask from {ref_line}.")
+            mask = construct_mask_ppv(cube_data[ref_line].value, SN_processing)
+
+            if ref_line_method == "all":
+                n_mask = n_lines
+            elif isinstance(ref_line_method, int):
+                n_mask = min(n_lines, ref_line_method)
+            else:
+                n_mask = 0  # "first": only the reference line
+
+            for n_mask_i in range(1, n_mask + 1):
+                line_i = line_names[n_mask_i].upper()
+                if line_i not in cube_data:
+                    continue
+                mask_i = construct_mask_ppv(cube_data[line_i].value, SN_processing)
+                mask = mask.astype(int) | mask_i.astype(int)
+                LOG.info(f"Combined PPV mask includes {line_i}.")
+
+            if strict_mask:
+                LOG.info(
+                    "Applying strict spatial mask filter (connected-component, PPV grid)."
+                )
+                mask = apply_strict_mask_ppv(mask.astype(int))
 
     # ------------------------------------------------------------------
     # Apply edge trimming: zero out the half-beam border of the footprint
@@ -1024,6 +1051,17 @@ def run_moments_ppv(
         LOG.info(
             f"PPV mask cube written to: {os.path.join(folder, f'{target}_mask.fits')}"
         )
+        if ref_line_method == "individual":
+            for ln, lm in ppv_line_masks.items():
+                lm_edge = (np.asarray(lm) * edge_mask[None, :, :]).astype(int)
+                save_ppv_mask_to_fits(
+                    lm_edge, ov_hdr, target, f"mask_{ln.lower()}",
+                    folder, out_nan_mask=out_nan_mask,
+                )
+                LOG.info(
+                    f"Individual PPV mask for {ln} written to: "
+                    f"{os.path.join(folder, f'{target}_mask_{ln.lower()}.fits')}"
+                )
 
     # ------------------------------------------------------------------
     # Compute and write moments for every line.
@@ -1034,7 +1072,10 @@ def run_moments_ppv(
             continue
 
         active_mask = mask
-        if use_hfs_lines and hfs_data is not None:
+        if ref_line_method == "individual":
+            # Use this line's own mask, falling back to the union mask if absent.
+            active_mask = ppv_line_masks.get(line_name.upper(), mask)
+        elif use_hfs_lines and hfs_data is not None:
             mask_hfs = build_hfs_mask_ppv(mask, line_name, hfs_data, delta_v_kms)
             if mask_hfs is not None:
                 active_mask = mask_hfs
