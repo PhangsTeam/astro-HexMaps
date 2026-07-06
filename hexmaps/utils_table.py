@@ -502,3 +502,90 @@ def build_noise_mask(noise_mask_df, vaxis, shape):
     else:
         # PPV: (n_chan, ny, nx) — channel axis is first
         return np.broadcast_to(chan_mask[:, None, None], shape).copy()
+
+
+def resolve_mask_lines(ref_line_method, line_names):
+    """
+    Resolve which lines to use for mask construction.
+
+    Returns a list of uppercase line names that should be OR-combined to
+    produce the integration mask.  The caller loops over this list exactly
+    once: builds a mask per line, OR-combines them, and uses the result.
+
+    Parameters
+    ----------
+    ref_line_method : str or int
+        Value of config key ``ref_line``. One of:
+
+        ``"first"``
+            Only the first line in the cube list.
+        ``"<line_name>"`` or ``"<n1>, <n2>, ..."``
+            A single named line or a comma-separated list of line names.
+            Each name is matched case-insensitively against *line_names*.
+            Names not found in the list are warned and skipped.
+        ``"all"``
+            Every line in the cube list.
+        ``int`` or numeric string ``"n"``
+            First *n* lines (``n=1`` → first line only, same as ``"first"``).
+        ``"individual"``
+            Special mode: not handled here.  Returns ``None`` to signal
+            that the caller should build one mask per line independently.
+
+    line_names : list of str
+        All cube line names in the order they appear in the config, as they
+        are stored in the database (typically lowercase, e.g. ``"12co21"``).
+
+    Returns
+    -------
+    list of str (uppercase) or None
+        Uppercase line names to use for masking, or ``None`` for
+        ``individual`` mode.
+
+    Raises
+    ------
+    ValueError if no valid masking lines can be resolved.
+    """
+    if not line_names:
+        raise ValueError("resolve_mask_lines: line_names is empty.")
+
+    # Individual mode — signal to caller
+    if str(ref_line_method).strip().lower() == "individual":
+        return None
+
+    # all
+    if str(ref_line_method).strip().lower() == "all":
+        return line_names
+
+    # integer or numeric string → first n lines
+    try:
+        n = int(ref_line_method)
+        n = max(1, min(n, len(line_names)))
+        return line_names[:n]
+    except (ValueError, TypeError):
+        pass
+
+    # "first" → first line only
+    if str(ref_line_method).strip().lower() == "first":
+        return [line_names[0]]
+
+    # Named line(s): comma-separated list or single name
+    candidates = [p.strip() for p in str(ref_line_method).split(",")]
+    resolved = []
+    for c in candidates:
+        if c in line_names:
+            resolved.append(c)
+        else:
+            import logging as _logging
+            _logging.getLogger("hexmaps").warning(
+                f"resolve_mask_lines: '{c}' not found in cube list {line_names}; skipping."
+            )
+    if resolved:
+        return resolved
+
+    # fallback — unrecognised value, use first line and warn
+    import logging as _logging
+    _logging.getLogger("hexmaps").warning(
+        f"resolve_mask_lines: unrecognised ref_line value '{ref_line_method}'; "
+        f"falling back to first line '{line_names[0]}'."
+    )
+    return [line_names[0]]
