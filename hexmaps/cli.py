@@ -50,6 +50,22 @@ def parse_args(argv=None):
         action="store_true",
         help="Overwrite existing files when using --init.",
     )
+    parser.add_argument(
+        "--download-example",
+        action="store_true",
+        default=False,
+        help=(
+            "Download the NGC 5194 example dataset (~46 MB) into the data/ "
+            "sub-directory of --workdir. Run after --init to get data you "
+            "can process immediately with the bundled config.txt."
+        ),
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Overwrite existing files when using --download-example.",
+    )
 
     # --- Run mode ---
     parser.add_argument(
@@ -102,6 +118,15 @@ def main(argv=None):
             print(f"[ERROR]    {exc}")
             print("[ERROR]    Use --overwrite to replace existing files.")
             sys.exit(1)
+        return
+
+    # ------------------------------------------------------------------
+    # --download-example mode: fetch NGC 5194 example data and exit
+    # ------------------------------------------------------------------
+    if args.download_example:
+        from hexmaps.download_example import download_example_data
+
+        download_example_data(workdir=args.workdir, force=args.force)
         return
 
     # ------------------------------------------------------------------
