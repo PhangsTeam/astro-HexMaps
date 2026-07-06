@@ -423,36 +423,6 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
                 ) * u.dimensionless_unscaled
                 LOG.info(f"Combined mask includes {line_i}.")
 
-            # Special case: combine reference line mask with HI mask,
-            # using HI at large radii (rgal_r25 > 0.23) and the reference line at small radii
-            if ref_line_method == "ref+HI":
-                if "hi" in line_names:
-                    mask_hi, vmean_hi, _ = construct_mask("HI", this_data, SN_processing)
-                    mask = (
-                        mask.value.astype(int) | mask_hi.value.astype(int)
-                    ) * u.dimensionless_unscaled
-                    if "rgal_r25" not in this_data.colnames:
-                        LOG.warning(
-                            "ref+HI mode requires rgal_r25 to select the radial "
-                            "transition, but galaxy geometry is not available for "
-                            "this target. Falling back to using HI mask everywhere."
-                        )
-                        rgal = None
-                    else:
-                        rgal = this_data["rgal_r25"]
-                    n_pts = len(mask)
-                    vmean_comb = np.zeros(n_pts) * np.nan
-                    for jj in range(n_pts):
-                        vmean_comb[jj] = (
-                            ref_line_vmean[jj].value
-                            if (rgal is None or rgal[jj] < 0.23)
-                            else vmean_hi[jj].value
-                        )
-                    ref_line_vmean = vmean_comb
-                    LOG.info(f"ref+HI mask: using HI at r > 0.23 r25.")
-                else:
-                    LOG.warning(f"HI not found in HexMaps; " "ignoring ref+HI option.")
-
             # Optional strict spatial connectivity filter
             if strict_mask:
                 LOG.info(f"Applying strict spatial mask filter.")

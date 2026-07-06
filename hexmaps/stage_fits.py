@@ -776,7 +776,7 @@ def run_moments_ppv(
 
     This function reproduces the mask-construction orchestration of
     stage_products.run_products (ref_line selection, ref_line combination
-    modes, ref+HI, strict_mask, HFS extension, use_input_mask /
+    modes, strict_mask, HFS extension, use_input_mask /
     use_fixed_vel_mask) exactly, but operates on convolved PPV cubes
     (get_convolved_ppv_cube) and computes moments with get_mom_maps_ppv
     instead of working through the hex-grid .ecsv table.
@@ -985,14 +985,6 @@ def run_moments_ppv(
             mask_i = construct_mask_ppv(cube_data[line_i].value, SN_processing)
             mask = mask.astype(int) | mask_i.astype(int)
             LOG.info(f"Combined PPV mask includes {line_i}.")
-
-        if ref_line_method == "ref+HI":
-            if "HI" in cube_data:
-                mask_hi = construct_mask_ppv(cube_data["HI"].value, SN_processing)
-                mask = mask.astype(int) | mask_hi.astype(int)
-                LOG.info("ref+HI mask: combined reference line and HI masks.")
-            else:
-                LOG.warning("HI not found among loaded cubes; ignoring ref+HI option.")
 
         if strict_mask:
             LOG.info(

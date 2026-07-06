@@ -134,11 +134,11 @@ CDELT_SHUFF = 4000.0
 
 [masking]
 # Reference line for mask construction:
-#   first        - use the first cube in the cube list above
+#   first        - use the first line in the cube list above
 #   <LINE_NAME>  - use that specific line
-#   all          - use all cubes
-#   n            - use first n cubes
-#   ref+HI       - use first cube and HI
+#   all          - use all lines
+#   n            - use first n lines
+#   individual   - use individual mask per line
 ref_line         = first
 
 # Signal-to-noise thresholds for the two-step mask: [low, high]

@@ -139,7 +139,6 @@ CDELT_SHUFF = 4000.0
 #   all          - use all lines
 #   n            - use first n lines
 #   individual   - use individual mask per line
-#   ref+HI       - use first line and HI
 ref_line         = first
 
 # Signal-to-noise thresholds for the two-step mask: [low, high]
