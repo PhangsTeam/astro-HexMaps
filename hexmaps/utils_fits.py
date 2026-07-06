@@ -509,9 +509,9 @@ def deconvolve_gauss(
     meas_maj, beam_maj, meas_min=None, meas_pa=None, beam_min=None, beam_pa=None
 ):
     """
-    Deconvolve a Gaussian beam from a measured Gaussian source size.
+    Deconvolve a Gaussian beam from a measured Gaussian target size.
 
-    Finds the intrinsic source size by subtracting the beam in quadrature
+    Finds the intrinsic target size by subtracting the beam in quadrature
     (in 2-D, including position angle rotation).  Port of MIRIAD gaupar.for.
 
     This is used in conv_with_gauss to compute the convolution kernel needed
@@ -528,10 +528,10 @@ def deconvolve_gauss(
 
     Returns
     -------
-    src_maj, src_min, src_pa : float — intrinsic source Gaussian parameters
+    src_maj, src_min, src_pa : float — intrinsic target Gaussian parameters
     info : [worked, point_source]
         worked       — True if deconvolution succeeded
-        point_source — True if the source is unresolved (within tolerance)
+        point_source — True if the target is unresolved (within tolerance)
     """
     if beam_min is None:
         meas_min = meas_maj
@@ -830,15 +830,15 @@ failure modes produced by GILDAS/CLASS and other radio-astronomy FITS cubes:
      does not recognise GLS and silently misplaces every coordinate, giving
      all-NaN output.  Fixed by renaming the CTYPE values before any WCS call.
 
-  2. Different rest frequencies -- when the source and target cubes belong to
+  2. Different rest frequencies -- when the target and target cubes belong to
      different molecular lines (e.g. HCN and CO), a full 3-D WCS reprojection
-     maps every source channel to a spectral index far outside the target array
+     maps every target channel to a spectral index far outside the target array
      because the two rest frequencies encode different absolute frequencies for
      the same radial velocity.  Fixed by stripping the spectral axis from both
      WCS objects and reprojecting each spatial plane individually.
 
   3. Spectral resampling -- after fix 2, the spatially reprojected cube still
-     carries the *source* velocity grid.  The cube is resampled onto the target
+     carries the *target* velocity grid.  The cube is resampled onto the target
      velocity grid using 1-D interpolation along the spectral axis so that the
      output shape and WCS exactly match the requested target header.
 
@@ -851,7 +851,7 @@ failure modes produced by GILDAS/CLASS and other radio-astronomy FITS cubes:
      internally rewrites to ``VRAD`` via its ``spcfix`` mechanism.  This
      rewrite can produce all-NaN output when the two cubes have different
      ``CTYPE3`` variants (``VELO-LSR`` vs ``VRAD``) or when the spcfix
-     transformation is applied inconsistently between source and target.
+     transformation is applied inconsistently between target and target.
      Fixed by explicitly normalising ``CTYPE3`` to ``VRAD`` before any
      reprojection call.
 
@@ -992,7 +992,7 @@ def _velo_grid(hdr):
 
 
 def _spatial_footprints_overlap(src_hdr, tgt_hdr):
-    """Return True if at least one corner of the source falls inside the target."""
+    """Return True if at least one corner of the target falls inside the target."""
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", FITSFixedWarning)
@@ -1024,7 +1024,7 @@ def _resample_spectral_axis(cube, v_in, v_out, kind="linear"):
     Parameters
     ----------
     cube : ndarray, shape (n_in, ny, nx)
-    v_in : 1-D array, length n_in  — source velocity grid (m/s)
+    v_in : 1-D array, length n_in  — target velocity grid (m/s)
     v_out : 1-D array, length n_out — target velocity grid (m/s)
     kind : str
         Interpolation kind passed to ``scipy.interpolate.interp1d``:
@@ -1189,7 +1189,7 @@ def reproject_cube(
         target velocity grid.  Any value accepted by
         ``scipy.interpolate.interp1d``: ``'linear'`` (default),
         ``'nearest'``, ``'quadratic'``, or ``'cubic'``.
-        Only used when source and target RESTFREQ values differ.
+        Only used when target and target RESTFREQ values differ.
 
     Returns
     -------
@@ -1216,7 +1216,7 @@ def reproject_cube(
         inconsistencies from astropy's internal ``spcfix`` rewrite.
 
     **Spectral-axis isolation**
-        When source and target headers carry detectably different rest
+        When target and target headers carry detectably different rest
         frequencies (checked under both ``RESTFREQ`` and ``RESTFRQ`` key
         names; relative tolerance 1 × 10⁻⁶), the spectral axis is stripped
         from both WCS objects and each spatial plane is reprojected
@@ -1225,8 +1225,8 @@ def reproject_cube(
 
     **Spectral resampling**
         After spatial reprojection the cube is resampled along axis 0 from the
-        source velocity grid onto the target velocity grid using 1-D
-        interpolation (``spectral_order``).  Channels outside the source
+        target velocity grid onto the target velocity grid using 1-D
+        interpolation (``spectral_order``).  Channels outside the target
         velocity range are set to NaN.  The output array shape therefore
         exactly matches the target header (NAXIS3 × NAXIS2 × NAXIS1).
 
@@ -1314,20 +1314,20 @@ def reproject_cube(
     return result
 
 
-def resolve_meta_resolution(source, params, meta, ov_hdr=None, log=None):
+def resolve_meta_resolution(target, params, meta, ov_hdr=None, log=None):
     """
-    Resolve the per-source target resolution and write the results back into
+    Resolve the per-target target resolution and write the results back into
     *meta* in-place.
 
     This is the single authoritative implementation used by all pipeline
     stages (regrid, products, fits) to ensure ``meta["target_res"]``,
     ``meta["target_res_pc"]``, and ``meta["res_suffix"]`` are correct for
-    *source* before any stage-specific processing begins.
+    *target* before any stage-specific processing begins.
 
     Parameters
     ----------
-    source  : str — source name (used only in log messages)
-    params  : dict — source geometry from SourceHandler.get_source_params()
+    target  : str — target name (used only in log messages)
+    params  : dict — target geometry from TargetHandler.get_target_params()
     meta    : dict — pipeline settings; updated in-place
     ov_hdr  : FITS Header or None — overlay cube header; required for
               ``resolution == "native"`` to read BMAJ/BMIN.  When None

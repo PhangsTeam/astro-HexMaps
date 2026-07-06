@@ -3,7 +3,7 @@ handler_pipeline.py — PipelineHandler: orchestrates the HexMaps pipeline.
 
 This is the main entry point for programmatic use of HexMapsPipeline.
 It loads all key files, validates the configuration, creates the output
-directory, and then dispatches the requested pipeline stages for each source.
+directory, and then dispatches the requested pipeline stages for each target.
 
 Pipeline stages (in execution order)
 --------------------------------------
@@ -11,7 +11,7 @@ regrid
     Generate the hexagonal sampling grid from the overlay cube, then convolve
     each input map and cube to the target resolution, reproject onto the
     overlay WCS, and sample at the hex-grid points.
-    Output: .ecsv file per source written to out_dir.
+    Output: .ecsv file per target written to out_dir.
 
 products
     Read the .ecsv file, construct the S/N mask from the reference line,
@@ -28,9 +28,9 @@ Programmatic (from Python)::
 
     from hexmaps import PipelineHandler
     handler = PipelineHandler(conf_path="config.txt")
-    handler.run_all()                              # regrid + products (default), all sources
+    handler.run_all()                              # regrid + products (default), all targets
     handler.run_stages(["regrid", "products"])     # subset of stages
-    handler.run_stages(["regrid"], targets=["ngc5194"])  # subset of sources
+    handler.run_stages(["regrid"], targets=["ngc5194"])  # subset of targets
 
 Command-line (after pip install)::
 
@@ -45,7 +45,7 @@ from pathlib import Path
 from datetime import date
 
 from hexmaps.handler_keys import KeyHandler
-from hexmaps.handler_sources import SourceHandler
+from hexmaps.handler_sources import TargetHandler
 from hexmaps.logger import get_logger, logger
 
 ALL_STAGES = ["regrid", "products", "fits"]
@@ -67,8 +67,8 @@ class PipelineHandler:
     ----------
     conf_path : str or Path
         Path to config.txt — the single configuration file containing paths,
-        metadata, the source/overlay/maps/cubes/mask tables, and all pipeline
-        settings. The source geometry table (keys/target_definitions.txt) and
+        metadata, the target/overlay/maps/cubes/mask tables, and all pipeline
+        settings. The target geometry table (keys/target_definitions.txt) and
         optional hyperfine-structure file (keys/hfs_lines.txt) are looked up
         in a `keys/` subfolder next to config.txt.
     verbose : bool, optional
@@ -81,8 +81,8 @@ class PipelineHandler:
     Attributes
     ----------
     key_handler    : KeyHandler    — loaded configuration
-    source_handler : SourceHandler — source geometry lookups
-    run_success    : dict          — maps source name → bool after a run
+    source_handler : TargetHandler — target geometry lookups
+    run_success    : dict          — maps target name → bool after a run
     """
 
     def __init__(self, conf_path: str, verbose: bool = True, log_file: str = None):
@@ -100,12 +100,12 @@ class PipelineHandler:
         self.key_handler = KeyHandler(conf_path)
         self.key_handler.validate()
 
-        self.source_handler = SourceHandler(
+        self.source_handler = TargetHandler(
             self.key_handler.get_source_table(),
             self.key_handler.get_sources(),
         )
         LOG_LOADING.info(
-            f"Loaded {self.source_handler.n_sources()} source(s): "
+            f"Loaded {self.source_handler.n_sources()} target(s): "
             f"{self.source_handler.all_sources()}"
         )
 
@@ -119,7 +119,7 @@ class PipelineHandler:
 
     def run_all(self, targets: list = None):
         """
-        Run the default pipeline stages (regrid + products) for the given sources.
+        Run the default pipeline stages (regrid + products) for the given targets.
 
         The ``fits`` stage is intentionally excluded from the default run
         because it is optional — it produces FITS moment maps and band images
@@ -131,7 +131,7 @@ class PipelineHandler:
         Parameters
         ----------
         targets : list of str, optional
-            Restrict to these source names.  Defaults to all sources in
+            Restrict to these target names.  Defaults to all targets in
             config.txt.
         """
         self.run_stages(DATABASE_STAGES, targets=targets)
@@ -156,8 +156,8 @@ class PipelineHandler:
             "regrid", "products", "fits".
             The special value ``"all"`` expands to all available stages.
         targets : list of str, optional
-            Restrict processing to these source names.  Defaults to all
-            sources defined in config.txt.
+            Restrict processing to these target names.  Defaults to all
+            targets defined in config.txt.
 
         Raises
         ------
@@ -194,18 +194,18 @@ class PipelineHandler:
                 "To enable FITS output, add 'fits' to your stage list."
             )
 
-        for source in source_list:
-            LOG_LOADING.info(f"--- Processing source: {source} ---")
+        for target in source_list:
+            LOG_LOADING.info(f"--- Processing target: {target} ---")
             try:
                 if "regrid" in ordered:
-                    self._run_regrid(source)
+                    self._run_regrid(target)
                 if "products" in ordered:
-                    self._run_products(source)
+                    self._run_products(target)
                 if "fits" in ordered:
-                    self._run_fits(source)
+                    self._run_fits(target)
             except Exception as exc:
-                self.run_success[source] = False
-                LOG_RETURN.error(f"Stage failed for {source}: {exc}")
+                self.run_success[target] = False
+                LOG_RETURN.error(f"Stage failed for {target}: {exc}")
                 import traceback
 
                 traceback.print_exc()
@@ -226,9 +226,9 @@ class PipelineHandler:
     # reproject, scipy, …) until they are actually needed.
     # ------------------------------------------------------------------
 
-    def _run_regrid(self, source: str):
+    def _run_regrid(self, target: str):
         """
-        Dispatch the regrid stage for *source*.
+        Dispatch the regrid stage for *target*.
 
         Generates the hexagonal sampling grid from the overlay cube, then
         convolves every input map and cube to the target resolution, reprojects
@@ -237,19 +237,19 @@ class PipelineHandler:
         """
         from hexmaps.stage_regrid import run_regrid, LOG as REGRID_LOG
 
-        REGRID_LOG.info(f"Convolving and sampling data for {source}.")
+        REGRID_LOG.info(f"Convolving and sampling data for {target}.")
         run_regrid(
-            source=source,
-            params=self.source_handler.get_source_params(source),
+            target=target,
+            params=self.source_handler.get_target_params(target),
             meta=self.key_handler.meta,
             maps=self.key_handler.get_maps(),
             cubes=self.key_handler.get_cubes(),
             input_mask=self.key_handler.get_input_mask(),
         )
 
-    def _run_products(self, source: str):
+    def _run_products(self, target: str):
         """
-        Dispatch the products stage for *source*.
+        Dispatch the products stage for *target*.
 
         Reads the .ecsv written by regrid (discovers the most recent existing
         file via _find_output_fname so products can run independently without
@@ -259,10 +259,10 @@ class PipelineHandler:
         """
         from hexmaps.stage_products import run_products, LOG as PRODUCTS_LOG
 
-        PRODUCTS_LOG.info(f"Create products for source: {source} ...")
+        PRODUCTS_LOG.info(f"Create products for target: {target} ...")
         run_products(
-            source=source,
-            fname=self._find_output_fname(source),
+            target=target,
+            fname=self._find_output_fname(target),
             meta=self.key_handler.meta,
             cubes=self.key_handler.get_cubes(),
             input_mask=self.key_handler.get_input_mask(),
@@ -270,9 +270,9 @@ class PipelineHandler:
             noise_mask_df=self.key_handler.get_noise_mask(),
         )
 
-    def _run_fits(self, source: str):
+    def _run_fits(self, target: str):
         """
-        Dispatch the fits stage for *source*.
+        Dispatch the fits stage for *target*.
 
         Computes moment maps directly on the convolved PPV cubes (not the
         hex-grid .ecsv table), regrid the 2D map columns onto a rectangular
@@ -283,14 +283,14 @@ class PipelineHandler:
         """
         from hexmaps.stage_fits import run_fits, LOG as FITS_LOG
 
-        FITS_LOG.info(f"Creating FITS files for source: {source} ...")
+        FITS_LOG.info(f"Creating FITS files for target: {target} ...")
         run_fits(
-            source=source,
-            fname=self._find_output_fname(source),
+            target=target,
+            fname=self._find_output_fname(target),
             meta=self.key_handler.meta,
             maps=self.key_handler.get_maps(),
             cubes=self.key_handler.get_cubes(),
-            params=self.source_handler.get_source_params(source),
+            params=self.source_handler.get_target_params(target),
             input_mask=self.key_handler.get_input_mask(),
             hfs_data=self.key_handler.get_hfs_data(),
             noise_mask_df=self.key_handler.get_noise_mask(),
@@ -300,12 +300,12 @@ class PipelineHandler:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _get_output_fname(self, source: str) -> str:
+    def _get_output_fname(self, target: str) -> str:
         """
-        Build the .ecsv output filename for *source*.
+        Build the .ecsv output filename for *target*.
 
         Reads ``meta["res_suffix"]`` — set by handler_keys._resolve_resolution
-        at config-load time and overwritten per-source by run_sampling —
+        at config-load time and overwritten per-target by run_sampling —
         so the suffix is always consistent with the resolution mode.
 
         Examples
@@ -318,7 +318,7 @@ class PipelineHandler:
         out_dir = meta.get("out_dir", "output/")
         res_suffix = meta.get("res_suffix", "27p0as")
         date_str = date.today().strftime("%Y_%m_%d")
-        fname = os.path.join(out_dir, f"{source}_hexmaps_{res_suffix}_{date_str}.ecsv")
+        fname = os.path.join(out_dir, f"{target}_hexmaps_{res_suffix}_{date_str}.ecsv")
 
         # In archive mode, bump the version number if the file already exists
         if "archive" in meta.get("structure_creation", "") and os.path.exists(fname):
@@ -330,14 +330,14 @@ class PipelineHandler:
 
         return fname
 
-    def _find_output_fname(self, source: str) -> str:
+    def _find_output_fname(self, target: str) -> str:
         """
-        Find the most recent existing .ecsv for *source*, or fall back to
+        Find the most recent existing .ecsv for *target*, or fall back to
         ``_get_output_fname`` (today's date) if none exists yet.
 
         Used by products and fits stages when running independently (without
         regrid in the same session). Globs for
-        ``{source}_hexmaps_{res_suffix}_*.ecsv`` in out_dir and returns
+        ``{target}_hexmaps_{res_suffix}_*.ecsv`` in out_dir and returns
         the most recently modified match, so re-running products or fits
         after a prior regrid just works without needing to supply the date.
         """
@@ -346,26 +346,26 @@ class PipelineHandler:
         meta = self.key_handler.meta
         out_dir = meta.get("out_dir", "output/")
         res_suffix = meta.get("res_suffix", "27p0as")
-        pattern = os.path.join(out_dir, f"{source}_hexmaps_{res_suffix}_*.ecsv")
+        pattern = os.path.join(out_dir, f"{target}_hexmaps_{res_suffix}_*.ecsv")
         matches = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
         if matches:
-            LOG_LOADING.info(f"Found existing database for {source}: {matches[0]}")
+            LOG_LOADING.info(f"Found existing database for {target}: {matches[0]}")
             return matches[0]
-        return self._get_output_fname(source)
+        return self._get_output_fname(target)
 
     def _print_summary(self):
-        """Print a per-source pass/fail summary after all stages complete."""
+        """Print a per-target pass/fail summary after all stages complete."""
         LOG_RETURN.info("--- Run summary ---")
         all_ok = True
-        for source, ok in self.run_success.items():
+        for target, ok in self.run_success.items():
             status = "OK" if ok else "FAILED"
-            LOG_RETURN.info(f"  {source}: {status}")
+            LOG_RETURN.info(f"  {target}: {status}")
             if not ok:
                 all_ok = False
         if all_ok:
-            LOG_RETURN.info("All sources completed successfully.")
+            LOG_RETURN.info("All targets completed successfully.")
         else:
-            LOG_RETURN.warning("Some sources failed — check errors above.")
+            LOG_RETURN.warning("Some targets failed — check errors above.")
 
     def save_log(self, path: str):
         """
@@ -384,5 +384,5 @@ class PipelineHandler:
     def __repr__(self):
         return (
             f"PipelineHandler(conf_path='{self.conf_path}', "
-            f"sources={self.source_handler.all_sources()})"
+            f"targets={self.source_handler.all_sources()})"
         )

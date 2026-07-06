@@ -1,5 +1,5 @@
 """
-stage_fits.py — write FITS moment maps, 2D map images, and mask cube(s) for a source.
+stage_fits.py — write FITS moment maps, 2D map images, and mask cube(s) for a target.
 
 Moment maps: PPV-native computation (no hex grid)
 ---------------------------------------------------
@@ -55,9 +55,9 @@ is only constructed while computing moments.
 
 Output filename convention
 --------------------------
-{source}_{line}_{quantity}.fits        (moment maps, PPV-native)
-{source}_{map}_{quantity}.fits         (2D maps, hex-grid regridded)
-{source}_mask.fits / {source}_mask_<line>.fits   (mask cubes)
+{target}_{line}_{quantity}.fits        (moment maps, PPV-native)
+{target}_{map}_{quantity}.fits         (2D maps, hex-grid regridded)
+{target}_mask.fits / {target}_mask_<line>.fits   (mask cubes)
 
 e.g.  ngc5194_12CO21_mom0.fits
       ngc5194_SPIRE250_map.fits
@@ -91,7 +91,7 @@ LOG = get_logger("FITS")
 
 
 def get_convolved_ppv_cube(
-    source, line_name, line_dir, line_ext, meta, ov_hdr, log=None
+    target, line_name, line_dir, line_ext, meta, ov_hdr, log=None
 ):
     """
     Convolve the raw input cube for *line_name* to the target resolution and
@@ -103,7 +103,7 @@ def get_convolved_ppv_cube(
 
     Parameters
     ----------
-    source    : str — source name, prepended to line_ext to form the filename
+    target    : str — target name, prepended to line_ext to form the filename
     line_name : str — line label (used in log messages)
     line_dir  : str — directory containing the raw input FITS file
     line_ext  : str — filename extension of the raw input file
@@ -118,7 +118,7 @@ def get_convolved_ppv_cube(
     """
     log = log or LOG
 
-    raw_path = os.path.join(line_dir, source + line_ext)
+    raw_path = os.path.join(line_dir, target + line_ext)
     log.info(f"Convolving {line_name} from: {raw_path}")
     if not os.path.exists(raw_path):
         log.error(f"Raw input cube not found for line: {line_name}: {raw_path}")
@@ -197,7 +197,7 @@ def reproject_map_to_overlay(data, hdr, ov_hdr, log=None):
 
 
 def get_convolved_map(
-    source, map_name, map_dir, map_ext, target_res_as, ov_hdr, log=None
+    target, map_name, map_dir, map_ext, target_res_as, ov_hdr, log=None
 ):
     """
     Obtain a convolved 2-D map for *map_name*, reprojected onto the overlay WCS.
@@ -213,7 +213,7 @@ def get_convolved_map(
 
     Parameters
     ----------
-    source        : str
+    target        : str
     map_name      : str   — map name, e.g. "spire250"
     map_dir       : str   — directory containing the raw input FITS file
     map_ext       : str   — filename extension of the raw input file
@@ -228,7 +228,7 @@ def get_convolved_map(
     """
     log = log or LOG
 
-    raw_path = os.path.join(map_dir, source + map_ext)
+    raw_path = os.path.join(map_dir, target + map_ext)
     if not os.path.exists(raw_path):
         log.error(f"Raw input map not found for {map_name}: {raw_path}")
         raise FileNotFoundError(f"Raw input map not found for {map_name}: {raw_path}")
@@ -555,7 +555,7 @@ def make_clean_header(ov_hdr, is_cube=False, bunit=None, btype=None,
 
     Parameters
     ----------
-    ov_hdr      : FITS Header — overlay header (2-D or 3-D) used as WCS source
+    ov_hdr      : FITS Header — overlay header (2-D or 3-D) used as WCS target
     is_cube     : bool — True for PPV cubes, False for 2-D images
     bunit       : str or None — value for BUNIT
     btype       : str or None — value for BTYPE (moment type); written in upper
@@ -564,7 +564,7 @@ def make_clean_header(ov_hdr, is_cube=False, bunit=None, btype=None,
                   for LINE when line_desc is not provided
     line_desc   : str or None — human-readable line description written to LINE
                   (preferred over line_name; e.g. "12CO(2-1)" instead of "12co21")
-    object_name : str or None — source name for OBJECT keyword
+    object_name : str or None — target name for OBJECT keyword
     bmaj_as     : float or None — beam FWHM in arcsec; overrides ov_hdr BMAJ/BMIN.
                   When None the beam is copied from ov_hdr if present.
     restfrq     : float or None — rest frequency in Hz for the output cube.
@@ -648,7 +648,7 @@ def make_clean_header(ov_hdr, is_cube=False, bunit=None, btype=None,
     return h
 
 
-def save_ppv_mask_to_fits(mask, ov_hdr, source, filename, folder,
+def save_ppv_mask_to_fits(mask, ov_hdr, target, filename, folder,
                           out_nan_mask=None, meta=None):
     """
     Write a PPV-native velocity-integration mask to a 3-D FITS cube.
@@ -664,7 +664,7 @@ def save_ppv_mask_to_fits(mask, ov_hdr, source, filename, folder,
     mask         : np.ndarray (n_chan, ny, nx) — 0/1 mask array
     ov_hdr       : FITS Header (3-D) — overlay header; supplies both the spatial
                   WCS and the spectral axis for the output cube
-    source       : str — source name
+    target       : str — target name
     filename     : str — quantity label used in the output filename, e.g. "mask"
                   or "mask_12co21"
     folder       : str — output directory
@@ -672,16 +672,16 @@ def save_ppv_mask_to_fits(mask, ov_hdr, source, filename, folder,
                   where out_nan_mask is True are set to NaN across all channels,
                   matching the NaN pattern of the moment maps and convolved cubes.
 
-    Output filename: {source}_{filename}.fits
+    Output filename: {target}_{filename}.fits
     """
     hdr_out = make_clean_header(
         ov_hdr, is_cube=True, bunit="", btype="mask",
-        object_name=source, meta=None,
+        object_name=target, meta=None,
     )
     data_out = np.asarray(mask, dtype=float).copy()
     if out_nan_mask is not None:
         data_out[:, out_nan_mask] = np.nan
-    fname_fits = os.path.join(folder, f"{source}_{filename}.fits")
+    fname_fits = os.path.join(folder, f"{target}_{filename}.fits")
     fits.writeto(fname_fits, data=data_out, header=hdr_out, overwrite=True)
 
 
@@ -761,7 +761,7 @@ def build_edge_mask(ov_footprint, ov_hdr, target_res_as, fov_erosion_beams=0.5):
 
 
 def run_moments_ppv(
-    source,
+    target,
     meta,
     cubes,
     input_mask,
@@ -772,7 +772,7 @@ def run_moments_ppv(
     noise_mask_df=None,
 ):
     """
-    Compute and write PPV-native moment maps for every cube of *source*.
+    Compute and write PPV-native moment maps for every cube of *target*.
 
     This function reproduces the mask-construction orchestration of
     stage_products.run_products (ref_line selection, ref_line combination
@@ -789,12 +789,12 @@ def run_moments_ppv(
 
     Parameters
     ----------
-    source        : str
+    target        : str
     meta          : dict — from KeyHandler.meta
     cubes         : pd.DataFrame — cube definitions from KeyHandler
     input_mask    : pd.DataFrame — mask definition from KeyHandler
     hfs_data      : pd.DataFrame or None — hyperfine data from KeyHandler
-    params        : dict — source geometry from SourceHandler
+    params        : dict — target geometry from TargetHandler
     folder        : str — output directory for the moment FITS files
     save_mask     : bool — if True, also write the PPV mask(s) used here to FITS
     noise_mask_df : pd.DataFrame or None — noise velocity window table from
@@ -834,8 +834,8 @@ def run_moments_ppv(
     overlay_file = meta.get("overlay_file", "")
     overlay_fname = (
         os.path.join(data_dir, overlay_file)
-        if source in overlay_file
-        else os.path.join(data_dir, source + overlay_file)
+        if target in overlay_file
+        else os.path.join(data_dir, target + overlay_file)
     )
     if not os.path.exists(overlay_fname):
         LOG.error(f"Overlay file not found: {overlay_fname}")
@@ -889,12 +889,12 @@ def run_moments_ppv(
     cube_hdrs = {}
     for _, row in cubes.iterrows():
         name = str(row["line_name"])
-        raw_path = os.path.join(str(row["line_dir"]), source + str(row["line_ext"]))
+        raw_path = os.path.join(str(row["line_dir"]), target + str(row["line_ext"]))
         cube_hdrs[name.upper()] = (
             fits.getheader(raw_path) if os.path.exists(raw_path) else {}
         )
         data, _ = get_convolved_ppv_cube(
-            source,
+            target,
             name,
             str(row["line_dir"]),
             str(row["line_ext"]),
@@ -906,10 +906,10 @@ def run_moments_ppv(
 
     if ref_line.upper() not in cube_data:
         LOG.error(
-            f"Reference line {ref_line} not found among loaded cubes for {source}."
+            f"Reference line {ref_line} not found among loaded cubes for {target}."
         )
         raise FileNotFoundError(
-            f"Reference line {ref_line} not found among loaded cubes for {source}."
+            f"Reference line {ref_line} not found among loaded cubes for {target}."
         )
 
     # ------------------------------------------------------------------
@@ -960,7 +960,7 @@ def run_moments_ppv(
         else:
             mask_file = os.path.join(
                 str(input_mask["mask_dir"].iloc[0]),
-                source + str(input_mask["mask_ext"].iloc[0]),
+                target + str(input_mask["mask_ext"].iloc[0]),
             )
             if not os.path.exists(mask_file):
                 LOG.error(f"Mask file not found: {mask_file}")
@@ -1027,10 +1027,10 @@ def run_moments_ppv(
 
     if save_mask:
         save_ppv_mask_to_fits(
-            mask, ov_hdr, source, "mask", folder, out_nan_mask=out_nan_mask
+            mask, ov_hdr, target, "mask", folder, out_nan_mask=out_nan_mask
         )
         LOG.info(
-            f"PPV mask cube written to: {os.path.join(folder, f'{source}_mask.fits')}"
+            f"PPV mask cube written to: {os.path.join(folder, f'{target}_mask.fits')}"
         )
 
     # ------------------------------------------------------------------
@@ -1052,13 +1052,13 @@ def run_moments_ppv(
                     save_ppv_mask_to_fits(
                         mask_hfs,
                         ov_hdr,
-                        source,
+                        target,
                         hfs_mask_name,
                         folder,
                         out_nan_mask=out_nan_mask,
                     )
                     LOG.info(
-                        f"PPV mask cube for {line_name} written to: {os.path.join(folder, f'{source}_{hfs_mask_name}.fits')}"
+                        f"PPV mask cube for {line_name} written to: {os.path.join(folder, f'{target}_{hfs_mask_name}.fits')}"
                     )
 
         mom_maps = get_mom_maps_ppv(
@@ -1110,14 +1110,14 @@ def run_moments_ppv(
                 btype=quantity,
                 line_name=line_name,
                 line_desc=line_desc,
-                object_name=source,
+                object_name=target,
                 bmaj_as=target_res_as,
                 restfrq=None,   # 2D moment maps have no spectral axis
                 meta=meta,
             )
             res_suffix = meta.get("res_suffix", "27p0as")
             fname_fits = os.path.join(
-                folder, f"{source}_{line_name}_{res_suffix}_{quantity}.fits"
+                folder, f"{target}_{line_name}_{res_suffix}_{quantity}.fits"
             )
             data_out = (
                 arr.value.copy()
@@ -1131,7 +1131,7 @@ def run_moments_ppv(
 
 
 def run_fits(
-    source,
+    target,
     fname,
     meta,
     maps,
@@ -1142,7 +1142,7 @@ def run_fits(
     noise_mask_df=None,
 ):
     """
-    Write FITS moment maps, 2D map images, and mask cube(s) for *source*.
+    Write FITS moment maps, 2D map images, and mask cube(s) for *target*.
 
     This is the entry point for the "fits" pipeline stage.
 
@@ -1157,19 +1157,19 @@ def run_fits(
     hex-grid .ecsv table via save_to_fits, since 2D map columns have no PPV
     cube equivalent. Mask cube(s) (if save_mask is True) are now written
     PPV-native too, as a byproduct of run_moments_ppv: the combined mask
-    once as {source}_mask.fits, plus one {source}_mask_<line>.fits for
+    once as {target}_mask.fits, plus one {target}_mask_<line>.fits for
     every line whose HFS-extended mask differs from the combined mask. This
     means save_mask now requires save_mom_maps to also be True (a warning
     is logged if save_mask is requested without save_mom_maps).
 
     Parameters
     ----------
-    source     : str
+    target     : str
     fname      : str          — path to the processed .ecsv file
     meta       : dict         — from KeyHandler.meta
     maps       : pd.DataFrame — map definitions from KeyHandler
     cubes      : pd.DataFrame — cube definitions from KeyHandler
-    params     : dict         — source geometry from SourceHandler
+    params     : dict         — target geometry from TargetHandler
     input_mask : pd.DataFrame, optional — mask definition from KeyHandler
                 (required if use_input_mask or use_fixed_vel_mask is set)
     hfs_data   : pd.DataFrame or None, optional — hyperfine data from KeyHandler
@@ -1182,7 +1182,7 @@ def run_fits(
     folder = meta.get("folder_savefits", "./saved_fits_files/")
 
     if not (save_mom_maps or save_maps or save_mask or save_cubes):
-        LOG.info(f"Output writing disabled for {source}; skipping.")
+        LOG.info(f"Output writing disabled for {target}; skipping.")
         return
 
     os.makedirs(folder, exist_ok=True)
@@ -1196,18 +1196,18 @@ def run_fits(
 
     overlay_fname = (
         _path.join(data_dir, overlay_file)
-        if source in overlay_file
-        else _path.join(data_dir, source + overlay_file)
+        if target in overlay_file
+        else _path.join(data_dir, target + overlay_file)
     )
 
     LOG.info(f"Overlay file: {overlay_fname}")
     ov_cube, ov_hdr = fits.getdata(overlay_fname, header=True)
 
-    # Resolve per-source target resolution (target_res, target_res_pc,
-    # res_suffix) from the overlay header and source params.  This handles
+    # Resolve per-target target resolution (target_res, target_res_pc,
+    # res_suffix) from the overlay header and target params.  This handles
     # all three modes (angular / physical / native) correctly without
     # requiring the regrid stage to have run first.
-    resolve_meta_resolution(source, params, meta, ov_hdr=ov_hdr, log=LOG)
+    resolve_meta_resolution(target, params, meta, ov_hdr=ov_hdr, log=LOG)
     target_res_as = meta["target_res"]
 
     # Build the overlay footprint: True wherever at least one spectral channel
@@ -1222,7 +1222,7 @@ def run_fits(
     # ------------------------------------------------------------------
     if save_mom_maps:
         run_moments_ppv(
-            source,
+            target,
             meta,
             cubes,
             input_mask,
@@ -1235,7 +1235,7 @@ def run_fits(
         LOG.info(f"Moment map FITS files written to: {folder}")
     elif save_mask:
         LOG.warning(
-            f"save_mask is True but save_mom_maps is False for {source}; "
+            f"save_mask is True but save_mom_maps is False for {target}; "
             "the PPV mask is only built while computing moments, so no "
             "mask FITS file(s) will be written. Set save_mom_maps = true "
             "to enable mask output."
@@ -1272,7 +1272,7 @@ def run_fits(
             # --- primary map ---
             try:
                 map_data, _ = get_convolved_map(
-                    source, map_name, map_dir, map_ext,
+                    target, map_name, map_dir, map_ext,
                     target_res_as, ov_hdr, log=LOG,
                 )
                 map_data = np.where(_out_nan, np.nan, map_data)
@@ -1281,11 +1281,11 @@ def run_fits(
                     is_cube=False,
                     bunit=str(map_row.get("map_unit", "")),
                     btype=map_name,
-                    object_name=source,
+                    object_name=target,
                     bmaj_as=target_res_as,
                     meta=meta,
                 )
-                fname_map = os.path.join(folder, f"{source}_{map_name}_{res_suffix}.fits")
+                fname_map = os.path.join(folder, f"{target}_{map_name}_{res_suffix}.fits")
                 fits.writeto(fname_map, data=map_data, header=map_hdr, overwrite=True)
             except FileNotFoundError:
                 LOG.warning(f"Skipping map {map_name}: raw input file not found.")
@@ -1295,7 +1295,7 @@ def run_fits(
             if map_uc and map_uc not in ("nan", ""):
                 try:
                     unc_data, _ = get_convolved_map(
-                        source, map_name, map_dir, map_uc,
+                        target, map_name, map_dir, map_uc,
                         target_res_as, ov_hdr, log=LOG,
                     )
                     unc_data = np.where(_out_nan, np.nan, unc_data)
@@ -1304,12 +1304,12 @@ def run_fits(
                         is_cube=False,
                         bunit=str(map_row.get("map_unit", "")),
                         btype=f"{map_name}_err",
-                        object_name=source,
+                        object_name=target,
                         bmaj_as=target_res_as,
                         meta=meta,
                     )
                     fname_unc = os.path.join(
-                        folder, f"{source}_{map_name}_{res_suffix}_err.fits"
+                        folder, f"{target}_{map_name}_{res_suffix}_err.fits"
                     )
                     fits.writeto(fname_unc, data=unc_data, header=unc_hdr, overwrite=True)
                 except FileNotFoundError:
@@ -1343,13 +1343,13 @@ def run_fits(
                 # per-cube rest frequency (RESTFRQ/RESTFREQ), which is
                 # overwritten by the overlay header during reprojection.
                 raw_cube_path = os.path.join(
-                    str(row["line_dir"]), source + str(row["line_ext"])
+                    str(row["line_dir"]), target + str(row["line_ext"])
                 )
                 _raw_hdr = fits.getheader(raw_cube_path) if os.path.exists(raw_cube_path) else {}
                 _restfrq = _raw_hdr.get("RESTFRQ") or _raw_hdr.get("RESTFREQ")
 
                 cube_data, cube_hdr = get_convolved_ppv_cube(
-                    source,
+                    target,
                     str(row["line_name"]),
                     str(row["line_dir"]),
                     str(row["line_ext"]),
@@ -1366,7 +1366,7 @@ def run_fits(
             cube_data[:, _out_nan] = np.nan
 
             cube_fits_path = os.path.join(
-                folder, f"{source}_{row['line_name']}_{res_suffix}.fits"
+                folder, f"{target}_{row['line_name']}_{res_suffix}.fits"
             )
             fits.writeto(
                 cube_fits_path,
@@ -1377,7 +1377,7 @@ def run_fits(
                     bunit=str(row.get("line_unit", "")),
                     line_name=str(row["line_name"]),
                     line_desc=str(row.get("line_desc", "")),
-                    object_name=source,
+                    object_name=target,
                     bmaj_as=target_res_as,
                     restfrq=_restfrq,
                     meta=meta,

@@ -295,7 +295,7 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
         Source name; used to construct the overlay filename as
         ``{data_dir}/{source}{overlay_file}``.
     params : dict
-        Source geometric parameters from SourceHandler.get_source_params().
+        Source geometric parameters from TargetHandler.get_target_params().
         Required keys: ra_ctr, dec_ctr, dist_mpc.
     meta : dict
         Pipeline settings from KeyHandler.meta.
@@ -714,7 +714,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
     Parameters
     ----------
     source     : str
-    params     : dict  — from SourceHandler.get_source_params()
+    params     : dict  — from TargetHandler.get_target_params()
     meta       : dict  — from KeyHandler.meta
     maps       : pd.DataFrame — 2D map definitions from handler_keys
     cubes      : pd.DataFrame — spectral cube definitions from handler_keys
@@ -1081,7 +1081,7 @@ def _init_table(
     Parameters
     ----------
     source        : str
-    params        : dict — source geometry from SourceHandler
+    params        : dict — source geometry from TargetHandler
     meta          : dict — pipeline settings from KeyHandler
     samp_ra/dec   : arrays — hex-grid positions
     ov_hdr        : FITS Header — spectral axis information
