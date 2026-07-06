@@ -71,7 +71,7 @@ def parse_args(argv=None):
         "--targets",
         nargs="+",
         default=None,
-        help="Source name(s) to process. Default: all sources in config.txt.",
+        help="Target name(s) to process. Default: all targets in config.txt.",
     )
     parser.add_argument(
         "--quiet",

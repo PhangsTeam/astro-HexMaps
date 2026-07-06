@@ -5,7 +5,7 @@ HexMaps configuration lives in two places:
 
 config.txt
     A single file in the working directory containing everything needed to
-    run the pipeline: paths/metadata (formerly master_key.txt), the source
+    run the pipeline: paths/metadata (formerly master_key.txt), the target
     list/overlay/maps/cubes/mask tables (formerly data_key.txt), and all
     numerical/boolean pipeline settings (formerly config_key.txt). This is
     the file you pass to the CLI via ``hexmaps --conf config.txt`` and
@@ -13,11 +13,11 @@ config.txt
 
 keys/ subfolder (next to config.txt)
     target_definitions.txt
-        Tab-separated table of source geometric parameters: RA/Dec centre,
+        Tab-separated table of target geometric parameters: RA/Dec centre,
         distance, inclination, position angle, and optical radius. One row
-        per source. All sources that may ever be processed should be listed
+        per target. All targets that may ever be processed should be listed
         here; the subset to actually run is controlled by config.txt
-        [sources]. Kept separate because this table is normally shared
+        [targets]. Kept separate because this table is normally shared
         across many projects and changes rarely. Its path is set via
         [paths] geom_file in config.txt (default: keys/target_definitions.txt)
         and is REQUIRED — KeyHandler raises if it is missing.
@@ -69,7 +69,7 @@ MASK_COLUMNS_FILE = ["mask_name", "mask_desc", "mask_ext", "mask_dir"]
 # Columns for noise-estimation velocity windows (same layout as MASK_COLUMNS_VEL)
 NOISE_MASK_COLUMNS = ["mask_name", "mask_desc", "mask_start", "mask_end", "mask_unit"]
 TARGET_COLUMNS = [
-    "source",
+    "target",
     "ra_ctr",
     "dec_ctr",
     "dist_mpc",
@@ -88,7 +88,7 @@ class KeyHandler:
     """
     Reads and validates all HexMaps configuration from config.txt.
 
-    The handler is the single source of truth for all pipeline configuration.
+    The handler is the single target of truth for all pipeline configuration.
     Every other pipeline module receives either ``meta`` (a plain dict of
     scalar settings) or one of the DataFrames (``maps``, ``cubes``, etc.)
     returned by the getter methods below.
@@ -106,8 +106,8 @@ class KeyHandler:
     ----------
     meta         : dict   — scalar settings from [paths]/[meta]/[resolution]/
                             [masking]/[spectral]/[output]/[structure]
-    sources      : list   — source names to process (from config.txt [sources])
-    source_table : pd.DataFrame — full geometry table from target_definitions
+    targets      : list   — target names to process (from config.txt [targets])
+    target_table : pd.DataFrame — full geometry table from target_definitions
     maps         : pd.DataFrame — 2D map definitions (from config.txt)
     cubes        : pd.DataFrame — spectral cube definitions (from config.txt)
     input_mask   : pd.DataFrame — mask definition (from config.txt, may be empty)
@@ -116,7 +116,7 @@ class KeyHandler:
     Example
     -------
     >>> kh = KeyHandler("./config.txt")
-    >>> print(kh.sources)
+    >>> print(kh.targets)
     >>> print(kh.maps)
     """
 
@@ -126,8 +126,8 @@ class KeyHandler:
 
         # All parsed data; populated in load()
         self.meta = {}
-        self.sources = []
-        self.source_table = None
+        self.targets = []
+        self.target_table = None
         self.maps = None
         self.cubes = None
         self.input_mask = None
@@ -145,22 +145,22 @@ class KeyHandler:
         Load the full configuration in dependency order.
 
         [resolution]/[masking]/[spectral]/[output]/[structure] are parsed
-        before the [sources]/maps/cubes/mask tables so that masking flags
+        before the [targets]/maps/cubes/mask tables so that masking flags
         (use_fixed_vel_mask etc.) are available when parsing the mask table.
         _resolve_resolution runs last because it needs both overlay_file
-        (set by _load_sources_and_tables) and source distances (set by
+        (set by _load_targets_and_tables) and target distances (set by
         _load_target_definitions).
         """
         self._load_paths_and_meta()
         self._load_settings()
         self._load_target_definitions()
-        self._load_sources_and_tables()
+        self._load_targets_and_tables()
         self._resolve_resolution()
         self._load_hfs_key()
 
-    def get_sources(self) -> list:
-        """Return the ordered list of source names to be processed."""
-        return list(self.sources)
+    def get_targets(self) -> list:
+        """Return the ordered list of target names to be processed."""
+        return list(self.targets)
 
     def get_maps(self) -> pd.DataFrame:
         """Return the DataFrame of 2D map definitions."""
@@ -178,9 +178,9 @@ class KeyHandler:
         """Return the DataFrame of noise velocity windows (may be empty)."""
         return self.noise_mask
 
-    def get_source_table(self) -> pd.DataFrame:
-        """Return the full source geometry table."""
-        return self.source_table
+    def get_target_table(self) -> pd.DataFrame:
+        """Return the full target geometry table."""
+        return self.target_table
 
     def get_hfs_data(self):
         """Return the hyperfine structure DataFrame, or None if not configured."""
@@ -314,7 +314,7 @@ class KeyHandler:
         # run_regrid) can read and embed the config content in the .ecsv.
         self.meta["conf_path"] = str(self.conf_path.resolve())
 
-        # Store the absolute project root so _load_sources_and_tables can
+        # Store the absolute project root so _load_targets_and_tables can
         # resolve relative map_dir / line_dir entries to absolute paths.
         self.meta["_base"] = str(base)
 
@@ -474,7 +474,7 @@ class KeyHandler:
         (default: keys/target_definitions.txt next to config.txt).
 
         This file is REQUIRED — unlike hfs_file, there is no "just don't use
-        it" fallback, since every source needs geometry. If the resolved
+        it" fallback, since every target needs geometry. If the resolved
         path does not exist, this raises FileNotFoundError.
 
         The file is a comma-separated table with no header row.  Any spaces
@@ -483,9 +483,9 @@ class KeyHandler:
         '#' are ignored.  Columns must appear in the order defined by
         TARGET_COLUMNS.
 
-        The full table is stored in ``self.source_table`` (a DataFrame). The
-        subset of sources to actually process is determined later when the
-        [sources] section of config.txt is parsed; at this stage we load
+        The full table is stored in ``self.target_table`` (a DataFrame). The
+        subset of targets to actually process is determined later when the
+        [targets] section of config.txt is parsed; at this stage we load
         everything.
         """
         geom_path = Path(self.meta["geom_file"])
@@ -501,7 +501,7 @@ class KeyHandler:
         # empty/blank fields. Missing columns are filled with NaN so the rest
         # of the pipeline can detect absence and skip galaxy-specific
         # computations with an appropriate warning.
-        self.source_table = pd.read_csv(
+        self.target_table = pd.read_csv(
             geom_path,
             sep=r"\s*,\s*",
             engine="python",
@@ -509,19 +509,19 @@ class KeyHandler:
             comment="#",
         )
         # Coerce all numeric columns; blank / "nan" / empty strings → NaN
-        for col in TARGET_COLUMNS[1:]:   # skip "source"
-            if col in self.source_table.columns:
-                self.source_table[col] = pd.to_numeric(
-                    self.source_table[col], errors="coerce"
+        for col in TARGET_COLUMNS[1:]:   # skip "target"
+            if col in self.target_table.columns:
+                self.target_table[col] = pd.to_numeric(
+                    self.target_table[col], errors="coerce"
                 )
         # Fill any columns that are entirely absent (fewer columns in file)
         for col in TARGET_COLUMNS:
-            if col not in self.source_table.columns:
-                self.source_table[col] = float("nan")
+            if col not in self.target_table.columns:
+                self.target_table[col] = float("nan")
 
-    def _load_sources_and_tables(self):
+    def _load_targets_and_tables(self):
         """
-        Parse the [sources], [overlay], and maps/cubes/mask tables of config.txt.
+        Parse the [targets], [overlay], and maps/cubes/mask tables of config.txt.
 
         config.txt has a hybrid format: an ini-style header (parsed by
         configparser, shared with _load_paths_and_meta / _load_settings)
@@ -531,7 +531,7 @@ class KeyHandler:
         Parsing strategy
         ----------------
         **Pass 1** — configparser reads only the lines before the first
-        tabular section divider, giving access to [sources] and [overlay]
+        tabular section divider, giving access to [targets] and [overlay]
         without configparser choking on the comma-separated data rows that
         follow.
 
@@ -551,8 +551,8 @@ class KeyHandler:
 
         Expected format::
 
-            [sources]
-            sources = ngc5194, ngc5457
+            [targets]
+            targets = ngc5194, ngc5457
 
             [overlay]
             overlay_file = _12co21.fits
@@ -571,18 +571,18 @@ class KeyHandler:
         cfg = configparser.ConfigParser(inline_comment_prefixes=("#",))
         cfg.read_string(ini_text)
 
-        # Source list — mandatory
-        if "sources" not in cfg or not cfg["sources"].get("sources", "").strip():
+        # Target list — mandatory
+        if "targets" not in cfg or not cfg["targets"].get("targets", "").strip():
             LOG.error(
-                "Mandatory key 'sources' missing from [sources] in config.txt. "
+                "Mandatory key 'targets' missing from [targets] in config.txt. "
                 "This key must be explicitly set — there is no default value."
             )
             raise KeyError(
-                "Mandatory key 'sources' missing from [sources] in config.txt. "
+                "Mandatory key 'targets' missing from [targets] in config.txt. "
                 "This key must be explicitly set — there is no default value."
             )
-        self.sources = [
-            s.strip() for s in cfg["sources"]["sources"].split(",") if s.strip()
+        self.targets = [
+            s.strip() for s in cfg["targets"]["targets"].split(",") if s.strip()
         ]
 
         # Overlay file extension — mandatory
@@ -704,45 +704,45 @@ class KeyHandler:
         ``target_res``
             Always **arcseconds**. For angular/native mode this is the primary
             working resolution; for physical mode it is converted from parsecs
-            using the first source's distance. For native mode a placeholder
+            using the first target's distance. For native mode a placeholder
             value is stored here; ``run_sampling`` overwrites it with the
-            exact beam size read from the overlay FITS header once the source
+            exact beam size read from the overlay FITS header once the target
             loop begins.
 
         ``target_res_pc``
             Always **parsecs**. Derived from ``target_res`` and the first
-            source's distance (dist_mpc).
+            target's distance (dist_mpc).
 
         ``res_suffix``
             Single string used as the resolution part of all output filenames,
             e.g. ``"27p0as"``, ``"12p8as"``, ``"100pc"``.
 
         Called last in ``load()`` so that both ``overlay_file``
-        (from _load_sources_and_tables) and ``source_table`` (from
+        (from _load_targets_and_tables) and ``target_table`` (from
         _load_target_definitions) are available.
 
         No log messages are emitted here — resolution logging is deferred
-        to ``run_sampling`` where the source context is known and the overlay
+        to ``run_sampling`` where the target context is known and the overlay
         header is actually opened.
         """
         resolution = self.meta.get("resolution", "angular")
         # target_res as written in config — arcsec for angular/native, pc for physical
         target_res_config = float(self.meta.get("target_res", 27.0))
 
-        # First source's distance for physical mode and pc conversion.
-        if self.source_table is not None and len(self.source_table) > 0:
-            dist_mpc = float(self.source_table["dist_mpc"].iloc[0])
+        # First target's distance for physical mode and pc conversion.
+        if self.target_table is not None and len(self.target_table) > 0:
+            dist_mpc = float(self.target_table["dist_mpc"].iloc[0])
         else:
             dist_mpc = 1.0
 
         if resolution == "physical":
-            # Convert pc → arcsec using the first source's distance as a
-            # placeholder.  run_sampling will recompute per-source correctly.
+            # Convert pc → arcsec using the first target's distance as a
+            # placeholder.  run_sampling will recompute per-target correctly.
             target_res_as = (
                 3600.0 * 180.0 / np.pi * 1e-6 * target_res_config / dist_mpc
             )
             # Store the original pc value separately so run_sampling can
-            # re-convert it correctly for each source's distance.
+            # re-convert it correctly for each target's distance.
             self.meta["target_res_config"] = target_res_config
 
         elif resolution == "native":
@@ -753,7 +753,7 @@ class KeyHandler:
             # Angular: config value is already in arcseconds
             target_res_as = target_res_config
 
-        # Parsec equivalent (placeholder; overwritten per-source by run_sampling)
+        # Parsec equivalent (placeholder; overwritten per-target by run_sampling)
         target_res_pc = target_res_as / 3600.0 * np.pi / 180.0 * dist_mpc * 1e6
 
         # Filename suffix
@@ -764,7 +764,7 @@ class KeyHandler:
 
         # meta["target_res"] always holds arcseconds from here on.
         # For physical mode the original pc value is preserved in
-        # meta["target_res_config"] so run_sampling can re-convert per source.
+        # meta["target_res_config"] so run_sampling can re-convert per target.
         self.meta["target_res"]    = target_res_as
         self.meta["target_res_pc"] = target_res_pc
         self.meta["res_suffix"]    = res_suffix
@@ -813,7 +813,7 @@ class KeyHandler:
         ----------------
         - At least one map defined
         - At least one cube defined
-        - At least one source defined
+        - At least one target defined
         - overlay_file is set
         """
         issues = []
@@ -821,8 +821,8 @@ class KeyHandler:
             issues.append("No maps defined in config.txt.")
         if self.cubes is None or len(self.cubes) == 0:
             issues.append("No cubes defined in config.txt.")
-        if not self.sources:
-            issues.append("No sources defined.")
+        if not self.targets:
+            issues.append("No targets defined.")
         if not self.meta.get("overlay_file"):
             issues.append("No overlay_file defined in config.txt.")
 
@@ -836,5 +836,5 @@ class KeyHandler:
         n_cubes = len(self.cubes) if self.cubes is not None else 0
         return (
             f"KeyHandler(conf_path='{self.conf_path}', "
-            f"sources={self.sources}, n_maps={n_maps}, n_cubes={n_cubes})"
+            f"targets={self.targets}, n_maps={n_maps}, n_cubes={n_cubes})"
         )

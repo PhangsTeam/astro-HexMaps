@@ -8,7 +8,7 @@ Contents
 I/O helpers
     load_hexmaps         — load a .ecsv database
     save_hexmaps         — save a Table to .ecsv
-    find_latest_hexmaps  — find the most recently dated .ecsv for a source
+    find_latest_hexmaps  — find the most recently dated .ecsv for a target
     get_column_names         — return column names without loading all data
     get_spec_lines           — return spectral line names
     get_map_names            — return 2D map names
@@ -87,18 +87,18 @@ def save_hexmaps(table: Table, fname: str, overwrite: bool = True) -> None:
     table.write(str(fname), format="ascii.ecsv", overwrite=overwrite)
 
 
-def find_latest_hexmaps(out_dir: str, source: str, log=None) -> str:
+def find_latest_hexmaps(out_dir: str, target: str, log=None) -> str:
     """
-    Find the most recently dated HexMaps .ecsv file for *source*.
+    Find the most recently dated HexMaps .ecsv file for *target*.
 
     Files are matched by the glob pattern
-    ``{out_dir}/{source}_hexmaps_*.ecsv`` and sorted lexicographically
+    ``{out_dir}/{target}_hexmaps_*.ecsv`` and sorted lexicographically
     (which is equivalent to date-order for the YYYY_MM_DD filename convention).
 
     Parameters
     ----------
     out_dir : str — directory to search
-    source  : str — source name
+    target  : str — target name
     log : StageLogger, optional
         Logger to use for the error message (from get_logger()). Defaults to
         the "Loading" stage if not provided.
@@ -112,12 +112,12 @@ def find_latest_hexmaps(out_dir: str, source: str, log=None) -> str:
     FileNotFoundError if no matching file is found.
     """
     log = log or _DEFAULT_LOG
-    pattern = os.path.join(out_dir, f"{source}_hexmaps_*.ecsv")
+    pattern = os.path.join(out_dir, f"{target}_hexmaps_*.ecsv")
     matches = sorted(glob.glob(pattern))
     if not matches:
-        log.error(f"No HexMaps file found for " f"'{source}' in '{out_dir}'")
+        log.error(f"No HexMaps file found for " f"'{target}' in '{out_dir}'")
         raise FileNotFoundError(
-            f"No HexMaps file found for " f"'{source}' in '{out_dir}'"
+            f"No HexMaps file found for " f"'{target}' in '{out_dir}'"
         )
     return matches[-1]
 

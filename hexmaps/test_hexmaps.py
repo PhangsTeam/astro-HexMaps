@@ -36,7 +36,7 @@ class TestKeyHandler:
             f"data_dir    = {tmpdir}/data/\n"
             f"out_dir     = {tmpdir}/Output/\n"
             "[meta]\nuser = Test\ncomments = test\n"
-            "[sources]\nsources = ngc5194\n"
+            "[targets]\ntargets = ngc5194\n"
             "[overlay]\noverlay_file = _12co21.fits\n"
             "# ---- maps ----\n"
             "spire250, SPIRE250, MJy/sr, _spire250.fits, data/\n"
@@ -68,7 +68,7 @@ class TestKeyHandler:
         from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
-        assert kh.sources == ["ngc5194"]
+        assert kh.targets == ["ngc5194"]
         assert len(kh.maps) == 1
         assert len(kh.cubes) == 1
         assert kh.meta["target_res"] == 27.0
@@ -166,12 +166,12 @@ class TestKeyHandler:
         with pytest.raises(KeyError, match="Mandatory key"):
             KeyHandler(str(conf_path))
 
-    def test_mandatory_sources_raises_on_missing(self, tmp_path):
+    def test_mandatory_targets_raises_on_missing(self, tmp_path):
         """
-        [sources] / sources is mandatory; omitting it must raise a KeyError.
+        [targets] / targets is mandatory; omitting it must raise a KeyError.
         """
         conf_path = self._write_minimal_config(tmp_path)
-        text = conf_path.read_text().replace("[sources]\nsources = ngc5194\n", "")
+        text = conf_path.read_text().replace("[targets]\ntargets = ngc5194\n", "")
         conf_path.write_text(text)
 
         from hexmaps.handler_keys import KeyHandler
@@ -207,7 +207,7 @@ class TestKeyHandler:
 
         from hexmaps.handler_keys import KeyHandler
         kh = KeyHandler(str(conf_path))
-        row = kh.source_table.iloc[0]
+        row = kh.target_table.iloc[0]
 
         import math
         assert math.isnan(float(row["incl_deg"]))
@@ -221,9 +221,9 @@ class TestKeyHandler:
         geom.write_text("ngc5194, 202.4696, 47.1952, 8.58\n")
 
         from hexmaps.handler_keys import KeyHandler
-        from hexmaps.handler_sources import SourceHandler
+        from hexmaps.handler_targets import TargetHandler
         kh = KeyHandler(str(conf_path))
-        sh = SourceHandler(kh.source_table, kh.sources)
+        sh = TargetHandler(kh.target_table, kh.targets)
         assert sh.has_galaxy_geometry("ngc5194") is False
 
     def test_has_galaxy_geometry_true_when_full(self, tmp_path):
@@ -231,9 +231,9 @@ class TestKeyHandler:
         conf_path = self._write_minimal_config(tmp_path)
 
         from hexmaps.handler_keys import KeyHandler
-        from hexmaps.handler_sources import SourceHandler
+        from hexmaps.handler_targets import TargetHandler
         kh = KeyHandler(str(conf_path))
-        sh = SourceHandler(kh.source_table, kh.sources)
+        sh = TargetHandler(kh.target_table, kh.targets)
         assert sh.has_galaxy_geometry("ngc5194") is True
 
     def test_save_mask_defaults_false(self, tmp_path):
@@ -283,7 +283,7 @@ class TestKeyHandler:
         """
         run_sampling must populate two keys in meta for all three modes:
 
-          meta["target_res"]    → always arcseconds (single source of truth for math)
+          meta["target_res"]    → always arcseconds (single target of truth for math)
           meta["target_res_pc"] → always parsecs (for display/filenames in physical mode)
 
         For angular and native modes meta["target_res"] stays in arcseconds;
@@ -423,8 +423,8 @@ class TestKeyHandler:
         from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
-        row = kh.source_table.iloc[0]
-        assert row["source"] == "ngc5194"
+        row = kh.target_table.iloc[0]
+        assert row["target"] == "ngc5194"
         assert row["ra_ctr"] == 202.4696
         assert row["dec_ctr"] == 47.1952
         assert isinstance(row["dist_mpc"], float)
@@ -457,12 +457,12 @@ class TestKeyHandler:
         assert "KeyHandler" in repr(kh)
         assert "ngc5194" in repr(kh)
 
-    def test_multi_source_list(self, tmp_path):
+    def test_multi_target_list(self, tmp_path):
         conf_path = self._write_minimal_config(tmp_path)
         conf_path.write_text(
             conf_path.read_text().replace(
-                "[sources]\nsources = ngc5194\n",
-                "[sources]\nsources = ngc5194, ngc5457\n",
+                "[targets]\ntargets = ngc5194\n",
+                "[targets]\ntargets = ngc5194, ngc5457\n",
             )
         )
         (tmp_path / "keys" / "target_definitions.txt").write_text(
@@ -472,7 +472,7 @@ class TestKeyHandler:
         from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
-        assert kh.sources == ["ngc5194", "ngc5457"]
+        assert kh.targets == ["ngc5194", "ngc5457"]
 
     def test_hfs_file_loaded_when_present(self, tmp_path):
         conf_path = self._write_minimal_config(tmp_path)
@@ -512,15 +512,15 @@ class TestKeyHandler:
                 1,
             )
             .replace(
-                "[sources]\nsources = ngc5194\n",
-                "[sources]\nsources = ngc1234\n",
+                "[targets]\ntargets = ngc5194\n",
+                "[targets]\ntargets = ngc1234\n",
             )
         )
         from hexmaps.handler_keys import KeyHandler
 
         kh = KeyHandler(str(conf_path))
-        assert kh.sources == ["ngc1234"]
-        assert "ngc1234" in list(kh.source_table["source"])
+        assert kh.targets == ["ngc1234"]
+        assert "ngc1234" in list(kh.target_table["target"])
 
     def test_geom_file_missing_raises(self, tmp_path):
         """Unlike hfs_file, geom_file is required: a missing file must raise."""
@@ -548,11 +548,11 @@ class TestKeyHandler:
 
 
 # ---------------------------------------------------------------------------
-# SourceHandler
+# TargetHandler
 # ---------------------------------------------------------------------------
 
 
-class TestSourceHandler:
+class TestTargetHandler:
 
     def _make_table(self):
         import pandas as pd
@@ -560,7 +560,7 @@ class TestSourceHandler:
         return pd.DataFrame(
             [
                 {
-                    "source": "ngc5194",
+                    "target": "ngc5194",
                     "ra_ctr": 202.47,
                     "dec_ctr": 47.20,
                     "dist_mpc": 8.58,
@@ -575,24 +575,24 @@ class TestSourceHandler:
             ]
         )
 
-    def test_get_source_params(self):
-        from hexmaps.handler_sources import SourceHandler
+    def test_get_target_params(self):
+        from hexmaps.handler_targets import TargetHandler
 
-        th = SourceHandler(self._make_table(), ["ngc5194"])
-        assert abs(th.get_source_params("ngc5194")["ra_ctr"] - 202.47) < 1e-6
+        th = TargetHandler(self._make_table(), ["ngc5194"])
+        assert abs(th.get_target_params("ngc5194")["ra_ctr"] - 202.47) < 1e-6
 
-    def test_unknown_source_raises(self):
-        from hexmaps.handler_sources import SourceHandler
+    def test_unknown_target_raises(self):
+        from hexmaps.handler_targets import TargetHandler
 
-        th = SourceHandler(self._make_table(), ["ngc5194"])
+        th = TargetHandler(self._make_table(), ["ngc5194"])
         with pytest.raises(KeyError):
-            th.get_source_params("ngc9999")
+            th.get_target_params("ngc9999")
 
-    def test_source_not_in_table_raises(self):
-        from hexmaps.handler_sources import SourceHandler
+    def test_target_not_in_table_raises(self):
+        from hexmaps.handler_targets import TargetHandler
 
         with pytest.raises(ValueError):
-            SourceHandler(self._make_table(), ["ngc9999"])
+            TargetHandler(self._make_table(), ["ngc9999"])
 
 
 # ---------------------------------------------------------------------------

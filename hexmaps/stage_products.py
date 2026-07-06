@@ -289,9 +289,9 @@ def _build_hfs_mask(mask, line_name, hfs_data, this_data):
 # ============================================================================
 
 
-def run_products(source, fname, meta, cubes, input_mask, hfs_data, noise_mask_df=None):
+def run_products(target, fname, meta, cubes, input_mask, hfs_data, noise_mask_df=None):
     """
-    Process all spectra for *source*: mask, moments, shuffle.
+    Process all spectra for *target*: mask, moments, shuffle.
 
     This is the entry point for the "products" pipeline stage.
 
@@ -300,7 +300,7 @@ def run_products(source, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
 
     Parameters
     ----------
-    source     : str
+    target     : str
     fname      : str          — path to the .ecsv file from stage_regrid
     meta       : dict         — from KeyHandler.meta
     cubes      : pd.DataFrame — cube definitions from KeyHandler
@@ -395,7 +395,7 @@ def run_products(source, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
                     LOG.warning(
                         "ref+HI mode requires rgal_r25 to select the radial "
                         "transition, but galaxy geometry is not available for "
-                        "this source. Falling back to using HI mask everywhere."
+                        "this target. Falling back to using HI mask everywhere."
                     )
                     rgal = None
                 else:
@@ -632,5 +632,5 @@ def run_products(source, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
         LOG.warning(f"Could not update pipeline log in metadata: {e}")
 
     this_data.write(fname, format="ascii.ecsv", overwrite=True)
-    LOG.info(f"Spectra processing complete for {source}.")
+    LOG.info(f"Spectra processing complete for {target}.")
     LOG.info(f"Database written to: {fname}")
