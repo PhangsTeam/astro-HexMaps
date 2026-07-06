@@ -1,5 +1,5 @@
 """
-handler_sources.py — TargetHandler: manages the target list and geometry.
+handler_targets.py — TargetHandler: manages the target list and geometry.
 
 Wraps the target geometry table loaded by KeyHandler and provides
 named-parameter lookups used by every pipeline stage that needs
@@ -35,7 +35,7 @@ class TargetHandler:
     Example
     -------
     >>> kh = KeyHandler("./keys/")
-    >>> sh = TargetHandler(kh.get_source_table(), kh.get_sources())
+    >>> sh = TargetHandler(kh.get_target_table(), kh.get_target_table())
     >>> params = sh.get_target_params("ngc5194")
     >>> print(params["dist_mpc"])
     """
@@ -152,15 +152,15 @@ class TargetHandler:
         """Optical radius r25 in arcmin."""
         return self.get_target_params(target)["r25"]
 
-    def n_sources(self) -> int:
+    def n_targets(self) -> int:
         """Number of targets to process."""
         return len(self.targets)
 
-    def all_sources(self) -> list:
+    def all_targets(self) -> list:
         """Return a copy of the ordered target list."""
         return list(self.targets)
 
     def __repr__(self):
         return (
-            f"TargetHandler(n_sources={self.n_sources()}, " f"targets={self.targets})"
+            f"TargetHandler(n_targets={self.n_targets()}, " f"targets={self.targets})"
         )
