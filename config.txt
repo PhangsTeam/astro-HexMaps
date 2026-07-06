@@ -135,11 +135,22 @@ CDELT_SHUFF = 4000.0
 [masking]
 # Reference line for mask construction:
 #   first        - use the first line in the cube list above
-#   <LINE_NAME>  - use that specific line
+#   <LINE_NAME>  - use that specific line (case-insensitive)
 #   all          - use all lines
 #   n            - use first n lines
-#   individual   - use individual mask per line
-ref_line         = first
+#   individual   - compute one mask per line and apply individually
+#
+# Combination tokens (comma-separated, append to any keyword above):
+#   AND(input)   - AND-combine the ref_line mask with the input mask
+#   OR(input)    - OR-combine the ref_line mask with the input mask
+#   AND(fixed)   - AND-combine the ref_line mask with the fixed velocity mask
+#   OR(fixed)    - OR-combine the ref_line mask with the fixed velocity mask
+#
+# Examples:
+#   ref_line = 12co21, AND(input)     -> 12co21 S/N mask AND input mask
+#   ref_line = first, OR(fixed)       -> first-line mask OR fixed window
+#   ref_line = all, AND(input)
+ref_line = first
 
 # Signal-to-noise thresholds for the two-step mask: [low, high]
 SN_processing = 2, 4
@@ -147,7 +158,7 @@ SN_processing = 2, 4
 # If true, apply a strict spatial consistency check on the mask
 strict_mask = false
 
-# Use an external mask FITS file defined in the [mask] table above
+# Use an external mask FITS file defined in the [mask] table above.
 use_input_mask = false
 
 # Use a fixed velocity window defined in the [mask] table above

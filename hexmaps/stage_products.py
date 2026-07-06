@@ -55,7 +55,7 @@ from astropy import units as u
 from astropy.stats import median_absolute_deviation
 from astropy.table import Table, Column
 
-from hexmaps.utils_table import shuffle, get_mom_maps, build_noise_mask, resolve_mask_lines
+from hexmaps.utils_table import shuffle, get_mom_maps, build_noise_mask, resolve_mask_lines, parse_ref_line
 
 from hexmaps.logger import get_logger
 
@@ -344,7 +344,6 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
     # ------------------------------------------------------------------
     use_input_mask = meta.get("use_input_mask", False)
     use_fixed_vel_mask = meta.get("use_fixed_vel_mask", False)
-    use_mask = use_input_mask or use_fixed_vel_mask
     use_hfs_lines = meta.get("use_hfs_lines", False)
     strict_mask = meta.get("strict_mask", False)
     ref_line_method = meta.get("ref_line", "first")
@@ -373,70 +372,140 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
     # ------------------------------------------------------------------
     # Mask construction
     # ------------------------------------------------------------------
-    if use_mask:
-        # Use an external mask that was sampled in stage_regrid
-        if len(input_mask) == 0:
-            LOG.error(f"use_mask is True but no mask defined in data_key.")
-        mask_tag = f'SPEC_{str(input_mask["mask_name"].iloc[0]).upper()}'
-        mask = this_data[mask_tag]
-        del this_data[
-            mask_tag
-        ]  # remove it from the table; will be re-added as SPEC_MASK
-        _, ref_line_vmean, _ = construct_mask(ref_line, this_data, SN_processing)
-        LOG.info(f"Using external mask: {mask_tag}.")
+    # parse_ref_line resolves:
+    #   mask_lines   — which cube lines to OR-combine for the primary mask
+    #                  (None signals individual mode)
+    #   combinations — list of (op, src) pairs from combination tokens:
+    #                  AND(input), OR(input), AND(fixed), OR(fixed)
+    # ------------------------------------------------------------------
+    mask_lines, combinations = parse_ref_line(ref_line_method, line_names)
+
+    if mask_lines is None:
+        # individual mode: build one mask per line
+        LOG.info(f"Building individual masks for {', '.join(line_names)}.")
+        line_masks, line_vmeans = construct_individual_mask(
+            line_names, this_data, SN_processing, use_hfs_lines, hfs_data, velocity_window
+        )
 
     else:
-        # ------------------------------------------------------------------
-        # Resolve which lines feed into the mask using the shared helper.
-        # resolve_mask_lines returns None for "individual" mode, or a list
-        # of uppercase line names to OR-combine for all other modes.
-        # ------------------------------------------------------------------
-        mask_lines = resolve_mask_lines(ref_line_method, line_names)
-
-        if mask_lines is None:
-            # individual: build one mask per line, used per-line below
-            LOG.info(f"Building individual masks for {', '.join(line_names)}.")
-            line_masks, line_vmeans = construct_individual_mask(
-                line_names, this_data, SN_processing, use_hfs_lines, hfs_data, velocity_window
-            )
-
-        else:
-            # Build the combined mask by looping over the resolved lines
-            LOG.info(
-                f"Building velocity mask from: {', '.join(mask_lines)}."
-            )
-            mask = None
-            ref_line_vmean = None
-            for line in mask_lines:
-                mask_line, vmean_line, _ = construct_mask(line, this_data, SN_processing)
-                this_data[f"SPEC_MASK_{line.upper()}"] = Column(
-                    mask_line,
-                    unit=u.dimensionless_unscaled,
-                    description=f"Velocity-integration mask for {line}",
-                )
-                if mask is None:
-                    mask = mask_line
-                    ref_line_vmean = vmean_line
-                    LOG.info(f"Building mask for line: {line}.")
-                else:
-                    mask = (
-                        mask.value.astype(int) | mask_line.value.astype(int)
-                    ) * u.dimensionless_unscaled
-                    LOG.info(f"Adding line to mask: {line}.")
-
-            # Optional strict spatial connectivity filter
-            if strict_mask:
-                LOG.info(f"Applying strict spatial mask filter.")
-                mask_arr = _apply_strict_mask(mask.value.astype(int), this_data)
-                mask = mask_arr * u.dimensionless_unscaled
-
-            # Store the combined mask used for integration
-            this_data["SPEC_MASK"] = Column(
-                mask,
+        # Build the combined S/N mask by looping over the resolved lines
+        LOG.info(f"Building velocity mask from: {', '.join(mask_lines)}.")
+        mask = None
+        ref_line_vmean = None
+        for line in mask_lines:
+            mask_line, vmean_line, _ = construct_mask(line, this_data, SN_processing)
+            this_data[f"SPEC_MASK_{line.upper()}"] = Column(
+                mask_line,
                 unit=u.dimensionless_unscaled,
-                description="Velocity-integration mask (used for all integrated products)",
+                description=f"Velocity-integration mask for {line}",
+            )
+            if mask is None:
+                mask = mask_line
+                ref_line_vmean = vmean_line
+                LOG.info(f"Building mask for line: {line}.")
+            else:
+                mask = (
+                    mask.value.astype(int) | mask_line.value.astype(int)
+                ) * u.dimensionless_unscaled
+                LOG.info(f"Adding line to mask: {line}.")
+
+        # Optional strict spatial connectivity filter
+        if strict_mask:
+            LOG.info(f"Applying strict spatial mask filter.")
+            mask_arr = _apply_strict_mask(mask.value.astype(int), this_data)
+            mask = mask_arr * u.dimensionless_unscaled
+
+        # Store the primary mask before any external combination
+        this_data["SPEC_MASK"] = Column(
+            mask,
+            unit=u.dimensionless_unscaled,
+            description="Velocity-integration mask (used for all integrated products)",
+        )
+
+    # ------------------------------------------------------------------
+    # Apply combination tokens AND(input), OR(input), AND(fixed), OR(fixed).
+    # ------------------------------------------------------------------
+    def _get_ext_mask(src):
+        """Fetch the external mask array for 'input' or 'fixed' source."""
+        if len(input_mask) == 0:
+            LOG.error(f"Combination token requires a mask but none is defined in config.")
+            return None
+        tag = f'SPEC_{str(input_mask["mask_name"].iloc[0]).upper()}'
+        if tag not in this_data.colnames:
+            LOG.warning(f"External mask column {tag} not found in table; skipping.")
+            return None
+        ext = this_data[tag]
+        del this_data[tag]
+        return np.asarray(ext.value if hasattr(ext, "value") else ext).astype(int)
+
+    handled_srcs = set()
+    for op, src in combinations:
+        if src == "input" and not use_input_mask:
+            LOG.warning(f"{op}(input) in ref_line but use_input_mask = false — skipping.")
+            continue
+        if src == "fixed" and not use_fixed_vel_mask:
+            LOG.warning(f"{op}(fixed) in ref_line but use_fixed_vel_mask = false — skipping.")
+            continue
+        ext_arr = _get_ext_mask(src)
+        if ext_arr is None:
+            continue
+        handled_srcs.add(src)
+        LOG.info(f"Combining primary mask {op} {src} mask.")
+        if mask_lines is None:
+            for ln in line_masks:
+                lm = np.asarray(
+                    line_masks[ln].value if hasattr(line_masks[ln], "value") else line_masks[ln]
+                ).astype(int)
+                line_masks[ln] = (
+                    (lm & ext_arr) if op == "AND" else (lm | ext_arr)
+                ) * u.dimensionless_unscaled
+        else:
+            cur = np.asarray(mask.value if hasattr(mask, "value") else mask).astype(int)
+            mask = (
+                (cur & ext_arr) if op == "AND" else (cur | ext_arr)
+            ) * u.dimensionless_unscaled
+            this_data["SPEC_MASK"] = Column(
+                mask, unit=u.dimensionless_unscaled,
+                description=f"Velocity-integration mask ({op} {src} mask)",
             )
 
+    # Legacy flags: apply AND if the corresponding src was not already
+    # handled by an explicit combination token.
+    if use_input_mask and "input" not in handled_srcs:
+        ext_arr = _get_ext_mask("input")
+        if ext_arr is not None:
+            if mask_lines is None:
+                for ln in line_masks:
+                    lm = np.asarray(
+                        line_masks[ln].value if hasattr(line_masks[ln], "value") else line_masks[ln]
+                    ).astype(int)
+                    line_masks[ln] = (lm & ext_arr) * u.dimensionless_unscaled
+            else:
+                cur = np.asarray(mask.value if hasattr(mask, "value") else mask).astype(int)
+                mask = (cur & ext_arr) * u.dimensionless_unscaled
+                this_data["SPEC_MASK"] = Column(
+                    mask, unit=u.dimensionless_unscaled,
+                    description="Velocity-integration mask (AND input mask)",
+                )
+            LOG.info("Input mask AND-combined (legacy use_input_mask flag).")
+
+    if use_fixed_vel_mask and "fixed" not in handled_srcs:
+        ext_arr = _get_ext_mask("fixed")
+        if ext_arr is not None:
+            if mask_lines is None:
+                for ln in line_masks:
+                    lm = np.asarray(
+                        line_masks[ln].value if hasattr(line_masks[ln], "value") else line_masks[ln]
+                    ).astype(int)
+                    line_masks[ln] = (lm & ext_arr) * u.dimensionless_unscaled
+            else:
+                cur = np.asarray(mask.value if hasattr(mask, "value") else mask).astype(int)
+                mask = (cur & ext_arr) * u.dimensionless_unscaled
+                this_data["SPEC_MASK"] = Column(
+                    mask, unit=u.dimensionless_unscaled,
+                    description="Velocity-integration mask (AND fixed velocity mask)",
+                )
+            LOG.info("Fixed velocity mask AND-combined (legacy use_fixed_vel_mask flag).")
     # HFS mask extension
     lines_hfs = (
         list(set(hfs_data["hfs_name"]))

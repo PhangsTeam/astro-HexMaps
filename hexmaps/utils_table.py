@@ -504,72 +504,101 @@ def build_noise_mask(noise_mask_df, vaxis, shape):
         return np.broadcast_to(chan_mask[:, None, None], shape).copy()
 
 
-def resolve_mask_lines(ref_line_method, line_names):
+def parse_ref_line(ref_line_method, line_names):
     """
-    Resolve which lines to use for mask construction.
+    Parse the ``ref_line`` config value into masking lines and optional
+    combination directives.
 
-    Returns a list of uppercase line names that should be OR-combined to
-    produce the integration mask.  The caller loops over this list exactly
-    once: builds a mask per line, OR-combines them, and uses the result.
+    In addition to the existing line-selection keywords (``first``,
+    ``all``, ``n``, ``individual``, or named lines), the ``ref_line``
+    value may contain one or more **combination tokens** as
+    comma-separated extra items:
+
+    ``AND(input)``
+        AND-combine the ref_line mask with the external input mask
+        (defined in the ``[mask]`` table with ``use_input_mask = true``).
+    ``OR(input)``
+        OR-combine the ref_line mask with the external input mask.
+    ``AND(fixed)``
+        AND-combine the ref_line mask with the fixed velocity-window mask
+        (defined in the ``[mask]`` table with ``use_fixed_vel_mask = true``).
+    ``OR(fixed)``
+        OR-combine the ref_line mask with the fixed velocity-window mask.
+
+    Combination tokens are stripped from the token list before line
+    resolution so they do not interfere with line-name matching.
+
+    Examples
+    --------
+    ``ref_line = 12co21, AND(input)``
+        Build the mask from 12co21, then AND with the input mask.
+    ``ref_line = first, OR(fixed)``
+        Build the mask from the first line, then OR with the fixed window.
+    ``ref_line = all, AND(input), AND(fixed)``
+        Union of all line masks, ANDed with both the input and fixed masks.
 
     Parameters
     ----------
     ref_line_method : str or int
-        Value of config key ``ref_line``. One of:
-
-        ``"first"``
-            Only the first line in the cube list.
-        ``"<line_name>"`` or ``"<n1>, <n2>, ..."``
-            A single named line or a comma-separated list of line names.
-            Each name is matched case-insensitively against *line_names*.
-            Names not found in the list are warned and skipped.
-        ``"all"``
-            Every line in the cube list.
-        ``int`` or numeric string ``"n"``
-            First *n* lines (``n=1`` → first line only, same as ``"first"``).
-        ``"individual"``
-            Special mode: not handled here.  Returns ``None`` to signal
-            that the caller should build one mask per line independently.
-
+        Raw value of the ``ref_line`` config key.
     line_names : list of str
-        All cube line names in the order they appear in the config, as they
-        are stored in the database (typically lowercase, e.g. ``"12co21"``).
+        All cube line names (typically lowercase) from the config.
 
     Returns
     -------
-    list of str (uppercase) or None
-        Uppercase line names to use for masking, or ``None`` for
+    mask_lines : list of str (uppercase) or None
+        Lines to OR-combine for the primary mask, or ``None`` for
         ``individual`` mode.
-
-    Raises
-    ------
-    ValueError if no valid masking lines can be resolved.
+    combinations : list of (str, str)
+        Zero or more ``(operation, source)`` pairs describing how to
+        combine the primary mask with external masks.
+        *operation* is ``"AND"`` or ``"OR"``.
+        *source* is ``"input"`` or ``"fixed"``.
     """
     if not line_names:
-        raise ValueError("resolve_mask_lines: line_names is empty.")
+        raise ValueError("parse_ref_line: line_names is empty.")
 
-    # Individual mode — signal to caller
-    if str(ref_line_method).strip().lower() == "individual":
-        return None
+    # --------------- extract combination tokens first -------------------
+    _COMBO_TOKENS = {"AND(INPUT)", "OR(INPUT)", "AND(FIXED)", "OR(FIXED)"}
+    raw_tokens  = [t.strip() for t in str(ref_line_method).split(",")]
+    combo_tokens = [t for t in raw_tokens if t.upper() in _COMBO_TOKENS]
+    line_tokens  = [t for t in raw_tokens if t.upper() not in _COMBO_TOKENS]
+
+    combinations = []
+    for tok in combo_tokens:
+        tok_up = tok.upper()
+        op     = tok_up.split("(")[0]          # "AND" or "OR"
+        src    = tok_up[len(op)+1:-1].lower()  # "input" or "fixed"
+        combinations.append((op, src))
+
+    # Rejoin the non-combo tokens for the existing resolution logic
+    ref_core = ", ".join(line_tokens).strip().strip(",").strip()
+    if not ref_core:
+        ref_core = "first"
+
+    # --------------- resolve line tokens --------------------------------
+    # Individual mode
+    if ref_core.lower() == "individual":
+        return None, combinations
 
     # all
-    if str(ref_line_method).strip().lower() == "all":
-        return line_names
+    if ref_core.lower() == "all":
+        return line_names, combinations
 
-    # integer or numeric string → first n lines
+    # integer → first n lines
     try:
-        n = int(ref_line_method)
+        n = int(ref_core)
         n = max(1, min(n, len(line_names)))
-        return line_names[:n]
+        return line_names[:n], combinations
     except (ValueError, TypeError):
         pass
 
-    # "first" → first line only
-    if str(ref_line_method).strip().lower() == "first":
-        return [line_names[0]]
+    # "first"
+    if ref_core.lower() == "first":
+        return [line_names[0]], combinations
 
-    # Named line(s): comma-separated list or single name
-    candidates = [p.strip() for p in str(ref_line_method).split(",")]
+    # Named line(s)
+    candidates = [p.strip().upper() for p in ref_core.split(",")]
     resolved = []
     for c in candidates:
         if c in line_names:
@@ -577,15 +606,27 @@ def resolve_mask_lines(ref_line_method, line_names):
         else:
             import logging as _logging
             _logging.getLogger("hexmaps").warning(
-                f"resolve_mask_lines: '{c}' not found in cube list {line_names}; skipping."
+                f"parse_ref_line: '{c}' not found in cube list {line_names}; skipping."
             )
     if resolved:
-        return resolved
+        return resolved, combinations
 
-    # fallback — unrecognised value, use first line and warn
+    # Fallback
     import logging as _logging
     _logging.getLogger("hexmaps").warning(
-        f"resolve_mask_lines: unrecognised ref_line value '{ref_line_method}'; "
+        f"parse_ref_line: unrecognised ref_line value '{ref_line_method}'; "
         f"falling back to first line '{line_names[0]}'."
     )
-    return [line_names[0]]
+    return [line_names[0]], combinations
+
+
+def resolve_mask_lines(ref_line_method, line_names):
+    """
+    Backwards-compatible wrapper around :func:`parse_ref_line`.
+
+    Returns only the mask-line list (ignores combination tokens).
+    New code should call :func:`parse_ref_line` directly.
+    """
+    mask_lines, _ = parse_ref_line(ref_line_method, line_names)
+    return mask_lines
+
