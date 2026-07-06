@@ -42,7 +42,7 @@ TPEAK_<LINE>  : peak brightness temperature within the mask
 RMS_<LINE>    : noise rms outside the mask
 EW_<LINE>     : equivalent width (∑ T dv / Tpeak / sqrt(2π))
 EEW_<LINE>    : uncertainty on EW
-SPEC_SHUFF_<LINE>   : shuffled spectrum (n_pts × n_shuff_chan)
+SPEC_SHUFF_<LINE>  : shuffled spectrum (n_pts × n_shuff_chan)
 SPEC_MASK          : combined velocity-integration mask (n_pts × n_chan)
 SPEC_MASK_<LINE>   : per-line mask (stored if ref_line != "first")
 SPEC_VAXIS         : velocity axis in km/s (n_pts × n_chan)
@@ -172,13 +172,21 @@ def _apply_strict_mask(mask, this_data):
     Parameters
     ----------
     mask      : np.ndarray (n_pts × n_chan) — 0/1 mask array
-    this_data : Table — used for ra_deg, dec_deg, and beam_as metadata
+    this_data : Table — used for spatial coordinate columns, and beam_as metadata
 
     Returns
     -------
     mask : np.ndarray — filtered mask (same shape, in-place modification)
     """
-    ra, dec = this_data["ra_deg"], this_data["dec_deg"]
+    # Coordinate columns may be RA/DEC, GLON/GLAT, etc.
+    # Find the first two columns ending in "_deg" that are not inclination/PA.
+    _skip = {"incl_deg", "posang_deg"}
+    _coord_cols = [c for c in this_data.colnames
+                   if c.endswith("_deg") and c not in _skip]
+    if len(_coord_cols) >= 2:
+        ra, dec = this_data[_coord_cols[0]], this_data[_coord_cols[1]]
+    else:
+        ra, dec = this_data["RA"], this_data["DEC"]
     n_chan = np.shape(mask)[1]
     sep = this_data.meta["beam_as"] / 3600 / 2
 
@@ -276,8 +284,7 @@ def _build_hfs_mask(mask, line_name, hfs_data, this_data):
     return mask_hfs * u.dimensionless_unscaled
 
 # ============================================================================
-# NEW PART ADDED BY ME
-# Build individual masks for each spectral line, velocity range can be limited additionally by using velocity_window.
+# Individual mask per line
 # ============================================================================
 def construct_individual_mask(line_names, this_data, SN_processing, use_hfs_lines=False, hfs_data=None, velocity_window=None):
     """
@@ -417,13 +424,21 @@ def run_products(source, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
                 mask = (
                     mask.value.astype(int) | mask_hi.value.astype(int)
                 ) * u.dimensionless_unscaled
-                rgal = this_data["rgal_r25"]
-                n_pts = len(rgal)
+                if "rgal_r25" not in this_data.colnames:
+                    LOG.warning(
+                        "ref+HI mode requires rgal_r25 to select the radial "
+                        "transition, but galaxy geometry is not available for "
+                        "this source. Falling back to using HI mask everywhere."
+                    )
+                    rgal = None
+                else:
+                    rgal = this_data["rgal_r25"]
+                n_pts = len(mask)
                 vmean_comb = np.zeros(n_pts) * np.nan
                 for jj in range(n_pts):
                     vmean_comb[jj] = (
                         ref_line_vmean[jj].value
-                        if rgal[jj] < 0.23
+                        if (rgal is None or rgal[jj] < 0.23)3
                         else vmean_hi[jj].value
                     )
                 ref_line_vmean = vmean_comb
@@ -559,14 +574,6 @@ def run_products(source, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
 
         # Choose the appropriate mask for this line
         # (HFS lines get their own extended mask if available)
-        #if use_hfs_lines and line_name in lines_hfs:
-        #    hfs_tag = f"SPEC_MASK_{line_name.upper()}"
-        #    active_mask = (
-        #        this_data[hfs_tag] * u.Unit(1) if hfs_tag in this_data.keys() else mask
-        #    )
-        #else:
-        #    active_mask = mask
-
         if ref_line_method == "individual":
             active_mask = line_masks[line_name.upper()]
             line_vmean = line_vmeans[line_name.upper()]
@@ -586,7 +593,10 @@ def run_products(source, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
             hex_noise_mask[:n_pts_l] if hex_noise_mask is not None else None
         )
         mom_maps = get_mom_maps(
-            this_spec, active_mask, this_vaxis, mom_calc,
+            this_spec, 
+            active_mask, 
+            this_vaxis, 
+            mom_calc,
             noise_mask=line_noise_mask,
         )
         line_desc = str(cubes["line_desc"].iloc[jj])
@@ -655,6 +665,14 @@ def run_products(source, fname, meta, cubes, input_mask, hfs_data, noise_mask_df
     # ------------------------------------------------------------------
     # Write enriched table back to disk
     # ------------------------------------------------------------------
+    # Update the embedded pipeline log so it covers both the regrid and
+    # products stages when they are run together.
+    from hexmaps.logger import logger as _logger
+    try:
+        this_data.meta["pipeline_log"] = _logger.as_text().replace("\n", "\\n")
+    except Exception as e:
+        LOG.warning(f"Could not update pipeline log in metadata: {e}")
+   
     this_data.write(fname, format="ascii.ecsv", overwrite=True)
     LOG.info(f"Spectra processing complete for {source}.")
     LOG.info(f"Database written to: {fname}")
