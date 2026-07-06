@@ -45,7 +45,7 @@ from pathlib import Path
 from datetime import date
 
 from hexmaps.handler_keys import KeyHandler
-from hexmaps.handler_sources import TargetHandler
+from hexmaps.handler_targets import TargetHandler
 from hexmaps.logger import get_logger, logger
 
 ALL_STAGES = ["regrid", "products", "fits"]
@@ -81,7 +81,7 @@ class PipelineHandler:
     Attributes
     ----------
     key_handler    : KeyHandler    — loaded configuration
-    source_handler : TargetHandler — target geometry lookups
+    target_handler : TargetHandler — target geometry lookups
     run_success    : dict          — maps target name → bool after a run
     """
 
@@ -100,13 +100,13 @@ class PipelineHandler:
         self.key_handler = KeyHandler(conf_path)
         self.key_handler.validate()
 
-        self.source_handler = TargetHandler(
-            self.key_handler.get_source_table(),
-            self.key_handler.get_sources(),
+        self.target_handler = TargetHandler(
+            self.key_handler.get_target_table(),
+            self.key_handler.get_targets(),
         )
         LOG_LOADING.info(
-            f"Loaded {self.source_handler.n_sources()} target(s): "
-            f"{self.source_handler.all_sources()}"
+            f"Loaded {self.target_handler.n_targets()} target(s): "
+            f"{self.target_handler.all_targets()}"
         )
 
         # Ensure the output directory exists before any stage tries to write
@@ -183,8 +183,8 @@ class PipelineHandler:
         # Preserve canonical stage order
         ordered = [s for s in ALL_STAGES if s in stages]
 
-        source_list = targets if targets else self.source_handler.all_sources()
-        self.run_success = {s: True for s in source_list}
+        target_list = targets if targets else self.target_handler.all_targets()
+        self.run_success = {s: True for s in target_list}
 
         LOG_LOADING.info(f"Running stages: {ordered}")
 
@@ -194,7 +194,7 @@ class PipelineHandler:
                 "To enable FITS output, add 'fits' to your stage list."
             )
 
-        for target in source_list:
+        for target in target_list:
             LOG_LOADING.info(f"--- Processing target: {target} ---")
             try:
                 if "regrid" in ordered:
@@ -240,7 +240,7 @@ class PipelineHandler:
         REGRID_LOG.info(f"Convolving and sampling data for {target}.")
         run_regrid(
             target=target,
-            params=self.source_handler.get_target_params(target),
+            params=self.target_handler.get_target_params(target),
             meta=self.key_handler.meta,
             maps=self.key_handler.get_maps(),
             cubes=self.key_handler.get_cubes(),
@@ -290,7 +290,7 @@ class PipelineHandler:
             meta=self.key_handler.meta,
             maps=self.key_handler.get_maps(),
             cubes=self.key_handler.get_cubes(),
-            params=self.source_handler.get_target_params(target),
+            params=self.target_handler.get_target_params(target),
             input_mask=self.key_handler.get_input_mask(),
             hfs_data=self.key_handler.get_hfs_data(),
             noise_mask_df=self.key_handler.get_noise_mask(),
@@ -384,5 +384,5 @@ class PipelineHandler:
     def __repr__(self):
         return (
             f"PipelineHandler(conf_path='{self.conf_path}', "
-            f"targets={self.source_handler.all_sources()})"
+            f"targets={self.target_handler.all_targets()})"
         )
