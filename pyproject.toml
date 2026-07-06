@@ -65,6 +65,7 @@ include = ["hexmaps*"]
 
 [tool.setuptools.package-data]
 hexmaps = [
+    "templates/config.txt",
     "templates/keys/*.txt",
     "templates/run_hexmaps.py",
     "py.typed",
