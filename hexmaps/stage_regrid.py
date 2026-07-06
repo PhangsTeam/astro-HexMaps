@@ -11,7 +11,7 @@ This stage is the core data-ingestion step of the pipeline.  It:
    The grid is clipped to the footprint of the overlay cube (pixels with at
    least one finite channel), with spacing derived from the target resolution
    and the pixels_per_beam parameter in config.txt.
-2. Initialises the output Astropy Table with source metadata and
+2. Initialises the output Astropy Table with target metadata and
    deprojected galactocentric coordinates.
 3. For each 2D map:   convolves to the target beam → samples at hex points.
 4. For each cube:     convolves to the target beam → reprojects onto overlay
@@ -109,7 +109,7 @@ def _ensure_ms(hdr, data=None):
 #         if 'GLS' in hdr.get(key, ''):
 #             hdr[key] = hdr[key].replace('GLS', 'SFL')
 
-#     # Fix 2: CRPIX3 = 0 (only source cube, but check both)
+#     # Fix 2: CRPIX3 = 0 (only target cube, but check both)
 #     if hdr.get('CRPIX3', 1) == 0.0:
 #         hdr['CRVAL3'] = hdr['CRVAL3'] + hdr['CDELT3']
 #         hdr['CRPIX3'] = 1.0
@@ -271,31 +271,31 @@ def _spectral_smooth(data, hdr_out, spec_smooth):
 # ============================================================================
 
 
-def run_sampling(source: str, params: dict, meta: dict) -> dict:
+def run_sampling(target: str, params: dict, meta: dict) -> dict:
     """
-    Generate the hexagonal sampling grid for *source*.
+    Generate the hexagonal sampling grid for *target*.
 
     Steps
     -----
     1. Load the overlay FITS cube and check it is 3-D.
-    2. Determine the target resolution in arcseconds for this source:
+    2. Determine the target resolution in arcseconds for this target:
 
        * ``angular``  — use ``meta["target_res"]`` directly (arcseconds).
        * ``physical`` — convert ``meta["target_res_config"]`` (parsecs) to
-                        arcseconds using this source's ``dist_mpc``.
-       * ``native``   — read BMAJ/BMIN from this source's overlay header.
+                        arcseconds using this target's ``dist_mpc``.
+       * ``native``   — read BMAJ/BMIN from this target's overlay header.
 
     3. Collapse the cube along the spectral axis to create a binary footprint
        mask (True where at least one channel is finite).
-    4. Build the hexagonal grid centred on the source and clip it to the mask.
+    4. Build the hexagonal grid centred on the target and clip it to the mask.
 
     Parameters
     ----------
-    source : str
-        Source name; used to construct the overlay filename as
-        ``{data_dir}/{source}{overlay_file}``.
+    target : str
+        Target name; used to construct the overlay filename as
+        ``{data_dir}/{target}{overlay_file}``.
     params : dict
-        Source geometric parameters from TargetHandler.get_target_params().
+        Target geometric parameters from TargetHandler.get_target_params().
         Required keys: ra_ctr, dec_ctr, dist_mpc.
     meta : dict
         Pipeline settings from KeyHandler.meta.
@@ -319,24 +319,24 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
     data_dir = meta.get("data_dir", "data/")
     overlay_file = meta.get("overlay_file", "")
 
-    # Construct the overlay filename: if the source name is already embedded in
-    # overlay_file use it as-is, otherwise prepend the source name.
+    # Construct the overlay filename: if the target name is already embedded in
+    # overlay_file use it as-is, otherwise prepend the target name.
     overlay_fname = (
         path.join(data_dir, overlay_file)
-        if source in overlay_file
-        else path.join(data_dir, source + overlay_file)
+        if target in overlay_file
+        else path.join(data_dir, target + overlay_file)
     )
 
     if not path.exists(overlay_fname):
-        LOG.error(f"Overlay file not found for {source}: {overlay_fname}")
-        raise FileNotFoundError(f"Overlay file not found for {source}: {overlay_fname}")
+        LOG.error(f"Overlay file not found for {target}: {overlay_fname}")
+        raise FileNotFoundError(f"Overlay file not found for {target}: {overlay_fname}")
 
     LOG.info(f"Overlay file: {overlay_fname}")
     ov_cube, ov_hdr = fits.getdata(overlay_fname, header=True)
 
     if ov_hdr["NAXIS"] == 4:
-        LOG.error(f"4D overlay cube for {source}. " "Please provide a 3D cube.")
-        raise ValueError(f"4D overlay cube for {source}. " "Please provide a 3D cube.")
+        LOG.error(f"4D overlay cube for {target}. " "Please provide a 3D cube.")
+        raise ValueError(f"4D overlay cube for {target}. " "Please provide a 3D cube.")
 
     # ------------------------------------------------------------------
     # Build the footprint mask and generate the hex grid
@@ -345,11 +345,11 @@ def run_sampling(source: str, params: dict, meta: dict) -> dict:
     ov_footprint = np.sum(np.isfinite(ov_cube), axis=0) >= 1
     mask_hdr = twod_head(ov_hdr)
 
-    # Resolve per-source target resolution (target_res, target_res_pc,
+    # Resolve per-target target resolution (target_res, target_res_pc,
     # res_suffix) — single authoritative implementation shared with the
     # fits stage so both stages always compute the same values.
     from hexmaps.utils_fits import resolve_meta_resolution
-    resolve_meta_resolution(source, params, meta, ov_hdr=ov_hdr, log=LOG)
+    resolve_meta_resolution(target, params, meta, ov_hdr=ov_hdr, log=LOG)
     target_res_as = meta["target_res"]
     # Apply configurable FOV erosion to the hex grid footprint so that the
     # hex grid and all FITS products share the same effective footprint.
@@ -424,7 +424,7 @@ def sample_at_res(
     target_res_as=None,
     target_hdr=None,
     line_name="",
-    source="",
+    target="",
     perbeam=False,
     spec_smooth=("default", "binned"),
     unc=False,
@@ -455,7 +455,7 @@ def sample_at_res(
     target_res_as : float             — target beam FWHM in arcseconds
     target_hdr    : FITS Header       — WCS to reproject onto (overlay header)
     line_name     : str               — label used in log messages
-    source        : str               — source name used in log messages
+    target        : str               — target name used in log messages
     perbeam       : bool              — correct for beam area change (use for
                                         maps in Jy/beam or K units)
     spec_smooth   : (mode, method)    — spectral smoothing parameters
@@ -700,9 +700,9 @@ def sample_mask(in_data, ra_samp, dec_samp, in_hdr=None, target_hdr=None):
 # ============================================================================
 
 
-def run_regrid(source, params, meta, maps, cubes, input_mask):
+def run_regrid(target, params, meta, maps, cubes, input_mask):
     """
-    Convolve and sample all maps and cubes for *source*.
+    Convolve and sample all maps and cubes for *target*.
 
     This function drives the full regrid stage:
     - calls run_sampling (defined in this module) to get the hex grid and overlay header
@@ -713,7 +713,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
 
     Parameters
     ----------
-    source     : str
+    target     : str
     params     : dict  — from TargetHandler.get_target_params()
     meta       : dict  — from KeyHandler.meta
     maps       : pd.DataFrame — 2D map definitions from handler_keys
@@ -727,7 +727,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
     from hexmaps import __version__, __author__, __email__, __credits__
 
     # Generate sampling grid
-    sampling = run_sampling(source=source, params=params, meta=meta)
+    sampling = run_sampling(target=target, params=params, meta=meta)
     samp_ra = sampling["samp_ra"]
     samp_dec = sampling["samp_dec"]
     ov_hdr = sampling["ov_hdr"]
@@ -735,7 +735,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
     n_chan = ov_hdr["NAXIS3"]
     n_pts = len(samp_ra)
 
-    fname = _build_fname(source, meta)
+    fname = _build_fname(target, meta)
     structure_creation = meta.get("structure_creation", "default")
     data_dir = meta.get("data_dir", "data/")
 
@@ -747,7 +747,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
         )
     else:
         this_data = _init_table(
-            source,
+            target,
             params,
             meta,
             samp_ra,
@@ -769,8 +769,8 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
     overlay_file = meta.get("overlay_file", "")
     overlay_fname = (
         path.join(data_dir, overlay_file)
-        if source in overlay_file
-        else path.join(data_dir, source + overlay_file)
+        if target in overlay_file
+        else path.join(data_dir, target + overlay_file)
     )
     input_headers = {}
 
@@ -787,7 +787,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
             continue
 
         map_file = path.join(
-            str(map_entry["map_dir"]), source + str(map_entry["map_ext"])
+            str(map_entry["map_dir"]), target + str(map_entry["map_ext"])
         )
         if not path.exists(map_file):
             LOG.error(f"Map {map_entry['map_name']} not found: {map_file}")
@@ -805,7 +805,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
             target_res_as=target_res_as,
             target_hdr=ov_hdr,
             line_name=map_entry["map_name"],
-            source=source,
+            target=target,
             perbeam=perbeam,
         )
         this_data["MAP_" + map_entry["map_name"].upper()] = Column(
@@ -817,7 +817,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
         # Optional uncertainty map
         if str(map_entry.get("map_uc", "")).strip():
             uc_file = path.join(
-                str(map_entry["map_dir"]), source + str(map_entry["map_uc"])
+                str(map_entry["map_dir"]), target + str(map_entry["map_uc"])
             )
             if path.exists(uc_file):
                 input_headers["EMAP_" + map_entry["map_name"].upper()] = fits.getheader(
@@ -850,7 +850,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
             LOG.info(f"Cube {cube['line_name']} already present; skipping.")
             continue
 
-        cube_file = path.join(str(cube["line_dir"]), source + str(cube["line_ext"]))
+        cube_file = path.join(str(cube["line_dir"]), target + str(cube["line_ext"]))
         if not path.exists(cube_file):
             LOG.error(f"Cube {cube['line_name']} not found: {cube_file}")
             continue
@@ -866,7 +866,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
             target_res_as=target_res_as,
             target_hdr=ov_hdr,
             line_name=cube["line_name"],
-            source=source,
+            target=target,
         )
         this_data["SPEC_" + cube["line_name"].upper()] = Column(
             this_spec,
@@ -877,7 +877,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
         # Optional 2D integrated-intensity map provided alongside the cube
         map_ext = str(cube.get("map_ext", "")).strip()
         if map_ext and map_ext not in ("nan", ""):
-            b2d_file = path.join(str(cube["line_dir"]), source + map_ext)
+            b2d_file = path.join(str(cube["line_dir"]), target + map_ext)
             if path.exists(b2d_file):
                 input_headers["MAP_" + cube["line_name"].upper()] = fits.getheader(
                     b2d_file
@@ -899,7 +899,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
         # Optional 2D uncertainty map for the cube
         map_uc = str(cube.get("map_uc", "")).strip()
         if map_uc and map_uc not in ("nan", ""):
-            uc_file = path.join(str(cube["line_dir"]), source + map_uc)
+            uc_file = path.join(str(cube["line_dir"]), target + map_uc)
             if path.exists(uc_file):
                 input_headers["EMAP_" + cube["line_name"].upper()] = fits.getheader(
                     uc_file
@@ -943,7 +943,7 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
             # Sample an external FITS mask file
             mask_file = path.join(
                 str(input_mask["mask_dir"].iloc[0]),
-                source + str(input_mask["mask_ext"].iloc[0]),
+                target + str(input_mask["mask_ext"].iloc[0]),
             )
             if not path.exists(mask_file):
                 LOG.error(f"Mask file not found: {mask_file}")
@@ -1002,18 +1002,18 @@ def run_regrid(source, params, meta, maps, cubes, input_mask):
 # ============================================================================
 
 
-def _build_fname(source, meta):
+def _build_fname(target, meta):
     """
     Construct the output .ecsv filename.
 
-    Encodes source name, resolution suffix, and today's date.
+    Encodes target name, resolution suffix, and today's date.
     The resolution suffix is read from ``meta["res_suffix"]`` which is set
     by handler_keys._resolve_resolution and kept current by run_sampling.
     """
     out_dir = meta.get("out_dir", "output/")
     res_suffix = meta.get("res_suffix", "27p0as")
     date_str = date.today().strftime("%Y_%m_%d")
-    return os.path.join(out_dir, f"{source}_hexmaps_{res_suffix}_{date_str}.ecsv")
+    return os.path.join(out_dir, f"{target}_hexmaps_{res_suffix}_{date_str}.ecsv")
 
 
 def _get_coord_names(ov_hdr):
@@ -1060,7 +1060,7 @@ def _get_coord_names(ov_hdr):
 
 
 def _init_table(
-    source,
+    target,
     params,
     meta,
     samp_ra,
@@ -1073,15 +1073,15 @@ def _init_table(
     credits_,
 ):
     """
-    Create and populate an empty Astropy Table for *source*.
+    Create and populate an empty Astropy Table for *target*.
 
     Writes provenance metadata (version, author, date) and coordinate
     columns including deprojected galactocentric radius and polar angle.
 
     Parameters
     ----------
-    source        : str
-    params        : dict — source geometry from TargetHandler
+    target        : str
+    params        : dict — target geometry from TargetHandler
     meta          : dict — pipeline settings from KeyHandler
     samp_ra/dec   : arrays — hex-grid positions
     ov_hdr        : FITS Header — spectral axis information
@@ -1107,7 +1107,7 @@ def _init_table(
             "User": meta.get("user", ""),
             "Comments": meta.get("comments", ""),
             "Date": _date.today().strftime("%Y_%m_%d"),
-            "Source": source,
+            "Target": target,
         }
     )
 
@@ -1139,7 +1139,7 @@ def _init_table(
         samp_dec, unit=au.deg, description=col2_desc
     )
 
-    # Source geometry metadata — only the always-available values
+    # Target geometry metadata — only the always-available values
     this_data.meta["dist_mpc"]  = params.get("dist_mpc", float("nan"))  * au.Mpc
     this_data.meta["beam_as"]   = target_res_as * au.arcsec
 
@@ -1164,7 +1164,7 @@ def _init_table(
     # Deprojected galactocentric coordinates — galaxy targets only.
     # Requires incl_deg, posang_deg, and r25 to all be non-NaN in
     # target_definitions.txt.  Skipped with a warning for Milky Way clouds
-    # or any other source type where these parameters are not meaningful.
+    # or any other target type where these parameters are not meaningful.
     # ------------------------------------------------------------------
     if has_geom:
         ra_ctr  = float(params.get("ra_ctr",  0.0))
@@ -1201,7 +1201,7 @@ def _init_table(
     else:
         LOG.warning(
             f"Galaxy geometry columns (incl_deg, posang_deg, r25) are missing "
-            f"or NaN for '{source}' in target_definitions.txt."
+            f"or NaN for '{target}' in target_definitions.txt."
         )
         LOG.warning(
             f"Deprojected radius columns (RGAL_AS, RGAL_KPC, RGAL_R25, THETA_RAD) "
