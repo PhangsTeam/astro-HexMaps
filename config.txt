@@ -94,16 +94,16 @@ spire250,  SPIRE 250 um,      MJy/sr,  _spire250_gauss21.fits,  data/
 
 # ---- mask ----
 # Example file mask (comment out if unused):
-# co_mask, CO signal mask, _co_mask.fits, data/
+input_mask = co_mask, CO signal mask, _co_mask.fits, data/
 #
 # Example fixed-velocity mask (comment out if unused):
-#vel_mask, Fixed velocity window, -100, 100, km/s
+window_mask = vel_mask, Fixed velocity window, -100, 100, km/s
 
 # Example noise velocity windows (comment out if unused):
 # Specify one or more line-free velocity ranges for noise (RMS) estimation.
 # Multiple windows are combined (OR) into a single noise channel mask.
-#noise_mask, Noise window (blue), -200, -100, km/s
-#noise_mask, Noise window (red),   100,  200, km/s
+noise_mask = noise_mask, Noise window (blue), -200, -100, km/s
+noise_mask = noise_mask, Noise window (red),   100,  200, km/s
 
 
 # -----------------------------------------------------------------------------
