@@ -965,13 +965,39 @@ def run_moments_ppv(
         if use_input:
             ext = _load_ppv_ext("input")
             if ext is not None:
-                mask_parts.append(ext)
+                if use_hfs_lines and hfs_data is not None:
+                    lines_hfs_names = list(set(hfs_data["hfs_name"]))
+                    ext_extended = ext.astype(int).copy()
+                    for line in line_names:
+                        if line in lines_hfs_names:
+                            ext_hfs = build_hfs_mask_ppv(
+                                ext.astype(float), line, hfs_data, delta_v_kms
+                            )
+                            if ext_hfs is not None:
+                                ext_extended = ext_extended | ext_hfs.astype(int)
+                                LOG.info(f"External input mask extended to HFS frequencies for {line}.")
+                    mask_parts.append(ext_extended)
+                else:
+                    mask_parts.append(ext)
                 LOG.info("Input mask included in PPV mask.")
 
         if use_window:
             ext = _load_ppv_ext("window")
             if ext is not None:
-                mask_parts.append(ext)
+                if use_hfs_lines and hfs_data is not None:
+                    lines_hfs_names = list(set(hfs_data["hfs_name"]))
+                    ext_extended = ext.astype(int).copy()
+                    for line in line_names:
+                        if line in lines_hfs_names:
+                            ext_hfs = build_hfs_mask_ppv(
+                                ext.astype(float), line, hfs_data, delta_v_kms
+                            )
+                            if ext_hfs is not None:
+                                ext_extended = ext_extended | ext_hfs.astype(int)
+                                LOG.info(f"External window mask extended to HFS frequencies for {line}.")
+                    mask_parts.append(ext_extended)
+                else:
+                    mask_parts.append(ext)
                 LOG.info("Velocity-window mask included in PPV mask.")
 
         if not mask_parts:
