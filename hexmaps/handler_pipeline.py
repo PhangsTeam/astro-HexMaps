@@ -245,6 +245,7 @@ class PipelineHandler:
             maps=self.key_handler.get_maps(),
             cubes=self.key_handler.get_cubes(),
             input_mask=self.key_handler.get_input_mask(),
+            window_mask=self.key_handler.get_window_mask(),
         )
 
     def _run_products(self, target: str):
@@ -266,6 +267,7 @@ class PipelineHandler:
             meta=self.key_handler.meta,
             cubes=self.key_handler.get_cubes(),
             input_mask=self.key_handler.get_input_mask(),
+            window_mask=self.key_handler.get_window_mask(),
             hfs_data=self.key_handler.get_hfs_data(),
             noise_mask_df=self.key_handler.get_noise_mask(),
         )
@@ -292,6 +294,7 @@ class PipelineHandler:
             cubes=self.key_handler.get_cubes(),
             params=self.target_handler.get_target_params(target),
             input_mask=self.key_handler.get_input_mask(),
+            window_mask=self.key_handler.get_window_mask(),
             hfs_data=self.key_handler.get_hfs_data(),
             noise_mask_df=self.key_handler.get_noise_mask(),
         )

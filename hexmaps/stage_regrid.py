@@ -700,7 +700,7 @@ def sample_mask(in_data, ra_samp, dec_samp, in_hdr=None, target_hdr=None):
 # ============================================================================
 
 
-def run_regrid(target, params, meta, maps, cubes, input_mask):
+def run_regrid(target, params, meta, maps, cubes, input_mask, window_mask=None):
     """
     Convolve and sample all maps and cubes for *target*.
 
@@ -922,45 +922,50 @@ def run_regrid(target, params, meta, maps, cubes, input_mask):
         LOG.info(f"Cube {cube['line_name']} sampled successfully.")
 
     # ------------------------------------------------------------------
-    # Optional external mask
+    # Optional external masks — sampled onto the hex grid
     # ------------------------------------------------------------------
-    if len(input_mask) > 0:
-        use_fixed = meta.get("use_fixed_vel_mask", False)
-
-        if use_fixed:
-            # Build a binary mask from a fixed velocity window
-            mask_unit = input_mask["mask_unit"].iloc[0]
-            mask_start = float(input_mask["mask_start"].iloc[0]) * au.Unit(mask_unit)
-            mask_end = float(input_mask["mask_end"].iloc[0]) * au.Unit(mask_unit)
-            unit_v = ov_hdr.get("CUNIT3", "m/s")
-            v0, dv, crpix = ov_hdr["CRVAL3"], ov_hdr["CDELT3"], ov_hdr["CRPIX3"]
-            vaxis = (v0 + (np.arange(n_chan) - (crpix - 1)) * dv) * au.Unit(unit_v)
-            vaxis = vaxis.to(au.Unit(mask_unit))
-            spec_mask = np.zeros((n_pts, n_chan))
-            spec_mask[:, (vaxis >= mask_start) & (vaxis <= mask_end)] = 1.0
-            LOG.info(f"Fixed velocity mask applied " f"({mask_start} to {mask_end}).")
+    # input_mask: external FITS file mask
+    if input_mask is not None and len(input_mask) > 0:
+        mask_file = path.join(
+            str(input_mask["mask_dir"].iloc[0]),
+            target + str(input_mask["mask_ext"].iloc[0]),
+        )
+        if not path.exists(mask_file):
+            LOG.error(f"Input mask file not found: {mask_file}")
         else:
-            # Sample an external FITS mask file
-            mask_file = path.join(
-                str(input_mask["mask_dir"].iloc[0]),
-                target + str(input_mask["mask_ext"].iloc[0]),
+            _mask_label = "SPEC_" + str(input_mask["mask_name"].iloc[0]).upper()
+            input_headers[_mask_label] = fits.getheader(mask_file)
+            spec_mask, _ = sample_mask(
+                mask_file, samp_ra, samp_dec, target_hdr=ov_hdr
             )
-            if not path.exists(mask_file):
-                LOG.error(f"Mask file not found: {mask_file}")
-                spec_mask = np.zeros((n_pts, n_chan))
-            else:
-                _mask_label = "SPEC_" + str(input_mask["mask_name"].iloc[0]).upper()
-                input_headers[_mask_label] = fits.getheader(mask_file)
-                spec_mask, _ = sample_mask(
-                    mask_file, samp_ra, samp_dec, target_hdr=ov_hdr
-                )
-                LOG.info(f"External mask sampled.")
+            tag = "SPEC_" + str(input_mask["mask_name"].iloc[0]).upper()
+            this_data[tag] = Column(
+                spec_mask,
+                unit=au.dimensionless_unscaled,
+                description=str(input_mask["mask_desc"].iloc[0]),
+            )
+            LOG.info(f"External input mask sampled ({tag}).")
 
-        tag = "SPEC_" + str(input_mask["mask_name"].iloc[0]).upper()
+    # window_mask: fixed velocity-window mask built from the spectral axis
+    if window_mask is not None and len(window_mask) > 0:
+        mask_unit  = window_mask["mask_unit"].iloc[0]
+        mask_start = float(window_mask["mask_start"].iloc[0]) * au.Unit(mask_unit)
+        mask_end   = float(window_mask["mask_end"].iloc[0])   * au.Unit(mask_unit)
+        unit_v = ov_hdr.get("CUNIT3", "m/s")
+        v0, dv, crpix = ov_hdr["CRVAL3"], ov_hdr["CDELT3"], ov_hdr["CRPIX3"]
+        vaxis = (v0 + (np.arange(n_chan) - (crpix - 1)) * dv) * au.Unit(unit_v)
+        vaxis = vaxis.to(au.Unit(mask_unit))
+        spec_mask = np.zeros((n_pts, n_chan))
+        spec_mask[:, (vaxis >= mask_start) & (vaxis <= mask_end)] = 1.0
+        tag = "SPEC_" + str(window_mask["mask_name"].iloc[0]).upper()
         this_data[tag] = Column(
             spec_mask,
             unit=au.dimensionless_unscaled,
-            description=str(input_mask["mask_desc"].iloc[0]),
+            description=str(window_mask["mask_desc"].iloc[0]),
+        )
+        LOG.info(
+            f"Fixed velocity-window mask sampled "
+            f"({mask_start} to {mask_end}, {tag})."
         )
 
     # ------------------------------------------------------------------

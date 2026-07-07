@@ -35,7 +35,7 @@ import copy
 import warnings
 import numpy as np
 from pathlib import Path
-from astropy import units as u
+from astropy import units as au
 from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.wcs.utils import proj_plane_pixel_scales
@@ -59,7 +59,7 @@ warnings.filterwarnings("ignore")
 # ============================================================================
 
 
-def get_beam_arcsec(fits_path: str, log=None) -> u.Quantity:
+def get_beam_arcsec(fits_path: str, log=None) -> au.Quantity:
     """
     Return the beam major axis (BMAJ) in arcseconds from a FITS header.
 
@@ -88,7 +88,7 @@ def get_beam_arcsec(fits_path: str, log=None) -> u.Quantity:
     if "BMAJ" not in hdr:
         log.error(f"BMAJ not found in header of {fits_path}")
         raise KeyError(f"BMAJ not found in header of {fits_path}")
-    return (hdr["BMAJ"] * u.deg).to(u.arcsec)
+    return (hdr["BMAJ"] * au.deg).to(au.arcsec)
 
 
 def read_fits_cube(fits_path: str, log=None):
@@ -607,12 +607,12 @@ def _get_pixel_scale(hdr, tol=0.1, log=None):
     log = log or _DEFAULT_LOG
     w = WCS(hdr)
     scales = proj_plane_pixel_scales(w)
-    px_dx = scales[0] * u.deg
-    px_dy = scales[1] * u.deg
-    if abs(px_dx - px_dy) > tol * u.arcsec:
+    px_dx = scales[0] * au.deg
+    px_dy = scales[1] * au.deg
+    if abs(px_dx - px_dy) > tol * au.arcsec:
         log.warning(
             f"Pixel scale differs in X and Y: "
-            f"{px_dx.to(u.arcsec):.3f} vs {px_dy.to(u.arcsec):.3f}. "
+            f"{px_dx.to(au.arcsec):.3f} vs {px_dy.to(au.arcsec):.3f}. "
             "Using geometric mean."
         )
         return np.sqrt(px_dx * px_dy).value
