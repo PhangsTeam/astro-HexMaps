@@ -94,16 +94,16 @@ spire250,  SPIRE 250 um,      MJy/sr,  _spire250_gauss21.fits,  data/
 
 # ---- mask ----
 # Example file mask (comment out if unused):
-input_mask = co_mask, CO signal mask, _co_mask.fits, data/
+# input_mask = co_mask, CO signal mask, _co_mask.fits, data/
 #
 # Example fixed-velocity mask (comment out if unused):
-window_mask = window_mask, Fixed velocity window, 400, 600, km/s
+# window_mask = window_mask, Fixed velocity window, 400, 600, km/s
 
 # Example noise velocity windows (comment out if unused):
 # Specify one or more line-free velocity ranges for noise (RMS) estimation.
 # Multiple windows are combined (OR) into a single noise channel mask.
-noise_mask = noise_mask, Noise window (blue),   0,  400, km/s
-noise_mask = noise_mask, Noise window (red),  600,  800, km/s
+# noise_mask = noise_mask, Noise window (blue),   0,  400, km/s
+# noise_mask = noise_mask, Noise window (red),  600,  800, km/s
 
 
 # -----------------------------------------------------------------------------
@@ -124,7 +124,7 @@ resolution = angular
 # Number of sampling points per beam diameter (default 2 = half-beam spacing)
 pixels_per_beam = 2
 
-# Maximum map radius in degrees.  Set to 'auto' to derive from the overlay.
+# Maximum map radius in degrees. Set to 'auto' to derive from the overlay.
 max_rad = auto
 
 # Spectral axis parameters for the shuffled spectra output
