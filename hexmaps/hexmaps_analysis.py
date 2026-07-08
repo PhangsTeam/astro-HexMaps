@@ -3,9 +3,9 @@ HexMapsAnalysis: helper class for loading and analysing HexMaps .ecsv files.
 
 Usage
 -----
-    from hexmaps_analysis import HexMapsAnalysis
+    from hexmaps import HexMapsAnalysis
 
-    hm = HexMapsAnalysis("Output/ngc5194_hexmaps_27as_2025_01_01.ecsv")
+    hm = HexMapsAnalysis("output/ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
     hm.quickplot_map("12CO21")
     hm.quickplot_spectrum("12CO21")
     hm.quickplot_shuffled_spectrum("12CO21")
@@ -17,7 +17,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import astropy.units as au
-from astropy.coordinates import SkyCoord, FK5
+from astropy.coordinates import SkyCoord, FK5, Galactic
 from astropy.table import Table
 
 
@@ -34,8 +34,8 @@ class HexMapsAnalysis:
     ----------
     struct : astropy.table.Table
     lines  : list of str — spectral line names found in the database
-    rgal   : np.ndarray  — deprojected galactocentric radius [kpc]
-    theta  : np.ndarray  — polar angle [rad]
+    rgal   : np.ndarray or None — deprojected galactocentric radius [kpc]
+    theta  : np.ndarray or None — polar angle [rad]
     """
 
     def __init__(self, path: str):
@@ -56,57 +56,65 @@ class HexMapsAnalysis:
         """Return line names from 3D or 2D columns."""
         lines = []
         for key in self.struct.keys():
-            if key.startswith("SHUFF"):
-                lines.append(key[len("SHUFF"):])
-            elif key.startswith("MOM0"):
-                lines.append(key.split("_")[1])
-        lines = list(dict.fromkeys(lines))  # only keep unique elements
+            if key.startswith("SHUFF_"):
+                lines.append(key[len("SHUFF_"):])
+            elif key.startswith("MOM0_"):
+                lines.append(key.split("_", 1)[1])
+        lines = list(dict.fromkeys(lines))  # preserve order, drop duplicates
         return lines
 
     def _coord_cols(self):
         """
         Return the names of the two spatial coordinate columns.
 
-        Column names depend on the WCS of the overlay cube used to produce this
-        database (e.g. ``RA``/``DEC`` for equatorial,
-        ``GLON``/``GLAT`` for galactic).  Falls back to
-        ``RA``/``DEC`` if no matching columns are found.
+        Works for any coordinate system the overlay cube used:
+        equatorial (RA/DEC), galactic (GLON/GLAT), ecliptic, etc.
+        Falls back to ('RA', 'DEC') if nothing else is found.
         """
-        _skip = {"incl_deg", "posang_deg"}
-        cols = [c for c in self.struct.colnames
-                if c.endswith("_deg") and c not in _skip]
-        if len(cols) >= 2:
-            return cols[0], cols[1]
+        # Prefer columns explicitly named after known coordinate systems
+        _candidates = [
+            ("RA",   "DEC"),
+            ("GLON", "GLAT"),
+            ("ELON", "ELAT"),
+        ]
+        for c1, c2 in _candidates:
+            if c1 in self.struct.colnames and c2 in self.struct.colnames:
+                return c1, c2
+
+        # Fall back to any pair of *_deg columns (excluding incl/posang)
+        _skip = {"incl_deg", "posang_deg", "INCL_DEG", "POSANG_DEG"}
+        deg_cols = [c for c in self.struct.colnames
+                    if c.lower().endswith("_deg") and c not in _skip]
+        if len(deg_cols) >= 2:
+            return deg_cols[0], deg_cols[1]
+
         return "RA", "DEC"
+
+    def _is_ra_dec(self) -> bool:
+        """Return True if the spatial axes are equatorial (RA/DEC)."""
+        c1, _ = self._coord_cols()
+        return c1.upper() in ("RA",)
+
+    def _is_galactic(self) -> bool:
+        """Return True if the spatial axes are galactic (GLON/GLAT)."""
+        c1, _ = self._coord_cols()
+        return c1.upper() in ("GLON", "L")
 
     def _get_vaxis(self, shuffled: bool = False) -> au.Quantity:
         """Return the velocity axis for the first line."""
-        if shuffled:
-            return self.struct["SPEC_VAXIS_SHUFF"][0]
-        else:
-            return self.struct["SPEC_VAXIS"][0]
+        key = "SPEC_VAXIS_SHUFF" if shuffled else "SPEC_VAXIS"
+        return self.struct[key][0]
 
     def _centre_pixel(self) -> int:
-        """Return the index of the sampling point closest to the source centre."""
+        """Return the index of the sampling point closest to the target centre."""
         if self.rgal is not None:
             return int(np.argmin(self.rgal))
-        # Fallback: centre of the bounding box
+        # Fallback: sightline closest to the bounding-box centroid
         col1, col2 = self._coord_cols()
         x = np.array(self.struct[col1])
         y = np.array(self.struct[col2])
         cx, cy = np.nanmean(x), np.nanmean(y)
         return int(np.argmin((x - cx)**2 + (y - cy)**2))
-
-    def _get_vaxis(self, shuffled: bool = False) -> au.Quantity:
-        """Return the velocity axis for the first line."""
-        if shuffled:
-            return self.struct["SPEC_VAXIS_SHUFF"][0]
-        else:
-            return self.struct["SPEC_VAXIS"][0]
-
-    def _centre_pixel(self) -> int:
-        """Return the index of the sampling point closest to the source centre."""
-        return int(np.argmin(self.rgal))
 
     # ------------------------------------------------------------------
     # Coordinate helpers
@@ -116,39 +124,89 @@ class HexMapsAnalysis:
         """
         Return sky coordinate arrays, or offset coordinates relative to *center*.
 
+        Works for equatorial (RA/DEC) and galactic (GLON/GLAT) coordinate
+        systems.
+
         Parameters
         ----------
         center : str, optional
-            Sky coordinate string, e.g. ``"13:29:52.7 47:11:43"``.
-            If given, returns (delta_axis1, delta_axis2) in arcseconds.
+            Sky coordinate string.  For equatorial coordinates use the
+            sexagesimal form ``"13:29:52.7 +47:11:43"``; for galactic
+            coordinates use ``"202.47 +47.19"`` (decimal degrees).
             If None, returns absolute coordinates in degrees.
+
+        Returns
+        -------
+        (axis1, axis2) : pair of np.ndarray
+            Absolute coordinates in degrees (if center is None), or offsets
+            in arcseconds relative to *center*.
         """
         col1, col2 = self._coord_cols()
-        ra = np.array(self.struct[col1])
-        dec = np.array(self.struct[col2])
+        x = np.array(self.struct[col1])
+        y = np.array(self.struct[col2])
 
         if center is None:
-            return ra, dec
+            return x, y
 
-        ref = SkyCoord(center, frame=FK5, unit=(au.hourangle, au.deg))
-        pts = SkyCoord(ra=ra * au.deg, dec=dec * au.deg, frame=FK5)
-        aframe = ref.skyoffset_frame()
-        delta_ra = pts.transform_to(aframe).lon.arcsec
-        delta_dec = pts.transform_to(aframe).lat.arcsec
-        return delta_ra, delta_dec
+        if self._is_galactic():
+            # Galactic offsets
+            parts = center.split()
+            cen_l = float(parts[0])
+            cen_b = float(parts[1])
+            ref = SkyCoord(l=cen_l * au.deg, b=cen_b * au.deg, frame=Galactic)
+            pts = SkyCoord(l=x * au.deg, b=y * au.deg, frame=Galactic)
+            aframe = ref.skyoffset_frame()
+            off = pts.transform_to(aframe)
+            return off.lon.arcsec, off.lat.arcsec
+        else:
+            # Equatorial offsets
+            ref = SkyCoord(center, frame=FK5, unit=(au.hourangle, au.deg))
+            pts = SkyCoord(ra=x * au.deg, dec=y * au.deg, frame=FK5)
+            aframe = ref.skyoffset_frame()
+            off = pts.transform_to(aframe)
+            return off.lon.arcsec, off.lat.arcsec
 
-    def sky_aspect_factor(self):
+    def sky_aspect_factor(self) -> float:
         """
-        Aspect ratio correction for plotting axis 1 vs axis 2 in degrees.
+        Aspect-ratio correction for plotting axis1 vs axis2 in degrees.
+
+        For RA/Dec: ``1 / cos(Dec_median)`` so that one degree of RA and
+        one degree of Dec have the same physical size on screen.
+        For Galactic or other latitude/longitude systems the same formula
+        applies to the latitude axis.
 
         Returns a value suitable for ``ax.set_aspect(factor)``.
-        For RA/Dec this is 1/cos(Dec); for galactic or ecliptic coordinates
-        the same formula applies to the latitude axis.
         """
         _, col2 = self._coord_cols()
         lat = np.array(self.struct[col2])
-        lat0 = np.median(lat)
+        lat0 = np.nanmedian(lat)
         return 1.0 / np.cos(np.deg2rad(lat0))
+
+    def _axis_labels(self, center: str = None):
+        """
+        Return (xlabel, ylabel) strings for the coordinate axes.
+
+        When *center* is given the labels use arcsecond offsets.
+        Otherwise they reflect the native coordinate system.
+        """
+        if center is not None:
+            col1, col2 = self._coord_cols()
+            name1 = col1.replace("_deg", "").replace("_DEG", "")
+            name2 = col2.replace("_deg", "").replace("_DEG", "")
+            return (rf"$\Delta${name1} [arcsec]", rf"$\Delta${name2} [arcsec]")
+
+        col1, col2 = self._coord_cols()
+        _label_map = {
+            "RA":   "R.A. [deg]",
+            "DEC":  "Dec. [deg]",
+            "GLON": "Galactic longitude [deg]",
+            "GLAT": "Galactic latitude [deg]",
+            "ELON": "Ecliptic longitude [deg]",
+            "ELAT": "Ecliptic latitude [deg]",
+        }
+        xlabel = _label_map.get(col1.upper(), f"{col1} [deg]")
+        ylabel = _label_map.get(col2.upper(), f"{col2} [deg]")
+        return xlabel, ylabel
 
     # ------------------------------------------------------------------
     # Quick-look plots
@@ -166,6 +224,8 @@ class HexMapsAnalysis:
     ):
         """
         Scatter-plot a 2D moment map on the hexagonal grid.
+
+        Works for any coordinate system (equatorial or galactic).
 
         Parameters
         ----------
@@ -189,13 +249,12 @@ class HexMapsAnalysis:
 
         if center is not None:
             x, y = self.get_coordinates(center)
-            xlabel, ylabel = r"$\Delta$Axis1 [arcsec]", r"$\Delta$Axis2 [arcsec]"
         else:
             col1, col2 = self._coord_cols()
             x = np.array(self.struct[col1])
             y = np.array(self.struct[col2])
-            xlabel = f"{col1.replace('_deg', '')} [deg]"
-            ylabel = f"{col2.replace('_deg', '')} [deg]"
+
+        xlabel, ylabel = self._axis_labels(center)
 
         finite = values[np.isfinite(values)]
         if len(finite) == 0:
@@ -226,7 +285,15 @@ class HexMapsAnalysis:
             fig = ax.get_figure()
 
         im = ax.scatter(x, y, c=values, s=s, marker="h", cmap=cmap, norm=norm)
-        ax.invert_xaxis()
+
+        # Invert x-axis only for RA (east is left); galactic longitude
+        # increases to the left too, so invert there as well.
+        # For generic coordinate systems without a clear convention, invert
+        # only when the first axis name suggests a "right ascension"-like axis.
+        col1, _ = self._coord_cols()
+        if col1.upper() in ("RA", "GLON", "L", "ELON"):
+            ax.invert_xaxis()
+
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
         ax.set_title(f"{line}  {quantity}")
@@ -370,7 +437,7 @@ class HexMapsAnalysis:
         if self.rgal is None:
             raise RuntimeError(
                 "quickplot_radial_profile requires galaxy geometry "
-                "(RGAL_KPC), which is not available for this source. "
+                "(RGAL_KPC), which is not available for this target. "
                 "Add incl_deg, posang_deg, and r25 to target_definitions.txt."
             )
 
@@ -422,9 +489,9 @@ class HexMapsAnalysis:
         e2 = np.array(self.struct[f"EMOM0_{line2.upper()}"])
 
         ratio = np.full_like(i1, np.nan)
-        uc = np.full_like(i1, np.nan)
-        ulim = np.full_like(i1, np.nan)
-        llim = np.full_like(i1, np.nan)
+        uc    = np.full_like(i1, np.nan)
+        ulim  = np.full_like(i1, np.nan)
+        llim  = np.full_like(i1, np.nan)
 
         det = (i1 / e1 > sn) & (i2 / e2 > sn)
         ratio[det] = i1[det] / i2[det]
@@ -442,7 +509,8 @@ class HexMapsAnalysis:
 
     def get_2D_database(self, fname: str = None, save: bool = False):
         """
-        Return (and optionally save) a version of the table with all SPEC_ columns removed.
+        Return (and optionally save) a version of the table with all
+        SPEC_ columns removed.
         """
         tbl = self.struct.copy()
         tbl.remove_columns([c for c in tbl.colnames if c.startswith("SPEC_")])
@@ -450,40 +518,19 @@ class HexMapsAnalysis:
             del tbl.meta[key]
         if save:
             if fname is None:
-                fname = f'{tbl.meta.get("Source", "source")}_hexmaps_2D.ecsv'
+                fname = f'{tbl.meta.get("Target", "target")}_hexmaps_2D.ecsv'
             tbl.write(fname, format="ascii.ecsv", overwrite=True)
             print(f"[INFO] 2D table saved to {fname}")
         return tbl
 
     def get_config(self, save_to: str = None) -> str:
         """
-        Return the config.txt content that was embedded in the .ecsv at
-        pipeline run time.
-
-        The content is stored in ``table.meta["config_file"]`` as a single
-        line with newlines encoded as the two-character sequence ``\\n``.
-        This method decodes that back to the original multi-line string.
+        Return the config.txt content embedded in the .ecsv at run time.
 
         Parameters
         ----------
         save_to : str, optional
-            If given, write the config content to this file path.  Useful
-            for inspecting or reproducing a previous pipeline run.
-
-        Returns
-        -------
-        str
-            The full content of the config.txt that was used to produce
-            this database, or an empty string if the metadata key is absent
-            (e.g. files produced by an older pipeline version).
-
-        Examples
-        --------
-        >>> hm = HexMapsAnalysis("ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
-        >>> print(hm.get_config())
-        # HexMaps configuration file
-        ...
-        >>> hm.get_config(save_to="recovered_config.txt")
+            If given, write the config content to this file path.
         """
         raw = self.struct.meta.get("config_file", "")
         if not raw:
@@ -492,46 +539,21 @@ class HexMapsAnalysis:
                 "This file may have been produced by an older pipeline version."
             )
             return ""
-
-        # Decode the newline escape used when storing in the ECSV header
         content = raw.replace("\\n", "\n")
-
         if save_to is not None:
             from pathlib import Path
-
             Path(save_to).write_text(content, encoding="utf-8")
             print(f"[INFO] Config file written to {save_to}")
-
         return content
 
     def get_log(self, save_to: str = None) -> str:
         """
-        Return the pipeline log that was embedded in the .ecsv at run time.
-
-        The log is stored in ``table.meta["pipeline_log"]`` as a single line
-        with newlines encoded as the two-character sequence ``\\n`` (same
-        encoding as ``config_file``).  This method decodes it back to the
-        original multi-line string.
+        Return the pipeline log embedded in the .ecsv at run time.
 
         Parameters
         ----------
         save_to : str, optional
             If given, write the log content to this file path.
-
-        Returns
-        -------
-        str
-            The full pipeline log produced during the run that created this
-            database, or an empty string if the metadata key is absent
-            (e.g. files produced by an older pipeline version).
-
-        Examples
-        --------
-        >>> hm = HexMapsAnalysis("ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
-        >>> print(hm.get_log())
-        2025-01-01 12:00:00 [Loading]  [INFO]    Loading config file ...
-        ...
-        >>> hm.get_log(save_to="run.log")
         """
         raw = self.struct.meta.get("pipeline_log", "")
         if not raw:
@@ -540,87 +562,42 @@ class HexMapsAnalysis:
                 "This file may have been produced by an older pipeline version."
             )
             return ""
-
-        # Decode the newline escape used when storing in the ECSV header
         content = raw.replace("\\n", "\n")
-
         if save_to is not None:
             from pathlib import Path
             Path(save_to).write_text(content, encoding="utf-8")
             print(f"[INFO] Pipeline log written to {save_to}")
-
         return content
 
     def list_input_headers(self) -> list:
         """
         Return the labels of all input FITS headers embedded in this database.
 
-        Labels match the table column keys used for each input, uppercased:
-
-        - ``"OVERLAY"`` — the overlay cube
-        - ``"<LINE_NAME>"`` — spectral cube (e.g. ``"12CO21"``)
-        - ``"MAP_<LINE_NAME>"`` — 2D companion map for a cube (e.g. ``"MAP_12CO21"``)
-        - ``"EMAP_<LINE_NAME>"`` — uncertainty map (e.g. ``"EMAP_12CO21"``)
-        - ``"<MAP_NAME>"`` — standalone 2D map (e.g. ``"SPIRE250"``)
-        - ``"SPEC_<MASK_NAME>"`` — external FITS mask (e.g. ``"SPEC_HEXMASK"``)
-
         Returns
         -------
-        list of str — sorted list of label strings, or an empty list if
-        no input headers were embedded (e.g. older pipeline version).
-
-        Examples
-        --------
-        >>> hm = HexMapsAnalysis("ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
-        >>> hm.list_input_headers()
-        ['12CO21', '12CO10', 'OVERLAY', 'SPIRE250']
+        list of str — sorted list of label strings.
         """
         prefix = "input_header_"
         return sorted(
-            k[len(prefix) :] for k in self.struct.meta if k.startswith(prefix)
+            k[len(prefix):] for k in self.struct.meta if k.startswith(prefix)
         )
 
     def get_input_header(self, label: str):
         """
         Return the raw FITS header for the input file identified by *label*.
 
-        The header is stored in the .ecsv metadata as a compact 80-char-per-card
-        string (FITS standard ``header.tostring()`` format). This method
-        deserialises it back to an ``astropy.io.fits.Header`` object.
-
         Parameters
         ----------
-        label : str
-            Label matching the table column key, uppercased — as returned by
-            ``list_input_headers()``.  Examples: ``"12CO21"``, ``"SPIRE250"``,
-            ``"OVERLAY"``, ``"MAP_12CO21"``, ``"EMAP_SPIRE250"``.
-            You can also pass the full metadata key
-            (``"input_header_12CO21"``); the prefix will be stripped.
+        label : str — as returned by ``list_input_headers()``.
 
         Returns
         -------
         astropy.io.fits.Header
-            The original FITS header before any pipeline processing.
-
-        Raises
-        ------
-        KeyError if *label* is not found in the embedded headers.
-
-        Examples
-        --------
-        >>> hm = HexMapsAnalysis("ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
-        >>> hdr = hm.get_input_header("12CO21")
-        >>> print(hdr["BMAJ"] * 3600, "arcsec")
-        12.82 arcsec
-        >>> hdr_ov = hm.get_input_header("OVERLAY")
-        >>> print(repr(hdr_ov))    # prints all header cards
         """
         from astropy.io import fits as _fits
 
-        # Accept both the bare label and the full meta key
         if label.startswith("input_header_"):
             key = label
-            label = label[len("input_header_") :]
         else:
             key = f"input_header_{label}"
 
@@ -630,11 +607,10 @@ class HexMapsAnalysis:
                 f"No embedded header found for label {label!r}. "
                 f"Available: {available}"
             )
-
         return _fits.Header.fromstring(self.struct.meta[key])
 
     def __repr__(self):
         return (
-            f"HexMapsAnalysis(source='{self.struct.meta.get('Source', '?')}', "
+            f"HexMapsAnalysis(target='{self.struct.meta.get('Target', '?')}', "
             f"n_pts={len(self.struct)}, lines={self.lines})"
         )

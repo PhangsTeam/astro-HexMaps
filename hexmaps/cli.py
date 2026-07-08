@@ -61,6 +61,15 @@ def parse_args(argv=None):
         ),
     )
     parser.add_argument(
+        "--download-notebook",
+        action="store_true",
+        default=False,
+        help=(
+            "Download the HexMaps example Jupyter notebook "
+            "(hexmaps_example.ipynb) into --workdir."
+        ),
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         default=False,
@@ -127,6 +136,15 @@ def main(argv=None):
         from hexmaps.download_example import download_example_data
 
         download_example_data(workdir=args.workdir, force=args.force)
+        return
+
+    # ------------------------------------------------------------------
+    # --download-notebook mode: fetch example Jupyter notebook and exit
+    # ------------------------------------------------------------------
+    if args.download_notebook:
+        from hexmaps.download_example import download_notebook
+
+        download_notebook(workdir=args.workdir, force=args.force)
         return
 
     # ------------------------------------------------------------------

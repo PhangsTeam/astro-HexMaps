@@ -95,14 +95,18 @@ def init_workdir(workdir: str = ".", overwrite: bool = False) -> None:
         f"[INFO]              hexmaps --download-example --workdir {workdir}"
     )
     print(
-        f"[INFO]       2. Edit config.txt  — paths, targets, maps/cubes, resolution, masking"
+        f"[INFO]       2. (optional) Download the example Jupyter notebook:\n"
+        f"[INFO]              hexmaps --download-notebook --workdir {workdir}"
     )
     print(
-        f"[INFO]       3. Edit keys/target_definitions.txt  — add your targets"
+        f"[INFO]       3. Edit config.txt  — paths, targets, maps/cubes, resolution, masking"
     )
     print(
-        f"[INFO]       4. (optional) Edit keys/hfs_lines.txt  — hyperfine structure lines"
+        f"[INFO]       4. Edit keys/target_definitions.txt  — add your targets"
     )
     print(
-        f"[INFO]       5. Run:  hexmaps --conf config.txt  (or:  python run_hexmaps.py)"
+        f"[INFO]       5. (optional) Edit keys/hfs_lines.txt  — hyperfine structure lines"
+    )
+    print(
+        f"[INFO]       6. Run:  hexmaps --conf config.txt  (or:  python run_hexmaps.py)"
     )

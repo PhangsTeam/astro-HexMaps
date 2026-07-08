@@ -9,5 +9,6 @@ __credits__ = ["M. Jimenez-Donaire", "E. Rosolowsky", "A. Leroy", "I. Beslic"]
 
 from hexmaps.handler_pipeline import PipelineHandler
 from hexmaps.init_workdir import init_workdir
+from hexmaps.hexmaps_analysis import HexMapsAnalysis
 
-__all__ = ["PipelineHandler", "init_workdir"]
+__all__ = ["PipelineHandler", "init_workdir", "HexMapsAnalysis"]

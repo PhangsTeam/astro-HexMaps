@@ -159,3 +159,62 @@ def download_example_data(workdir: str = ".", force: bool = False) -> None:
             f"[INFO]     or:\n"
             f"[INFO]       python {workdir / 'run_hexmaps.py'}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Notebook download
+# ---------------------------------------------------------------------------
+
+#: Raw URL of the example notebook on GitHub.
+_NOTEBOOK_URL = (
+    "https://raw.githubusercontent.com/"
+    "lukas-neumann-astro/astro-HexMaps/main/analysis/hexmaps_example.ipynb"
+)
+
+#: Default notebook filename.
+_NOTEBOOK_NAME = "hexmaps_example.ipynb"
+
+
+def download_notebook(workdir: str = ".", force: bool = False) -> None:
+    """
+    Download the HexMaps example Jupyter notebook into *workdir*.
+
+    Parameters
+    ----------
+    workdir : str or Path
+        Destination directory.  The notebook is placed directly inside it
+        (not in a sub-directory).
+    force   : bool
+        If False (default), skip if the file already exists.
+        If True, overwrite an existing file.
+    """
+    import urllib.request
+    from pathlib import Path
+
+    workdir = Path(workdir).resolve()
+    workdir.mkdir(parents=True, exist_ok=True)
+    dst = workdir / _NOTEBOOK_NAME
+
+    if dst.exists() and not force:
+        print(
+            f"[INFO]     {_NOTEBOOK_NAME} already exists in {workdir}.\n"
+            f"[INFO]     Use --force to overwrite."
+        )
+        return
+
+    print(f"[INFO]     Downloading example notebook into:\n[INFO]       {dst}\n")
+    try:
+        urllib.request.urlretrieve(_NOTEBOOK_URL, dst, reporthook=_progress_hook(_NOTEBOOK_NAME))
+        sys.stdout.write("\n")
+        size_kb = dst.stat().st_size // 1024
+        print(f"[INFO]     Downloaded {_NOTEBOOK_NAME}  ({size_kb:,} KB)")
+        print(
+            f"\n[INFO]     Open the notebook with:\n"
+            f"[INFO]       jupyter notebook {dst}"
+        )
+    except Exception as exc:
+        sys.stdout.write("\n")
+        print(f"[ERROR]    Failed to download notebook: {exc}")
+        if dst.exists():
+            dst.unlink()
+        sys.exit(1)
