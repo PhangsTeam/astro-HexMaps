@@ -297,7 +297,7 @@ def make_sampling_points(
 
         c1 = SkyCoord.from_pixel(0, 0, wcs)
         c2 = SkyCoord.from_pixel(mask_dim[1], mask_dim[0], wcs)
-        max_rad = c1.separation(c2).value  /2
+        max_rad = c1.separation(c2).value
         log.info(f"Auto max_rad = {np.round(max_rad, 3)} deg.")
     else:
         max_rad = float(max_rad)
