@@ -82,10 +82,16 @@ def convert(old_path: Path, new_path: Path):
             while len(cols) < 11:
                 cols.append("NaN")
 
+            # Column 12 (if present) is a literature reference — not used by
+            # HexMaps but we note it in a trailing comment so it is not lost.
+            ref_comment = ""
+            if len(parts) >= 12:
+                ref_comment = "  # ref: " + " ".join(p.strip() for p in parts[11:])
+
             # Format: align source name left, numbers right-padded for readability
             source = cols[0]
             nums   = cols[1:]
-            row = f"{source:<12}, " + ", ".join(f"{v:>12}" for v in nums)
+            row = f"{source:<12}, " + ", ".join(f"{v:>12}" for v in nums) + ref_comment
             rows.append(row)
 
     header = HEADER.format(src=old_path.name)
