@@ -1345,11 +1345,12 @@ def resolve_meta_resolution(target, params, meta, ov_hdr=None, log=None):
     res_suffix    : str   — filename suffix, e.g. "27p0as" or "100pc"
     """
     import math as _math
+
     if log is None:
         log = get_logger("Loading")
 
     resolution = meta.get("resolution", "angular")
-    dist_mpc   = float(params.get("dist_mpc", 1.0))
+    dist_mpc = float(params.get("dist_mpc", 1.0))
 
     if resolution == "native":
         if ov_hdr is not None:
@@ -1374,8 +1375,9 @@ def resolve_meta_resolution(target, params, meta, ov_hdr=None, log=None):
             )
 
     elif resolution == "physical":
-        target_res_pc_config = meta.get("target_res_config",
-                                        meta.get("target_res", 27.0))
+        target_res_pc_config = meta.get(
+            "target_res_config", meta.get("target_res", 27.0)
+        )
         target_res_as = (
             3600.0 * 180.0 / _math.pi * 1e-6 * target_res_pc_config / dist_mpc
         )
@@ -1389,13 +1391,11 @@ def resolve_meta_resolution(target, params, meta, ov_hdr=None, log=None):
         target_res_as = meta.get("target_res", 27.0)
         log.info(f"Angular resolution: {target_res_as:.1f} arcsec.")
 
-    meta["target_res"]    = target_res_as
+    meta["target_res"] = target_res_as
     meta["target_res_pc"] = target_res_as / 3600.0 * _math.pi / 180.0 * dist_mpc * 1e6
     if resolution == "physical":
         meta["res_suffix"] = (
             str(int(round(meta.get("target_res_config", target_res_as)))) + "pc"
         )
     else:
-        meta["res_suffix"] = (
-            str(np.round(target_res_as, 1)).replace(".", "p") + "as"
-        )
+        meta["res_suffix"] = str(np.round(target_res_as, 1)).replace(".", "p") + "as"

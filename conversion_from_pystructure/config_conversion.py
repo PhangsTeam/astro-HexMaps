@@ -1,89 +1,109 @@
 #!/usr/bin/env python3
 """
-config_conversion.py — Convert a PyStructure.conf file (old format,
-PhangsTeam/PyStructure) to a HexMaps config.txt (new format,
-lukas-neumann-astro/PyStructure rename/hexmaps branch).
+config_conversion.py — Convert a PyStructure v4.x config file
+(PyStructure.conf, old flat key=value format) to a HexMaps config.txt
+(new INI-style format, lukas-neumann-astro/astro-HexMaps main branch).
 
 Usage:
     python config_conversion.py PyStructure.conf config.txt
 
-The script reads every recognised key from the old flat config file and
-maps it to the corresponding section and key in the new INI-style format.
-Unrecognised lines are collected and appended as comments at the end so
-nothing is silently dropped.
+    # If band/cube definitions live in separate list files:
+    python config_conversion.py PyStructure.conf config.txt \\
+        --band-list List_Files/band_list.txt \\
+        --cube-list List_Files/cube_list.txt
 
-Old format reference : https://github.com/PhangsTeam/PyStructure
-New format reference : https://github.com/lukas-neumann-astro/PyStructure
-                       (branch rename/hexmaps)
+Key changes from PyStructure v4 → HexMaps v5
+---------------------------------------------
+- Config format: flat key=value → INI sections
+- out_dic → out_dir
+- save_fits dropped (replaced by save_cubes in [output])
+- save_band_maps → save_maps
+- use_input_mask / use_fixed_vel_mask booleans → ref_line tokens (input/window)
+- use_noise_vel_ranges → use_fixed_noise_mask
+- strict_mask bool → false | strict | broad
+- ref_line = 'ref+HI' is removed (warning issued)
+- Mask table rows now use explicit keys: input_mask, window_mask, noise_mask
 """
 
 import re
 import sys
+import argparse
 from pathlib import Path
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _strip_val(raw: str) -> str:
-    """Remove surrounding quotes, whitespace and trailing comments."""
+
+def _strip_val(raw):
     v = raw.strip()
-    # strip inline comment
     v = re.sub(r"\s*#.*$", "", v)
-    # strip surrounding quotes (single or double)
-    v = v.strip("'\"")
-    return v.strip()
+    v = v.strip("'\"").strip()
+    return v
 
 
-def _parse_old_config(path: Path) -> dict:
-    """
-    Parse the old flat PyStructure.conf into a dict of {key: raw_value}.
-    Table rows (bands, cubes, masks) are collected separately.
-    Lines that cannot be parsed as key=value are kept as 'unknown'.
-    """
-    data = {
-        "kv": {},          # key -> stripped value
-        "bands": [],       # raw band table lines
-        "cubes": [],       # raw cube table lines
-        "masks": [],       # raw mask table lines
-        "unknown": [],     # unrecognised non-empty, non-comment lines
-    }
+def _convert_sn(val):
+    v = val.strip("[]() ")
+    parts = [p.strip() for p in v.split(",")]
+    return f"{parts[0]}, {parts[1]}" if len(parts) == 2 else val
 
-    # Section tracking for table rows
+
+def _parse_table_rows(lines):
+    result = []
+    for row in lines:
+        row = re.sub(r"\s*#.*$", "", row).strip()
+        if not row:
+            continue
+        parts = [p.strip() for p in re.split(r"[\t,]+", row) if p.strip()]
+        if parts:
+            result.append(parts)
+    return result
+
+
+def _read_list_file(path):
+    rows = []
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for raw in f:
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            rows.append(line)
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# Old-config parser
+# ---------------------------------------------------------------------------
+
+
+def _parse_old_config(path):
+    data = {"kv": {}, "bands": [], "cubes": [], "masks": [], "unknown": []}
+    _DROPPED = {"save_fits", "save_band_maps"}
+    table_row_re = re.compile(r"^[^=]+[\t,]")
     section = None
-    # A line is a table row if it starts with a word followed by commas
-    table_re = re.compile(r"^\s*\w[\w\d]*\s*[,\t]")
-
-    # Keys that appear in the old config for which there is no equivalent
-    skip_keys = {"save_fits", "save_band_maps"}
 
     with open(path, encoding="utf-8", errors="replace") as f:
         for raw in f:
             line = raw.rstrip("\n")
             stripped = line.strip()
-
-            if not stripped or stripped.startswith("#"):
-                # Track section from comment headers
+            if not stripped:
+                continue
+            if stripped.startswith("#"):
                 low = stripped.lower()
-                if "step 4" in low or "band" in low:
+                if "step 4" in low or ("band" in low and "step" in low):
                     section = "bands"
-                elif "step 5" in low or "cube" in low:
+                elif "step 5" in low or ("cube" in low and "step" in low):
                     section = "cubes"
-                elif "step 6" in low or "mask" in low:
+                elif "step 6" in low or ("mask" in low and "step" in low):
                     section = "masks"
                 continue
-
-            # key = value lines
-            if "=" in stripped and not table_re.match(stripped):
+            if "=" in stripped and not table_row_re.match(stripped):
                 key, _, val_raw = stripped.partition("=")
                 key = key.strip().lower()
                 val = _strip_val(val_raw)
-                if key not in skip_keys:
+                if key not in _DROPPED:
                     data["kv"][key] = val
                 continue
-
-            # Table rows (comma- or tab-separated)
             if section == "bands":
                 data["bands"].append(stripped)
             elif section == "cubes":
@@ -96,236 +116,305 @@ def _parse_old_config(path: Path) -> dict:
     return data
 
 
-def _convert_mask_rows(rows: list) -> tuple:
-    """
-    Convert old mask rows to new format rows.
-    Returns (input_mask_rows, vel_mask_rows, noise_mask_rows,
-             use_input_mask, use_fixed_vel_mask).
-    """
-    input_mask_rows = []
-    vel_mask_rows = []
-    noise_mask_rows = []
-    use_input_mask = False
-    use_fixed_vel_mask = False
+# ---------------------------------------------------------------------------
+# Mask row converter
+# ---------------------------------------------------------------------------
+
+
+def _convert_mask_rows(rows):
+    input_lines, window_lines, noise_lines = [], [], []
 
     for row in rows:
+        row = re.sub(r"\s*#.*$", "", row).strip()
+        if not row:
+            continue
         parts = [p.strip() for p in re.split(r"[\t,]+", row) if p.strip()]
         if len(parts) < 3:
             continue
-        name = parts[0].lower()
 
-        # Noise velocity ranges (old name: noise_vel)
-        if name in ("noise_vel", "noise_mask"):
-            noise_mask_rows.append(
-                f"noise_mask, {', '.join(parts[1:])}"
-            )
+        first = parts[0].lower()
+
+        # Noise velocity ranges
+        if first in ("noise_vel", "noise_mask", "noise"):
+            if len(parts) >= 5:
+                noise_lines.append(f"noise_mask = {parts[0]}, {', '.join(parts[1:5])}")
             continue
 
-        # Detect by number of columns:
-        # 4 cols → file mask (name, desc, ext, dir)
-        # 5 cols → velocity window (name, desc, start, end, unit)
-        if len(parts) == 5:
-            # velocity window
-            vel_mask_rows.append(f"vel_mask, {', '.join(parts[1:])}")
-            use_fixed_vel_mask = True
-        elif len(parts) >= 4:
-            # file mask
-            input_mask_rows.append(
-                f"{parts[0]}, {', '.join(parts[1:])}"
-            )
-            use_input_mask = True
+        # Distinguish file mask (4 parts) vs velocity window (5 parts)
+        if len(parts) >= 5:
+            window_lines.append(f"window_mask = {parts[0]}, {', '.join(parts[1:5])}")
+        elif len(parts) == 4:
+            input_lines.append(f"input_mask = {parts[0]}, {', '.join(parts[1:4])}")
 
-    return (input_mask_rows, vel_mask_rows, noise_mask_rows,
-            use_input_mask, use_fixed_vel_mask)
+    return {
+        "input_mask_lines": input_lines,
+        "window_mask_lines": window_lines,
+        "noise_mask_lines": noise_lines,
+        "has_input": bool(input_lines),
+        "has_window": bool(window_lines),
+        "has_noise": bool(noise_lines),
+    }
 
 
-def _convert_sn(val: str) -> str:
-    """Convert '[2,4]' or '2,4' or '[2, 4]' to '2, 4'."""
-    v = val.strip("[]() ")
-    parts = [p.strip() for p in v.split(",")]
-    if len(parts) == 2:
-        return f"{parts[0]}, {parts[1]}"
-    return val
+# ---------------------------------------------------------------------------
+# ref_line token builder
+# ---------------------------------------------------------------------------
 
 
-def convert(old_path: Path, new_path: Path):
+def _build_ref_line(raw_ref, use_input, use_window):
+    warnings = []
+    ref = raw_ref.strip().strip("'\"").strip()
+
+    if ref.lower() in ("ref+hi", "ref + hi"):
+        warnings.append(
+            "ref_line = 'ref+HI' is no longer supported and has been replaced "
+            "with 'first'. Review your masking configuration."
+        )
+        ref = "first"
+
+    tokens = [ref]
+    if use_input:
+        tokens.append("input")
+    if use_window:
+        tokens.append("window")
+
+    return ", ".join(tokens), warnings
+
+
+# ---------------------------------------------------------------------------
+# Main converter
+# ---------------------------------------------------------------------------
+
+
+def convert(old_path, new_path, band_list_path=None, cube_list_path=None):
+    warnings_out = []
     d = _parse_old_config(old_path)
     kv = d["kv"]
 
-    # -- resolve old→new key renames -----------------------------------------
-    user          = kv.get("user", "")
-    comments      = kv.get("comments", "")
-    data_dir      = kv.get("data_dir", "data/")
-    geom_file     = kv.get("geom_file", "")
-    hfs_file      = kv.get("hfs_file", "")
-    overlay_file  = kv.get("overlay_file", "")
-    out_dir       = kv.get("out_dic", kv.get("out_dir", "output/"))
+    # Scalar settings
+    user = kv.get("user", "")
+    comments = kv.get("comments", "")
+    data_dir = kv.get("data_dir", "data/")
+    out_dir = kv.get("out_dic", kv.get("out_dir", "output/"))
+    geom_file = kv.get("geom_file", "")
+    hfs_file = kv.get("hfs_file", "")
+    overlay_file = kv.get("overlay_file", "")
     folder_savefits = kv.get("folder_savefits", "./saved_fits_files/")
-    sources       = kv.get("sources", "")
-    target_res    = kv.get("target_res", "27.0")
-    resolution    = kv.get("resolution", "angular")
-    pixels_per_beam = kv.get("spacing_per_beam",
-                              kv.get("pixels_per_beam", "2"))
-    max_rad       = kv.get("max_rad", "auto")
-    naxis_shuff   = kv.get("naxis_shuff", "200")
-    cdelt_shuff   = kv.get("cdelt_shuff", "4000.0")
-    ref_line      = kv.get("ref_line", "first")
+    targets = kv.get("targets", "")
+    target_res = kv.get("target_res", "27.0")
+    resolution = kv.get("resolution", "angular").strip("'\"")
+    pixels_per_beam = kv.get("spacing_per_beam", kv.get("pixels_per_beam", "2"))
+    max_rad = kv.get("max_rad", "auto").strip("'\"")
+    naxis_shuff = kv.get("naxis_shuff", "200")
+    cdelt_shuff = kv.get("cdelt_shuff", "4000.0")
+    raw_ref = kv.get("ref_line", "first")
     sn_processing = _convert_sn(kv.get("sn_processing", "2, 4"))
-    strict_mask   = kv.get("strict_mask", "false").lower()
-    use_input_mask     = kv.get("use_input_mask", "false").lower()
-    use_fixed_vel_mask = kv.get("use_fixed_vel_mask", "false").lower()
-    use_noise_vel      = kv.get("use_noise_vel_ranges",
-                                 kv.get("use_fixed_noise_mask", "false")).lower()
-    use_hfs_lines = kv.get("use_hfs_lines", "false").lower()
-    mom_thresh    = kv.get("mom_thresh", "5")
-    conseq_ch     = kv.get("conseq_channels", "3")
-    mom2_method   = kv.get("mom2_method", "fwhm")
-    spec_smooth   = kv.get("spec_smooth", "default")
-    spec_smooth_method = kv.get("spec_smooth_method", "binned")
-    save_mom_maps = kv.get("save_mom_maps", "true").lower()
-    save_maps     = kv.get("save_band_maps",   # old name
-                            kv.get("save_maps", "true")).lower()
-    structure_creation = kv.get("structure_creation", "default")
-    fname_fill    = kv.get("fname_fill", "")
+    mom_thresh = kv.get("mom_thresh", "5")
+    conseq_ch = kv.get("conseq_channels", "3")
+    mom2_method = kv.get("mom2_method", "fwhm").strip("'\"")
+    spec_smooth = kv.get("spec_smooth", "default").strip("'\"")
+    spec_smooth_method = kv.get("spec_smooth_method", "binned").strip("'\"")
+    save_mom_maps = kv.get("save_mom_maps", "true").lower().strip("'\"")
+    save_maps = (
+        kv.get("save_band_maps", kv.get("save_maps", "true")).lower().strip("'\"")
+    )
+    structure_creation = kv.get("structure_creation", "default").strip("'\"")
+    fname_fill = kv.get("fname_fill", "").strip("'\"")
 
-    # -- handle mask table ----------------------------------------------------
-    (input_mask_rows, vel_mask_rows, noise_mask_rows,
-     has_input_mask, has_vel_mask) = _convert_mask_rows(d["masks"])
+    # strict_mask: bool → false/strict
+    old_strict = kv.get("strict_mask", "false").lower().strip("'\"")
+    if old_strict in ("true", "1", "yes"):
+        strict_mask = "strict"
+        warnings_out.append(
+            "strict_mask = True converted to strict_mask = strict. "
+            "New options: false | strict | broad."
+        )
+    else:
+        strict_mask = "false"
 
-    # Override flags if mask rows were found
-    if has_input_mask:
-        use_input_mask = "true"
-    if has_vel_mask:
-        use_fixed_vel_mask = "true"
-    if noise_mask_rows:
-        use_noise_vel = "true"
+    # Old boolean flags → ref_line tokens
+    def _is_true(v):
+        return v.lower().strip("'\"") in ("true", "1", "yes")
 
-    # -- build map table (new format) -----------------------------------------
+    use_input_mask = _is_true(kv.get("use_input_mask", "false"))
+    use_fixed_vel = _is_true(kv.get("use_fixed_vel_mask", "false"))
+    use_noise = _is_true(
+        kv.get("use_noise_vel_ranges", kv.get("use_fixed_noise_mask", "false"))
+    )
+    use_hfs_lines = kv.get("use_hfs_lines", "false").lower().strip("'\"")
+
+    if "save_fits" in kv:
+        warnings_out.append(
+            "save_fits is no longer supported. "
+            "Use save_cubes = true in [output] to save convolved cube FITS files."
+        )
+
+    # Build new ref_line
+    ref_line, ref_warns = _build_ref_line(raw_ref, use_input_mask, use_fixed_vel)
+    warnings_out.extend(ref_warns)
+
+    # Mask table
+    masks = _convert_mask_rows(d["masks"])
+    if use_input_mask and not masks["has_input"]:
+        warnings_out.append(
+            "use_input_mask = True but no file mask row found in Step 6. "
+            "Add an input_mask = ... row to the [mask] table."
+        )
+    if use_fixed_vel and not masks["has_window"]:
+        warnings_out.append(
+            "use_fixed_vel_mask = True but no velocity-window row found in Step 6. "
+            "Add a window_mask = ... row to the [mask] table."
+        )
+    if use_noise and not masks["has_noise"]:
+        warnings_out.append(
+            "use_noise_vel_ranges = True but no noise_vel row found in Step 6. "
+            "Add noise_mask = ... row(s) to the [mask] table."
+        )
+
+    # Band and cube tables
+    band_rows_raw = _read_list_file(band_list_path) if band_list_path else d["bands"]
+    cube_rows_raw = _read_list_file(cube_list_path) if cube_list_path else d["cubes"]
+
     map_lines = []
-    for row in d["bands"]:
-        parts = [p.strip() for p in re.split(r"[\t,]+", row) if p.strip()]
-        while len(parts) < 6:
-            parts.append("")
-        # old: name, desc, unit, ext, dir, uc_ext
+    for row in _parse_table_rows(band_rows_raw):
+        while len(row) < 6:
+            row.append("")
         map_lines.append(
-            f"{parts[0]},  {parts[1]},  {parts[2]},  {parts[3]},  "
-            f"{parts[4]},  {parts[5]}"
+            f"{row[0]},  {row[1]},  {row[2]},  {row[3]},  {row[4]},  {row[5]}"
         )
 
-    # -- build cube table (new format) ----------------------------------------
     cube_lines = []
-    for row in d["cubes"]:
-        parts = [p.strip() for p in re.split(r"[\t,]+", row) if p.strip()]
-        while len(parts) < 7:
-            parts.append("")
-        # old: name, desc, unit, ext, dir, map_ext, map_uc_ext
+    for row in _parse_table_rows(cube_rows_raw):
+        while len(row) < 7:
+            row.append("")
         cube_lines.append(
-            f"{parts[0]},  {parts[1]},  {parts[2]},  {parts[3]},  "
-            f"{parts[4]},  {parts[5]},  {parts[6]}"
+            f"{row[0]},  {row[1]},  {row[2]},  {row[3]},  {row[4]},  {row[5]},  {row[6]}"
         )
 
-    # -- optional geom_file / hfs_file lines ----------------------------------
-    geom_line = (f"geom_file = {geom_file}"
-                 if geom_file and geom_file not in ("", "keys/target_definitions.txt")
-                 else "# geom_file = keys/target_definitions.txt")
-    hfs_line  = (f"hfs_file = {hfs_file}"
-                 if hfs_file and hfs_file not in ("", "keys/hfs_lines.txt")
-                 else "# hfs_file  = keys/hfs_lines.txt")
+    # Optional path lines
+    _default_geom = ("keys/target_definitions.txt", "List_Files/geometry.txt", "")
+    geom_line = (
+        f"geom_file        = {geom_file}"
+        if geom_file and geom_file not in _default_geom
+        else "# geom_file        = keys/target_definitions.txt  # (default)"
+    )
+    _default_hfs = ("keys/hfs_lines.txt", "List_Files/hfs_lines.txt", "")
+    hfs_line = (
+        f"hfs_file         = {hfs_file}"
+        if hfs_file and hfs_file not in _default_hfs
+        else "# hfs_file         = keys/hfs_lines.txt  # (uncomment if needed)"
+    )
+    fname_fill_line = (
+        f"fname_fill       = {fname_fill}"
+        if fname_fill
+        else "# fname_fill       = <filename>.ecsv"
+    )
 
-    fname_fill_line = (f"fname_fill = {fname_fill}"
-                       if fname_fill else
-                       "# fname_fill = <filename>.ecsv")
+    warning_block = ""
+    if warnings_out:
+        warning_block = (
+            "\n# ---- CONVERSION WARNINGS (review before running) ----\n"
+            + "".join(f"# [WARN] {w}\n" for w in warnings_out)
+            + "# -------------------------------------------------------\n"
+        )
 
-    # -- assemble new config --------------------------------------------------
+    # Assemble output
     sections = []
 
-    sections.append(f"""\
-# =============================================================================
-# HexMaps config.txt  (converted from {old_path.name})
-# =============================================================================
-# Converted by config_conversion.py
-# Old format: PhangsTeam/PyStructure (PyStructure.conf)
-# New format: lukas-neumann-astro/PyStructure  rename/hexmaps branch
-# =============================================================================
-
-[meta]
-user = {user}
-comments = {comments}
-
-[paths]
-data_dir         = {data_dir}
-out_dir          = {out_dir}
-{geom_line}
-{hfs_line}
-folder_savefits  = {folder_savefits}
-
-[sources]
-sources = {sources}
-
-[overlay]
-overlay_file = {overlay_file}
-
-# ---- maps ----""")
+    sections.append(
+        f"# =============================================================================\n"
+        f"# HexMaps config.txt  (converted from {old_path.name})\n"
+        f"# =============================================================================\n"
+        f"# Source: PyStructure v4.x  (PhangsTeam/astro-HexMaps PyStructure_v4p2)\n"
+        f"# Target: HexMaps v5+       (lukas-neumann-astro/astro-HexMaps main)\n"
+        f"# =============================================================================\n"
+        f"{warning_block}\n"
+        f"[meta]\n"
+        f"user             = {user}\n"
+        f"comments         = {comments}\n"
+        f"\n"
+        f"[paths]\n"
+        f"data_dir         = {data_dir}\n"
+        f"out_dir          = {out_dir}\n"
+        f"{geom_line}\n"
+        f"{hfs_line}\n"
+        f"folder_savefits  = {folder_savefits}\n"
+        f"\n"
+        f"[targets]\n"
+        f"targets          = {targets}\n"
+        f"\n"
+        f"[overlay]\n"
+        f"overlay_file     = {overlay_file}\n"
+        f"\n"
+        f"# ---- maps ----"
+    )
 
     for ml in map_lines:
         sections.append(ml)
     if not map_lines:
-        sections.append("# (no band/map entries found in old config)")
+        sections.append("# (no band/map entries found — add rows here)")
 
     sections.append("\n# ---- cubes ----")
     for cl in cube_lines:
         sections.append(cl)
     if not cube_lines:
-        sections.append("# (no cube entries found in old config)")
+        sections.append("# (no cube entries found — add rows here)")
 
     sections.append("\n# ---- mask ----")
-    for row in input_mask_rows:
+    for row in masks["input_mask_lines"]:
         sections.append(row)
-    for row in vel_mask_rows:
+    for row in masks["window_mask_lines"]:
         sections.append(row)
-    for row in noise_mask_rows:
+    for row in masks["noise_mask_lines"]:
         sections.append(row)
-    if not (input_mask_rows or vel_mask_rows or noise_mask_rows):
-        sections.append("# (no mask entries found in old config)")
+    if not (
+        masks["input_mask_lines"]
+        or masks["window_mask_lines"]
+        or masks["noise_mask_lines"]
+    ):
+        sections.append(
+            "# (no mask rows found — add input_mask, window_mask, or noise_mask rows here)"
+        )
 
-    sections.append(f"""
+    sections.append(
+        f"\n\n[resolution]\n"
+        f"target_res       = {target_res}\n"
+        f"resolution       = {resolution}\n"
+        f"pixels_per_beam  = {pixels_per_beam}\n"
+        f"max_rad          = {max_rad}\n"
+        f"NAXIS_shuff      = {naxis_shuff}\n"
+        f"CDELT_SHUFF      = {cdelt_shuff}\n"
+        f"\n"
+        f"[masking]\n"
+        f"# ref_line tokens: first | all | <n> | <LINE_NAME> | individual\n"
+        f"#   optional: input, window  (include external masks)\n"
+        f"#   optional: AND | OR       (combinator; default OR)\n"
+        f"ref_line              = {ref_line}\n"
+        f"SN_processing         = {sn_processing}\n"
+        f"# strict_mask: false | strict | broad\n"
+        f"strict_mask           = {strict_mask}\n"
+        f"use_fixed_noise_mask  = {'true' if use_noise else 'false'}\n"
+        f"use_hfs_lines         = {use_hfs_lines}\n"
+        f"fov_erosion_beams     = 0.5\n"
+        f"mom_thresh            = {mom_thresh}\n"
+        f"conseq_channels       = {conseq_ch}\n"
+        f"mom2_method           = {mom2_method}\n"
+        f"\n"
+        f"[spectral]\n"
+        f"spec_smooth           = {spec_smooth}\n"
+        f"spec_smooth_method    = {spec_smooth_method}\n"
+        f"\n"
+        f"[output]\n"
+        f"save_cubes            = false\n"
+        f"save_mom_maps         = {save_mom_maps}\n"
+        f"save_maps             = {save_maps}\n"
+        f"save_mask             = false\n"
+        f"\n"
+        f"[structure]\n"
+        f"structure_creation    = {structure_creation}\n"
+        f"{fname_fill_line}"
+    )
 
-[resolution]
-target_res      = {target_res}
-resolution      = {resolution}
-pixels_per_beam = {pixels_per_beam}
-max_rad         = {max_rad}
-NAXIS_shuff     = {naxis_shuff}
-CDELT_SHUFF     = {cdelt_shuff}
-
-[masking]
-ref_line              = {ref_line}
-SN_processing         = {sn_processing}
-strict_mask           = {strict_mask}
-use_input_mask        = {use_input_mask}
-use_fixed_vel_mask    = {use_fixed_vel_mask}
-use_fixed_noise_mask  = {use_noise_vel}
-use_hfs_lines         = {use_hfs_lines}
-fov_erosion_beams     = 0.5
-mom_thresh            = {mom_thresh}
-conseq_channels       = {conseq_ch}
-mom2_method           = {mom2_method}
-
-[spectral]
-spec_smooth        = {spec_smooth}
-spec_smooth_method = {spec_smooth_method}
-
-[output]
-save_cubes    = false
-save_mom_maps = {save_mom_maps}
-save_maps     = {save_maps}
-save_mask     = false
-
-[structure]
-structure_creation = {structure_creation}
-{fname_fill_line}""")
-
-    # -- unknown / unrecognised lines -----------------------------------------
     if d["unknown"]:
         sections.append(
             "\n# ---- unrecognised lines from old config (review manually) ----"
@@ -333,25 +422,52 @@ structure_creation = {structure_creation}
         for u in d["unknown"]:
             sections.append(f"# {u}")
 
-    output = "\n".join(sections) + "\n"
-    new_path.write_text(output, encoding="utf-8")
+    new_path.write_text("\n".join(sections) + "\n", encoding="utf-8")
     print(f"[OK] Written: {new_path}")
+    if warnings_out:
+        print(
+            f"\n[WARN] {len(warnings_out)} conversion warning(s) — "
+            "see comment block at the top of the output file."
+        )
+        for w in warnings_out:
+            print(f"  • {w}")
 
 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
+
 def main():
-    if len(sys.argv) != 3:
-        print("Usage: python config_conversion.py <old_PyStructure.conf> <new_config.txt>")
-        sys.exit(1)
-    old_path = Path(sys.argv[1])
-    new_path = Path(sys.argv[2])
+    parser = argparse.ArgumentParser(
+        description="Convert a PyStructure v4.x PyStructure.conf to a HexMaps config.txt."
+    )
+    parser.add_argument("old_conf", help="Path to the old PyStructure.conf")
+    parser.add_argument("new_conf", help="Path for the new HexMaps config.txt")
+    parser.add_argument(
+        "--band-list",
+        metavar="FILE",
+        help="Path to an external band_list.txt (overrides inline Step 4 rows)",
+    )
+    parser.add_argument(
+        "--cube-list",
+        metavar="FILE",
+        help="Path to an external cube_list.txt (overrides inline Step 5 rows)",
+    )
+    args = parser.parse_args()
+
+    old_path = Path(args.old_conf)
+    new_path = Path(args.new_conf)
     if not old_path.exists():
         print(f"[ERROR] Input file not found: {old_path}")
         sys.exit(1)
-    convert(old_path, new_path)
+
+    convert(
+        old_path,
+        new_path,
+        Path(args.band_list) if args.band_list else None,
+        Path(args.cube_list) if args.cube_list else None,
+    )
 
 
 if __name__ == "__main__":

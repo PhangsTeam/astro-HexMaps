@@ -181,8 +181,9 @@ def _apply_strict_mask(mask, this_data):
     # Coordinate columns may be RA/DEC, GLON/GLAT, etc.
     # Find the first two columns ending in "_deg" that are not inclination/PA.
     _skip = {"incl_deg", "posang_deg"}
-    _coord_cols = [c for c in this_data.colnames
-                   if c.endswith("_deg") and c not in _skip]
+    _coord_cols = [
+        c for c in this_data.colnames if c.endswith("_deg") and c not in _skip
+    ]
     if len(_coord_cols) >= 2:
         ra, dec = this_data[_coord_cols[0]], this_data[_coord_cols[1]]
     else:
@@ -289,8 +290,16 @@ def _build_hfs_mask(mask, line_name, hfs_data, this_data):
 # ============================================================================
 
 
-def run_products(target, fname, meta, cubes, input_mask, hfs_data,
-                 window_mask=None, noise_mask_df=None):
+def run_products(
+    target,
+    fname,
+    meta,
+    cubes,
+    input_mask,
+    hfs_data,
+    window_mask=None,
+    noise_mask_df=None,
+):
     """
     Process all spectra for *target*: mask, moments, shuffle.
 
@@ -311,11 +320,11 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data,
     # ------------------------------------------------------------------
     # Unpack settings from meta
     # ------------------------------------------------------------------
-    ref_line_method  = meta.get("ref_line", "first")
-    SN_processing    = meta.get("SN_processing", [2, 4])
-    strict_mask      = meta.get("strict_mask", False)
-    use_hfs_lines    = meta.get("use_hfs_lines", False)
-    velocity_window  = meta.get("velocity_window", None)
+    ref_line_method = meta.get("ref_line", "first")
+    SN_processing = meta.get("SN_processing", [2, 4])
+    strict_mask = meta.get("strict_mask", False)
+    use_hfs_lines = meta.get("use_hfs_lines", False)
+    velocity_window = meta.get("velocity_window", None)
     mom_calc = [
         meta.get("mom_thresh", 5),
         meta.get("conseq_channels", 3),
@@ -323,15 +332,14 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data,
     ]
     shuff_axis = [meta.get("NAXIS_shuff", 200), meta.get("CDELT_SHUFF", 4000.0)]
 
-    this_data  = Table.read(fname)
+    this_data = Table.read(fname)
     line_names = [str(l) for l in cubes["line_name"]]
-    n_lines    = len(line_names)
+    n_lines = len(line_names)
 
     # ref_line: the first line in the list (used for vmean / shuffling fallback)
     ref_line = (
         ref_line_method
-        if isinstance(ref_line_method, str)
-        and ref_line_method in line_names
+        if isinstance(ref_line_method, str) and ref_line_method in line_names
         else line_names[0]
     )
 
@@ -360,13 +368,15 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data,
     def _input_tag():
         return (
             f'SPEC_{str(input_mask["mask_name"].iloc[0]).upper()}'
-            if input_mask is not None and len(input_mask) > 0 else None
+            if input_mask is not None and len(input_mask) > 0
+            else None
         )
 
     def _window_tag():
         return (
             f'SPEC_{str(window_mask["mask_name"].iloc[0]).upper()}'
-            if window_mask is not None and len(window_mask) > 0 else None
+            if window_mask is not None and len(window_mask) > 0
+            else None
         )
 
     # ---- individual mode ------------------------------------------------
@@ -374,9 +384,7 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data,
         LOG.info(f"Building individual masks for {', '.join(mask_lines)}.")
         ref_line_vmean = None
         for line in mask_lines:
-            mask_line, vmean_line, _ = construct_mask(
-                line, this_data, SN_processing
-            )
+            mask_line, vmean_line, _ = construct_mask(line, this_data, SN_processing)
             this_data[f"SPEC_MASK_{line.upper()}"] = Column(
                 mask_line,
                 unit=au.dimensionless_unscaled,
@@ -405,12 +413,18 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data,
                             )
                             if ext_hfs is not None:
                                 ext_line = np.asarray(
-                                    ext_hfs.value if hasattr(ext_hfs, "value") else ext_hfs
+                                    ext_hfs.value
+                                    if hasattr(ext_hfs, "value")
+                                    else ext_hfs
                                 ).astype(int)
-                                LOG.info(f"External input mask shifted to HFS frequencies for {line}.")
+                                LOG.info(
+                                    f"External input mask shifted to HFS frequencies for {line}."
+                                )
                         mask_line = this_data[f"SPEC_MASK_{line.upper()}"].astype(int)
                         mask_line = (
-                            (mask_line & ext_line) if combinator == "AND" else (mask_line | ext_line)
+                            (mask_line & ext_line)
+                            if combinator == "AND"
+                            else (mask_line | ext_line)
                         ) * au.dimensionless_unscaled
                         this_data[f"SPEC_MASK_{line.upper()}"] = Column(
                             mask_line,
@@ -433,12 +447,18 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data,
                             )
                             if ext_hfs is not None:
                                 ext_line = np.asarray(
-                                    ext_hfs.value if hasattr(ext_hfs, "value") else ext_hfs
+                                    ext_hfs.value
+                                    if hasattr(ext_hfs, "value")
+                                    else ext_hfs
                                 ).astype(int)
-                                LOG.info(f"External window mask shifted to HFS frequencies for {line}.")
+                                LOG.info(
+                                    f"External window mask shifted to HFS frequencies for {line}."
+                                )
                         mask_line = this_data[f"SPEC_MASK_{line.upper()}"].astype(int)
                         mask_line = (
-                            (mask_line & ext_line) if combinator == "AND" else (mask_line | ext_line)
+                            (mask_line & ext_line)
+                            if combinator == "AND"
+                            else (mask_line | ext_line)
                         ) * au.dimensionless_unscaled
                         this_data[f"SPEC_MASK_{line.upper()}"] = Column(
                             mask_line,
@@ -446,7 +466,6 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data,
                             description=f"Velocity-integration mask for {line}",
                         )
                     LOG.info(f"Individual masks {combinator} velocity-window mask.")
-
 
     # ---- combined mask mode ---------------------------------------------
     else:
@@ -469,8 +488,7 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data,
                     ref_line_vmean = vmean_line
                 mask_parts.append(
                     np.asarray(
-                        mask_line.value
-                        if hasattr(mask_line, "value") else mask_line
+                        mask_line.value if hasattr(mask_line, "value") else mask_line
                     ).astype(int)
                 )
 
@@ -513,20 +531,25 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data,
         else:
             combined = mask_parts[0].copy()
             for part in mask_parts[1:]:
-                combined = (combined & part) if combinator == "AND" else (combined | part)
+                combined = (
+                    (combined & part) if combinator == "AND" else (combined | part)
+                )
             mask = combined * au.dimensionless_unscaled
             if len(mask_parts) > 1:
-                LOG.info(
-                    f"Combined {len(mask_parts)} mask(s) with {combinator}."
-                )
+                LOG.info(f"Combined {len(mask_parts)} mask(s) with {combinator}.")
 
         # Optional strict spatial connectivity filter
         if strict_mask:
             LOG.info("Applying strict spatial mask filter.")
-            mask = _apply_strict_mask(
-                np.asarray(mask.value if hasattr(mask, "value") else mask).astype(int),
-                this_data,
-            ) * au.dimensionless_unscaled
+            mask = (
+                _apply_strict_mask(
+                    np.asarray(mask.value if hasattr(mask, "value") else mask).astype(
+                        int
+                    ),
+                    this_data,
+                )
+                * au.dimensionless_unscaled
+            )
 
         # Store the combined mask
         this_data["SPEC_MASK"] = Column(
@@ -654,22 +677,24 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data,
             if use_hfs_lines and line_name in lines_hfs:
                 hfs_tag = f"SPEC_MASK_{line_name.upper()}"
                 active_mask = (
-                    this_data[hfs_tag] * au.Unit(1) if hfs_tag in this_data.keys() else mask
+                    this_data[hfs_tag] * au.Unit(1)
+                    if hfs_tag in this_data.keys()
+                    else mask
                 )
             else:
                 active_mask = mask
         # LN: can think about implementing option to use the line-specific mean velocities
         line_vmean = ref_line_vmean
-            
+
         # Compute moment maps; use the noise channel mask if available,
         # otherwise fall back to inverting the integration mask.
         line_noise_mask = (
             hex_noise_mask[:n_pts_l] if hex_noise_mask is not None else None
         )
         mom_maps = get_mom_maps(
-            this_spec, 
-            active_mask, 
-            this_vaxis, 
+            this_spec,
+            active_mask,
+            this_vaxis,
             mom_calc,
             noise_mask=line_noise_mask,
         )
@@ -722,7 +747,7 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data,
         shuffled = shuffle(
             spec=this_spec,
             vaxis=this_vaxis,
-            zero=line_vmean, #ref_line_vmean,
+            zero=line_vmean,  # ref_line_vmean,
             new_vaxis=new_vaxis,
             interp=0,  # nearest-neighbour to preserve noise statistics
         )
@@ -742,11 +767,12 @@ def run_products(target, fname, meta, cubes, input_mask, hfs_data,
     # Update the embedded pipeline log so it covers both the regrid and
     # products stages when they are run together.
     from hexmaps.logger import logger as _logger
+
     try:
         this_data.meta["pipeline_log"] = _logger.as_text().replace("\n", "\\n")
     except Exception as e:
         LOG.warning(f"Could not update pipeline log in metadata: {e}")
-   
+
     this_data.write(fname, format="ascii.ecsv", overwrite=True)
     LOG.info(f"Spectra processing complete for {target}.")
     LOG.info(f"Database written to: {fname}")

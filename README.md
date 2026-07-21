@@ -1,12 +1,11 @@
 <!-- back-to-top anchor -->
 <a name="readme-top"></a>
 
-<!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <!-- <a href="https://github.com/PhangsTeam/astro-HexMaps">
+  <a href="https://github.com/lukas-neumann-astro/astro-HexMaps">
     <img src="images/logo.png" alt="Logo" width="100" height="100">
-  </a> -->
+  </a>
 
   <h3 align="center">HexMaps</h3>
 
@@ -17,9 +16,9 @@
     <br /><br />
     <a href="https://astro-hexmaps.readthedocs.io/en/latest/quickstart.html">View Demo</a>
     ·
-    <a href="https://github.com/PhangsTeam/astro-HexMaps/issues">Report Bug</a>
+    <a href="https://github.com/lukas-neumann-astro/astro-HexMaps/issues">Report Bug</a>
     ·
-    <a href="https://github.com/PhangsTeam/astro-HexMaps/issues">Request Feature</a>
+    <a href="https://github.com/lukas-neumann-astro/astro-HexMaps/issues">Request Feature</a>
   </p>
 </div>
 
@@ -86,10 +85,10 @@ reproject  radio_beam  spectral_cube  scikit-image
 pip install astro-hexmaps
 
 # From GitHub — latest version
-pip install git+https://github.com/PhangsTeam/astro-HexMaps.git
+pip install git+https://github.com/lukas-neumann-astro/astro-HexMaps.git
 
 # Editable / development install
-git clone https://github.com/PhangsTeam/astro-HexMaps.git
+git clone https://github.com/lukas-neumann-astro/astro-HexMaps.git
 cd astro-HexMaps
 pip install -e ".[dev]"
 ```
@@ -123,17 +122,22 @@ NGC 5194 example dataset (~46 MB):
 hexmaps --download-example --workdir ~/my_survey
 ```
 
-This fetches the input FITS files (CO(2–1) cube, CO(1–0) cube, SPIRE 250 µm map
-and associated uncertainty files) into `~/my_survey/data/`. The bundled
-`config.txt` is already configured to use these files, so you can run the
-pipeline straight away after downloading. Use `--force` to re-download
+This fetches the input FITS files (CO(2–1) cube, CO(1–0) cube, SPIRE 250 µm
+map and associated files) into `~/my_survey/data/`. The bundled `config.txt`
+is already configured to use these files. Use `--force` to re-download
 existing files.
+
+You can also download the example Jupyter notebook separately:
+
+```bash
+hexmaps --download-notebook --workdir ~/my_survey
+```
 
 ### 3 — Edit your configuration
 
 | File | What to configure | How often |
 |------|-------------------|-----------|
-| `config.txt` | data directory, source list, overlay cube, maps/cubes, target resolution, masking, output flags | every run |
+| `config.txt` | data directory, target list, overlay cube, maps/cubes, target resolution, masking, output flags | every run |
 | `keys/target_definitions.txt` | sky coordinates, distance, inclination per target | only when adding new targets |
 | `keys/hfs_lines.txt` *(optional)* | Hyperfine structure line definitions | rarely |
 
@@ -156,7 +160,7 @@ hexmaps --conf config.txt
 # All stages including FITS output
 hexmaps --conf config.txt --stages all
 
-# Single source
+# Single target
 hexmaps --conf config.txt --targets ngc5194
 
 # Also write a log file
@@ -186,16 +190,17 @@ handler.run_stages(["fits"], targets=["ngc5194"])      # re-run one stage only
 astro-HexMaps/                       ← git repository root (pip install this)
 ├── hexmaps/                         ← installable package
 │   ├── handler_keys.py              reads & validates config and key files
-│   ├── handler_sources.py           source geometry lookups
+│   ├── handler_targets.py           target geometry lookups
 │   ├── handler_pipeline.py          PipelineHandler: stage orchestration
 │   ├── stage_regrid.py              hex grid + convolution + sampling → .ecsv
 │   ├── stage_products.py            spectral masking, moments, shuffled spectra
 │   ├── stage_fits.py                FITS moment maps / cubes / band images
 │   ├── utils_fits.py                FITS/WCS helpers (convolution, reprojection)
 │   ├── utils_table.py               table I/O, spectral shuffle, moments
+│   ├── hexmaps_analysis.py          HexMapsAnalysis class (importable as part of package)
 │   ├── logger.py                    centralised stage-labelled logger
 │   ├── init_workdir.py              --init scaffolding
-│   ├── download_example.py          --download-example data fetcher
+│   ├── download_example.py          --download-example and --download-notebook
 │   ├── cli.py                       hexmaps console-script entry point
 │   ├── test_hexmaps.py              unit and integration tests
 │   └── templates/                   template files copied by --init
@@ -206,10 +211,9 @@ astro-HexMaps/                       ← git repository root (pip install this)
 │           └── hfs_lines.txt
 ├── config.txt                       ← example / template config file
 ├── keys/
-│   ├── target_definitions.txt       ← source geometry table (NGC 5194 example)
+│   ├── target_definitions.txt       ← target geometry table (PHANGS example)
 │   └── hfs_lines.txt                ← hyperfine structure definitions
 ├── analysis/
-│   ├── hexmaps_analysis.py          HexMapsAnalysis class: quicklook plots
 │   └── hexmaps_example.ipynb        example analysis notebook
 ├── conversion_from_pystructure/     ← migration scripts from old PyStructure
 │   ├── config_conversion.py
@@ -248,18 +252,18 @@ import matplotlib.pyplot as plt
 table = load_hexmaps("output/ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
 
 plt.figure(figsize=(5, 5))
-plt.scatter(table["ra_deg"], table["dec_deg"],
+plt.scatter(table["RA"], table["DEC"],
             c=table["MOM0_12CO21"], marker="h", s=60, cmap="inferno")
 plt.gca().invert_xaxis()
 plt.xlabel("R.A. [deg]"); plt.ylabel("Dec. [deg]")
 plt.show()
 ```
 
-For richer quicklook plots use the `HexMapsAnalysis` class:
+For richer quicklook plots use the `HexMapsAnalysis` class, which is now
+part of the installed package:
 
 ```python
-import sys; sys.path.append("analysis/")
-from hexmaps_analysis import HexMapsAnalysis
+from hexmaps import HexMapsAnalysis
 
 db = HexMapsAnalysis("output/ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
 db.quickplot_map("12CO21")
@@ -283,7 +287,7 @@ print(db.list_input_headers())       # list all embedded headers
 - [ ] Additional analysis utilities in `hexmaps_analysis.py`
 - [ ] Various feature updates (e.g. "island-method" masking, chunking for large datasets)
 
-See the [open issues](https://github.com/PhangsTeam/astro-HexMaps/issues)
+See the [open issues](https://github.com/lukas-neumann-astro/astro-HexMaps/issues)
 for a full list of proposed features and known issues.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -320,7 +324,7 @@ Dr. Jakob den Brok — jadenbrok@mpia.de
 
 Dr. Lukas Neumann — lukas.neumann@eso.org
 
-Project Link: [https://github.com/PhangsTeam/astro-HexMaps](https://github.com/PhangsTeam/astro-HexMaps)
+Project Link: [https://github.com/lukas-neumann-astro/astro-HexMaps](https://github.com/lukas-neumann-astro/astro-HexMaps)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -343,14 +347,14 @@ Neumann et al. (2023), Stuber et al. (2025), and others. See the
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- MARKDOWN LINKS & IMAGES -->
-[contributors-shield]: https://img.shields.io/github/contributors/PhangsTeam/astro-HexMaps.svg?style=for-the-badge
-[contributors-url]: https://github.com/PhangsTeam/astro-HexMaps/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/PhangsTeam/astro-HexMaps.svg?style=for-the-badge
-[forks-url]: https://github.com/PhangsTeam/astro-HexMaps/network/members
-[stars-shield]: https://img.shields.io/github/stars/PhangsTeam/astro-HexMaps.svg?style=for-the-badge
-[stars-url]: https://github.com/PhangsTeam/astro-HexMaps/stargazers
-[issues-shield]: https://img.shields.io/github/issues/PhangsTeam/astro-HexMaps.svg?style=for-the-badge
-[issues-url]: https://github.com/PhangsTeam/astro-HexMaps/issues
-[license-shield]: https://img.shields.io/github/license/PhangsTeam/astro-HexMaps.svg?style=for-the-badge
-[license-url]: https://github.com/PhangsTeam/astro-HexMaps/blob/master/LICENSE
+[contributors-shield]: https://img.shields.io/github/contributors/lukas-neumann-astro/astro-HexMaps.svg?style=for-the-badge
+[contributors-url]: https://github.com/lukas-neumann-astro/astro-HexMaps/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/lukas-neumann-astro/astro-HexMaps.svg?style=for-the-badge
+[forks-url]: https://github.com/lukas-neumann-astro/astro-HexMaps/network/members
+[stars-shield]: https://img.shields.io/github/stars/lukas-neumann-astro/astro-HexMaps.svg?style=for-the-badge
+[stars-url]: https://github.com/lukas-neumann-astro/astro-HexMaps/stargazers
+[issues-shield]: https://img.shields.io/github/issues/lukas-neumann-astro/astro-HexMaps.svg?style=for-the-badge
+[issues-url]: https://github.com/lukas-neumann-astro/astro-HexMaps/issues
+[license-shield]: https://img.shields.io/github/license/lukas-neumann-astro/astro-HexMaps.svg?style=for-the-badge
+[license-url]: https://github.com/lukas-neumann-astro/astro-HexMaps/blob/master/LICENSE
 [product-screenshot]: images/screenshot.png

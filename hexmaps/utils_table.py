@@ -378,9 +378,21 @@ def get_mom_maps(spec_cube, mask, vaxis, mom_calc=(3, 3, "fwhm"), noise_mask=Non
 
         # RMS noise: use explicit noise channels if provided, otherwise
         # use channels outside the integration mask.
+        # When an explicit noise_mask is given, first remove any channels
+        # where the integration mask is True — those contain signal and
+        # must not contaminate the noise estimate.  If the overlap is so
+        # large that no valid noise channels remain, fall back to the
+        # channels-outside-integration-mask approach and log a warning.
         if noise_mask is not None:
             noise_chans = np.asarray(noise_mask)[m].astype(bool)
-            rms_vals = spectrum[noise_chans & (spectrum != 0)]
+            # Remove channels that overlap with the integration mask
+            signal_chans = mask_m.astype(bool)
+            noise_chans_clean = noise_chans & ~signal_chans
+            if noise_chans_clean.any():
+                rms_vals = spectrum[noise_chans_clean & (spectrum != 0)]
+            else:
+                # Full overlap: fall back to all non-signal channels
+                rms_vals = spectrum[~signal_chans & (spectrum != 0)]
         else:
             rms_vals = spectrum[np.logical_and(mask_m == 0, spectrum != 0)]
         rms = np.nanstd(rms_vals)
@@ -582,11 +594,11 @@ def parse_ref_line(ref_line_method, line_names):
     # --- classify -------------------------------------------------------
     upper_to_orig = {ln.upper(): ln for ln in line_names}
 
-    combinator     = "OR"
-    use_input      = False
-    use_window     = False
+    combinator = "OR"
+    use_input = False
+    use_window = False
     use_individual = False
-    line_tokens    = []   # resolved line-names or keyword strings
+    line_tokens = []  # resolved line-names or keyword strings
 
     for raw in raw_tokens:
 
@@ -621,12 +633,12 @@ def parse_ref_line(ref_line_method, line_names):
                 raise ValueError(
                     f"parse_ref_line: integer token must be \u2265 1, got '{raw}'."
                 )
-            line_tokens.append(raw)   # store as string for uniform handling
+            line_tokens.append(raw)  # store as string for uniform handling
             continue
 
         # Named line from the cube list?
         if raw in upper_to_orig:
-            line_tokens.append(upper_to_orig[raw])   # preserve original case
+            line_tokens.append(upper_to_orig[raw])  # preserve original case
             continue
 
         # Nothing matched
@@ -638,8 +650,8 @@ def parse_ref_line(ref_line_method, line_names):
 
     # --- resolve line-selection tokens → mask_lines ---------------------
     keyword_found = [t for t in line_tokens if t in ("first", "all", "individual")]
-    named_found   = [t for t in line_tokens if t in line_names]
-    int_found     = []
+    named_found = [t for t in line_tokens if t in line_names]
+    int_found = []
     for t in line_tokens:
         try:
             int_found.append(int(t))
@@ -648,7 +660,7 @@ def parse_ref_line(ref_line_method, line_names):
 
     n_modes = (
         (1 if use_individual else 0)
-        + (1 if "all"   in keyword_found else 0)
+        + (1 if "all" in keyword_found else 0)
         + (1 if "first" in keyword_found else 0)
         + (1 if int_found else 0)
         + (1 if named_found else 0)
@@ -671,7 +683,7 @@ def parse_ref_line(ref_line_method, line_names):
         mask_lines = []
 
     elif use_individual:
-        mask_lines = list(line_names)   # all lines get their own mask
+        mask_lines = list(line_names)  # all lines get their own mask
 
     elif "all" in keyword_found:
         mask_lines = list(line_names)
@@ -684,6 +696,6 @@ def parse_ref_line(ref_line_method, line_names):
         mask_lines = list(line_names[:n])
 
     else:
-        mask_lines = named_found   # original case preserved
+        mask_lines = named_found  # original case preserved
 
     return mask_lines, use_individual, use_input, use_window, combinator

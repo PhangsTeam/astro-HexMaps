@@ -101,9 +101,7 @@ def init_workdir(workdir: str = ".", overwrite: bool = False) -> None:
     print(
         f"[INFO]       3. Edit config.txt  — paths, targets, maps/cubes, resolution, masking"
     )
-    print(
-        f"[INFO]       4. Edit keys/target_definitions.txt  — add your targets"
-    )
+    print(f"[INFO]       4. Edit keys/target_definitions.txt  — add your targets")
     print(
         f"[INFO]       5. (optional) Edit keys/hfs_lines.txt  — hyperfine structure lines"
     )

@@ -13,8 +13,8 @@ stage architecture.
 .. important::
 
    This code is actively developed. Check the
-   `changelog <https://github.com/PhangsTeam/astro-HexMaps>`_ before
-   upgrading between versions.
+   `GitHub repository <https://github.com/lukas-neumann-astro/astro-HexMaps>`_
+   for the latest changes before upgrading between versions.
 
 
 Acknowledgements

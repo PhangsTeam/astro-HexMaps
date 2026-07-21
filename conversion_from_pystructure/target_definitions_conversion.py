@@ -34,25 +34,28 @@ HEADER = """\
 # =============================================================================
 # HexMaps target_definitions.txt  (converted from {src})
 # =============================================================================
-# Comma-separated table of source geometric parameters.
-# Spaces and tabs around each comma are ignored; feel free to align columns.
-# All sources that may ever be used should be listed here.
-# The sources actually processed are defined in config.txt [sources].
+# Comma-separated table of target parameters.
+# Spaces and tabs around each comma are ignored; so feel free to align
+# columns with extra whitespace for readability.
+# All targets that may ever be used should be listed here.
+# The targets actually processed are defined in config.txt [targets].
 #
 # Columns (comma-separated; no header row):
-#   source       - source name (must match the FITS filename prefix)
-#   ra_ctr       - RA of source centre (degrees; J2000)
-#   dec_ctr      - Dec of source centre (degrees; J2000)
+# [required]
+#   target       - target name (must match the FITS filename prefix)
+#   x_ctr        - x-coordinate of target centre (e.g. RA in degrees; read from FITS header of overlay file)
+#   y_ctr        - y-coordinate of target centre (e.g. Dec in degrees; read from FITS header of overlay file)
 #   dist_mpc     - Distance (Mpc)
-#   e_dist_mpc   - Uncertainty on distance (Mpc)
+#   e_dist_mpc   - Uncertainty of distance (Mpc)
+# [optional]
 #   incl_deg     - Inclination (degrees)
-#   e_incl_deg   - Uncertainty on inclination (degrees)
+#   e_incl_deg   - Uncertainty of inclination (degrees)
 #   posang_deg   - Position angle (degrees; East of North)
-#   e_posang_deg - Uncertainty on position angle (degrees)
+#   e_posang_deg - Uncertainty of position angle (degrees)
 #   r25          - Optical radius r25 (arcmin)
-#   e_r25        - Uncertainty on r25 (arcmin)
+#   e_r25        - Uncertainty of r25 (arcmin)
 # =============================================================================
-# source,      ra_ctr,      dec_ctr,    dist_mpc,  e_dist_mpc,  incl_deg,  e_incl_deg,  posang_deg,  e_posang_deg,  r25,    e_r25
+# target,       x_ctr,      y_ctr,      dist_mpc,   e_dist_mpc,   incl_deg,   e_incl_deg,   posang_deg,   e_posang_deg,   r25,     e_r25
 """
 
 
@@ -82,17 +85,23 @@ def convert(old_path: Path, new_path: Path):
             while len(cols) < 11:
                 cols.append("NaN")
 
-            # Format: align source name left, numbers right-padded for readability
-            source = cols[0]
-            nums   = cols[1:]
-            row = f"{source:<12}, " + ", ".join(f"{v:>12}" for v in nums)
+            # Column 12 (if present) is a literature reference — not used by
+            # HexMaps but we note it in a trailing comment so it is not lost.
+            ref_comment = ""
+            if len(parts) >= 12:
+                ref_comment = "  # ref: " + " ".join(p.strip() for p in parts[11:])
+
+            # Format: align target name left, numbers right-padded for readability
+            target = cols[0]
+            nums = cols[1:]
+            row = f"{target:<12}, " + ", ".join(f"{v:>12}" for v in nums) + ref_comment
             rows.append(row)
 
     header = HEADER.format(src=old_path.name)
     body = "\n".join(rows) + "\n"
 
     new_path.write_text(header + body, encoding="utf-8")
-    print(f"[OK] {len(rows)} source(s) written to: {new_path}")
+    print(f"[OK] {len(rows)} target(s) written to: {new_path}")
 
     if skipped:
         print(f"[WARN] {len(skipped)} line(s) skipped (fewer than 11 columns):")
@@ -102,8 +111,10 @@ def convert(old_path: Path, new_path: Path):
 
 def main():
     if len(sys.argv) != 3:
-        print("Usage: python target_definitions_conversion.py "
-              "<old_geometry.txt> <new_target_definitions.txt>")
+        print(
+            "Usage: python target_definitions_conversion.py "
+            "<old_geometry.txt> <new_target_definitions.txt>"
+        )
         sys.exit(1)
     old_path = Path(sys.argv[1])
     new_path = Path(sys.argv[2])

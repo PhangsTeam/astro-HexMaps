@@ -58,7 +58,10 @@ def convert(old_path: Path, new_path: Path):
                 continue
 
             line_name, ref_freq, hfs_freq, unit = (
-                parts[0], parts[1], parts[2], parts[3]
+                parts[0],
+                parts[1],
+                parts[2],
+                parts[3],
             )
             row = (
                 f"{line_name:<10}, "
@@ -82,8 +85,10 @@ def convert(old_path: Path, new_path: Path):
 
 def main():
     if len(sys.argv) != 3:
-        print("Usage: python hfs_lines_conversion.py "
-              "<old_hfs_lines.txt> <new_hfs_lines.txt>")
+        print(
+            "Usage: python hfs_lines_conversion.py "
+            "<old_hfs_lines.txt> <new_hfs_lines.txt>"
+        )
         sys.exit(1)
     old_path = Path(sys.argv[1])
     new_path = Path(sys.argv[2])

@@ -25,7 +25,7 @@ Installing from GitHub
 
 .. code-block:: console
 
-   $ git clone https://github.com/PhangsTeam/astro-HexMaps.git
+   $ git clone https://github.com/lukas-neumann-astro/astro-HexMaps.git
    $ cd astro-HexMaps
    $ pip install -e ".[dev]"
 
@@ -33,7 +33,7 @@ Or install directly without cloning:
 
 .. code-block:: console
 
-   $ pip install git+https://github.com/PhangsTeam/astro-HexMaps.git
+   $ pip install git+https://github.com/lukas-neumann-astro/astro-HexMaps.git
 
 Installing from PyPI
 --------------------
@@ -60,7 +60,7 @@ To run the built-in test suite:
 Migrating from PyStructure
 ---------------------------
 
-If you have existing PyStructure configuration files, three standalone
+If you have existing PyStructure v4.x configuration files, three standalone
 migration scripts convert them to the new format:
 
 .. code-block:: console
@@ -73,3 +73,13 @@ migration scripts convert them to the new format:
 
    $ python conversion_from_pystructure/hfs_lines_conversion.py \
          List_Files/hfs_lines.txt keys/hfs_lines.txt
+
+If your band and cube definitions live in separate list files, pass them
+explicitly:
+
+.. code-block:: console
+
+   $ python conversion_from_pystructure/config_conversion.py \
+         PyStructure.conf config.txt \
+         --band-list List_Files/band_list.txt \
+         --cube-list List_Files/cube_list.txt

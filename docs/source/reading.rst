@@ -9,7 +9,7 @@ The Output File
 Running HexMaps produces an Astropy Enhanced CSV (``.ecsv``) file in the
 ``output/`` directory. The filename follows the pattern::
 
-   <source>_hexmaps_<res_suffix>_<date>.ecsv
+   <target>_hexmaps_<res_suffix>_<date>.ecsv
 
 For example: ``ngc5194_hexmaps_27p0as_2025_01_01.ecsv``
 
@@ -35,10 +35,10 @@ Column Naming Conventions
 +------------------------+-------------------------------------------------------+
 | Column pattern         | Content                                               |
 +========================+=======================================================+
-| ``ra_deg``, ``dec_deg``| Sightline sky coordinates (or ``glon_deg``/           |
-|                        | ``glat_deg`` for galactic-coordinate overlays)        |
+| ``RA``, ``DEC``        | Sightline sky coordinates in degrees (equatorial).    |
+|                        | For galactic-coordinate overlays: ``GLON``, ``GLAT``  |
 +------------------------+-------------------------------------------------------+
-| ``rgal_kpc``           | Deprojected galactocentric radius (galaxy targets)    |
+| ``RGAL_KPC``           | Deprojected galactocentric radius (galaxy targets)    |
 +------------------------+-------------------------------------------------------+
 | ``SPEC_<LINE>``        | Full spectrum per sightline                           |
 +------------------------+-------------------------------------------------------+
@@ -61,15 +61,19 @@ Column Naming Conventions
 The HexMapsAnalysis Class
 --------------------------
 
+``HexMapsAnalysis`` is installed as part of the HexMaps package and can be
+imported directly:
+
 .. code-block:: python
 
-   import sys
-   sys.path.append("analysis/")
-   from hexmaps_analysis import HexMapsAnalysis
+   from hexmaps import HexMapsAnalysis
 
    db = HexMapsAnalysis("output/ngc5194_hexmaps_27p0as_2025_01_01.ecsv")
    print(db)
-   # HexMapsAnalysis(source='ngc5194', n_pts=939, lines=['12CO21', '12CO10'])
+   # HexMapsAnalysis(target='ngc5194', n_pts=939, lines=['12CO21', '12CO10'])
+
+The class works with any coordinate system supported by the overlay cube
+(equatorial, galactic, ecliptic).
 
 
 Quick Examples
@@ -84,7 +88,7 @@ Quick Examples
 .. image:: quicklook2.png
    :width: 400
 
-**Plot a spectrum at the brightest sightline:**
+**Plot a spectrum at the sightline closest to the target centre:**
 
 .. code-block:: python
 
@@ -160,7 +164,7 @@ Accessing the Raw Table
    print(db.struct.colnames)
 
    # Galactocentric radii in kpc (galaxy targets only)
-   print(db.struct["rgal_kpc"])
+   print(db.struct["RGAL_KPC"])
 
    # Spectrum of the brightest CO(2-1) sightline
    import numpy as np

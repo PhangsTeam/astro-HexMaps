@@ -12,7 +12,7 @@ Or use the installed CLI directly:
     hexmaps --conf config.txt --stages regrid products --targets ngc5194
 """
 
-import hexmaps as pys
+import hexmaps as hm
 
 # ---------------------------------------------------------------------------
 # USER SETTINGS — edit these
@@ -41,7 +41,7 @@ TARGETS = None  # e.g. ["ngc5194", "ngc5457"]
 # RUN — no need to edit below this line
 # ---------------------------------------------------------------------------
 
-handler = pys.PipelineHandler(conf_path=CONF_PATH)
+handler = hm.PipelineHandler(conf_path=CONF_PATH)
 
 if STAGES is None:
     # run_all() executes the default stages (regrid + products).

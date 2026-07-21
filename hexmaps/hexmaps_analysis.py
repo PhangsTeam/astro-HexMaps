@@ -43,10 +43,16 @@ class HexMapsAnalysis:
         self.lines = self._find_lines()
 
         # rgal and theta are only available for galaxy targets
-        self.rgal  = (np.array(self.struct["RGAL_KPC"])
-                      if "RGAL_KPC" in self.struct.colnames else None)
-        self.theta = (np.array(self.struct["THETA_RAD"]) + np.pi
-                      if "THETA_RAD" in self.struct.colnames else None)
+        self.rgal = (
+            np.array(self.struct["RGAL_KPC"])
+            if "RGAL_KPC" in self.struct.colnames
+            else None
+        )
+        self.theta = (
+            np.array(self.struct["THETA_RAD"]) + np.pi
+            if "THETA_RAD" in self.struct.colnames
+            else None
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -57,7 +63,7 @@ class HexMapsAnalysis:
         lines = []
         for key in self.struct.keys():
             if key.startswith("SHUFF_"):
-                lines.append(key[len("SHUFF_"):])
+                lines.append(key[len("SHUFF_") :])
             elif key.startswith("MOM0_"):
                 lines.append(key.split("_", 1)[1])
         lines = list(dict.fromkeys(lines))  # preserve order, drop duplicates
@@ -73,7 +79,7 @@ class HexMapsAnalysis:
         """
         # Prefer columns explicitly named after known coordinate systems
         _candidates = [
-            ("RA",   "DEC"),
+            ("RA", "DEC"),
             ("GLON", "GLAT"),
             ("ELON", "ELAT"),
         ]
@@ -83,8 +89,11 @@ class HexMapsAnalysis:
 
         # Fall back to any pair of *_deg columns (excluding incl/posang)
         _skip = {"incl_deg", "posang_deg", "INCL_DEG", "POSANG_DEG"}
-        deg_cols = [c for c in self.struct.colnames
-                    if c.lower().endswith("_deg") and c not in _skip]
+        deg_cols = [
+            c
+            for c in self.struct.colnames
+            if c.lower().endswith("_deg") and c not in _skip
+        ]
         if len(deg_cols) >= 2:
             return deg_cols[0], deg_cols[1]
 
@@ -114,7 +123,7 @@ class HexMapsAnalysis:
         x = np.array(self.struct[col1])
         y = np.array(self.struct[col2])
         cx, cy = np.nanmean(x), np.nanmean(y)
-        return int(np.argmin((x - cx)**2 + (y - cy)**2))
+        return int(np.argmin((x - cx) ** 2 + (y - cy) ** 2))
 
     # ------------------------------------------------------------------
     # Coordinate helpers
@@ -197,8 +206,8 @@ class HexMapsAnalysis:
 
         col1, col2 = self._coord_cols()
         _label_map = {
-            "RA":   "R.A. [deg]",
-            "DEC":  "Dec. [deg]",
+            "RA": "R.A. [deg]",
+            "DEC": "Dec. [deg]",
             "GLON": "Galactic longitude [deg]",
             "GLAT": "Galactic latitude [deg]",
             "ELON": "Ecliptic longitude [deg]",
@@ -371,8 +380,11 @@ class HexMapsAnalysis:
         ax.set_ylabel(f"T$_{{\\rm b}}$ [{unit}]" if unit else "Brightness temperature")
         ax.set_title(
             f"{line}  —  pixel {idx}"
-            + (f"  (r$_{{\\rm gal}}$ = {self.rgal[idx]:.2f} kpc)"
-               if self.rgal is not None else "")
+            + (
+                f"  (r$_{{\\rm gal}}$ = {self.rgal[idx]:.2f} kpc)"
+                if self.rgal is not None
+                else ""
+            )
         )
         ax.legend(fontsize=9)
 
@@ -489,9 +501,9 @@ class HexMapsAnalysis:
         e2 = np.array(self.struct[f"EMOM0_{line2.upper()}"])
 
         ratio = np.full_like(i1, np.nan)
-        uc    = np.full_like(i1, np.nan)
-        ulim  = np.full_like(i1, np.nan)
-        llim  = np.full_like(i1, np.nan)
+        uc = np.full_like(i1, np.nan)
+        ulim = np.full_like(i1, np.nan)
+        llim = np.full_like(i1, np.nan)
 
         det = (i1 / e1 > sn) & (i2 / e2 > sn)
         ratio[det] = i1[det] / i2[det]
@@ -542,6 +554,7 @@ class HexMapsAnalysis:
         content = raw.replace("\\n", "\n")
         if save_to is not None:
             from pathlib import Path
+
             Path(save_to).write_text(content, encoding="utf-8")
             print(f"[INFO] Config file written to {save_to}")
         return content
@@ -565,6 +578,7 @@ class HexMapsAnalysis:
         content = raw.replace("\\n", "\n")
         if save_to is not None:
             from pathlib import Path
+
             Path(save_to).write_text(content, encoding="utf-8")
             print(f"[INFO] Pipeline log written to {save_to}")
         return content
@@ -579,7 +593,7 @@ class HexMapsAnalysis:
         """
         prefix = "input_header_"
         return sorted(
-            k[len(prefix):] for k in self.struct.meta if k.startswith(prefix)
+            k[len(prefix) :] for k in self.struct.meta if k.startswith(prefix)
         )
 
     def get_input_header(self, label: str):

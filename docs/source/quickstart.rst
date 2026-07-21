@@ -28,6 +28,12 @@ The bundled ``config.txt`` is already configured to use these files.
 
 Use ``--force`` to re-download files that already exist.
 
+You can also download the example Jupyter notebook:
+
+.. code-block:: console
+
+   $ hexmaps --download-notebook --workdir ~/hexmaps_example
+
 
 .. _run_example:
 
@@ -55,11 +61,11 @@ The pipeline prints progress to the terminal and writes the output to
 
    All input FITS filenames must follow the convention::
 
-      <source_name><file_extension>
+      <target_name><file_extension>
 
-   For example: ``ngc5194_12co21.fits``, where ``ngc5194`` is the source
+   For example: ``ngc5194_12co21.fits``, where ``ngc5194`` is the target
    name and ``_12co21.fits`` is the file extension defined in ``config.txt``.
-   The source name must also appear in ``keys/target_definitions.txt``.
+   The target name must also appear in ``keys/target_definitions.txt``.
 
 
 Step 4 — Inspect the Output

@@ -41,18 +41,18 @@ location of ``config.txt``.
    # hfs_file  = keys/hfs_lines.txt
 
 
-[sources] and [overlay]
+[targets] and [overlay]
 ------------------------
 
 .. code-block:: ini
 
-   [sources]
-   sources = ngc5194
+   [targets]
+   targets = ngc5194
 
    [overlay]
    overlay_file = _12co21.fits
 
-``sources`` is a comma-separated list of source names. Each name is
+``targets`` is a comma-separated list of target names. Each name is
 prepended to the file extensions in the map and cube tables to form full
 filenames. ``overlay_file`` defines the 3D spectral cube that sets the
 spatial extent and spectral axis of the hexagonal grid.
@@ -62,13 +62,13 @@ Map and Cube Tables
 -------------------
 
 Maps (2D) and cubes (3D) are defined as comma-separated table rows
-immediately after their comment markers inside the ``[sources]`` section.
+immediately after their comment markers.
 
 .. code-block:: ini
 
    # ---- maps ----
    # name,  description,  unit,  file_extension,  directory,  [uc_extension]
-   spire250,  SPIRE 250 um,  MJy/sr,  _spire250_gauss21.fits,  data/,  _spire250_gauss21_unc.fits
+   spire250,  SPIRE 250 um,  MJy/sr,  _spire250_gauss21.fits,  data/
 
    # ---- cubes ----
    # name,  description,  unit,  file_extension,  directory,  [map_ext],  [map_uc_ext]
@@ -84,24 +84,28 @@ immediately after their comment markers inside the ``[sources]`` section.
 Mask Table
 ----------
 
-An optional mask section supports three types of entries:
+An optional mask section supports three types of entries, each defined by an
+explicit key:
 
 .. code-block:: ini
 
    # ---- mask ----
 
-   # External FITS mask (sampled onto the hex grid):
-   # name,  description,  file_extension,  directory
-   # co_mask,  CO signal mask,  _co_mask.fits,  data/
+   # External FITS mask (sampled onto the hex grid at the regrid stage):
+   # input_mask = name, description, file_extension, directory
+   # input_mask = co_mask, CO signal mask, _co_mask.fits, data/
 
    # Fixed velocity window (signal integration range):
-   # vel_mask,  description,  v_start,  v_end,  unit
-   # vel_mask,  Signal window,  -200,  200,  km/s
+   # window_mask = name, description, v_start, v_end, unit
+   # window_mask = window_mask, Fixed velocity window, 400, 600, km/s
 
    # Noise velocity windows (for RMS estimation):
-   # noise_mask,  description,  v_start,  v_end,  unit
-   # noise_mask,  Noise blue,  -300,  -150,  km/s
-   # noise_mask,  Noise red,    150,   300,  km/s
+   # noise_mask = name, description, v_start, v_end, unit
+   # noise_mask = noise_mask, Noise blue, -300, -150, km/s
+   # noise_mask = noise_mask, Noise red,   150,  300, km/s
+
+To include these masks in the signal mask, add the corresponding tokens to
+``ref_line`` (see the :ref:`masking section <step_masking>` below).
 
 
 [resolution]
@@ -121,11 +125,11 @@ An optional mask section supports three types of entries:
 
 * ``angular`` — use ``target_res`` directly in arcseconds
 * ``physical`` — convert ``target_res`` (in pc) to arcseconds using the
-  source distance from ``target_definitions.txt``
+  target distance from ``target_definitions.txt``
 * ``native`` — use the native beam of the overlay cube
 
 
-.. _step2:
+.. _step_masking:
 
 [masking]
 ---------
@@ -136,8 +140,6 @@ An optional mask section supports three types of entries:
    ref_line             = first
    SN_processing        = 2, 4
    strict_mask          = false
-   use_input_mask       = false
-   use_fixed_vel_mask   = false
    use_fixed_noise_mask = false
    use_hfs_lines        = false
    fov_erosion_beams    = 0.5
@@ -145,28 +147,38 @@ An optional mask section supports three types of entries:
    conseq_channels      = 3
    mom2_method          = fwhm
 
-``ref_line`` selects which lines build the signal mask:
+``ref_line`` is a comma-separated list of tokens that controls which masks
+are built and how they are combined.
 
-* ``first`` — first cube in the cube list (default)
+**Line-selection tokens** (choose exactly one):
+
+* ``first`` — first cube in the list (default)
 * ``<LINE_NAME>`` — a specific named line, e.g. ``12co21``
 * ``all`` — OR-combine all cubes
-* ``n`` — OR-combine the first *n* cubes
-* ``individual`` — build and apply one mask per line independently
+* ``n`` — OR-combine the first *n* cubes (integer ≥ 1)
+* ``individual`` — build and apply one independent mask per line
 
-**Combination tokens** can be appended to any keyword above:
+**External-mask tokens** (optional, one or both):
 
-* ``AND(input)`` — AND-combine with the external input mask
-* ``OR(input)``  — OR-combine with the external input mask
-* ``AND(fixed)`` — AND-combine with the fixed velocity-window mask
-* ``OR(fixed)``  — OR-combine with the fixed velocity-window mask
+* ``input`` — include the ``input_mask`` defined in the mask table
+* ``window`` — include the ``window_mask`` defined in the mask table
+
+**Combinator token** (optional, default ``OR``):
+
+* ``OR`` — a sightline is masked if it passes *any* of the selected masks
+* ``AND`` — a sightline is masked only if it passes *all* selected masks
 
 Examples:
 
 .. code-block:: ini
 
-   ref_line = 12co21, AND(input)       # 12co21 mask AND external mask
-   ref_line = first, OR(fixed)         # first-line mask OR fixed window
-   ref_line = all, AND(input)          # union of all lines, limited by input
+   ref_line = first                  # S/N mask from first cube only
+   ref_line = 12co21                 # S/N mask from 12co21
+   ref_line = first, input           # OR of first-cube mask and input mask
+   ref_line = 12co21, input, AND     # 12co21 mask AND input mask
+   ref_line = first, window, AND     # first-cube mask AND velocity window
+   ref_line = all, input, window     # OR of all-cube + input + window masks
+   ref_line = individual             # one independent mask per line
 
 
 [spectral]
@@ -215,15 +227,20 @@ Examples:
 target_definitions.txt
 -----------------------
 
-The ``keys/target_definitions.txt`` file lists source geometry for all
-targets that may ever be processed. Add sources here once; only those
-listed in ``config.txt [sources]`` will be processed on any given run.
+The ``keys/target_definitions.txt`` file lists geometry for all targets
+that may ever be processed. Add targets here once; only those listed in
+``config.txt [targets]`` will be processed on any given run.
 
 .. code-block:: text
 
-   # source, ra_ctr, dec_ctr, dist_mpc, e_dist_mpc,
+   # target, x_ctr, y_ctr, dist_mpc, e_dist_mpc,
    #         incl_deg, e_incl_deg, posang_deg, e_posang_deg, r25, e_r25
    ngc5194, 202.4696, 47.1952, 8.58, 0.10, 22.0, 3.0, 173.0, 3.0, 3.54, 0.05
+
+The coordinate columns (``x_ctr``, ``y_ctr``) contain the sky coordinates
+of the target centre; their units and axis names are derived from the overlay
+FITS header, so they work for both equatorial (RA/Dec) and galactic
+(GLON/GLAT) data.
 
 Galaxy geometry columns (``incl_deg``, ``posang_deg``, ``r25``) are
 optional. Leave them blank or omit them for non-galaxy targets such as

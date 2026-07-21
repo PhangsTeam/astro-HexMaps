@@ -9,27 +9,27 @@ Repository Layout
    astro-HexMaps/                       ← git root (pip install this)
    ├── hexmaps/                         ← installable Python package
    │   ├── handler_keys.py              reads & validates config.txt and key files
-   │   ├── handler_sources.py           source geometry lookups
+   │   ├── handler_targets.py           target geometry lookups
    │   ├── handler_pipeline.py          PipelineHandler: stage orchestration
    │   ├── stage_regrid.py              hex grid + convolution + sampling → .ecsv
    │   ├── stage_products.py            spectral masking, moments, shuffled spectra
    │   ├── stage_fits.py                FITS moment maps / cubes / band images
    │   ├── utils_fits.py                FITS/WCS helpers (convolution, reprojection)
    │   ├── utils_table.py               table I/O, spectral shuffle, moments
+   │   ├── hexmaps_analysis.py          HexMapsAnalysis class (installed with package)
    │   ├── logger.py                    centralised stage-labelled logger
    │   ├── init_workdir.py              --init scaffolding
-   │   ├── download_example.py          --download-example data fetcher
+   │   ├── download_example.py          --download-example / --download-notebook
    │   ├── cli.py                       hexmaps console-script entry point
    │   ├── test_hexmaps.py              unit and integration tests
    │   └── templates/                   files copied by --init
    ├── config.txt                       ← example / template config file
    ├── keys/
-   │   ├── target_definitions.txt       ← source geometry table
+   │   ├── target_definitions.txt       ← target geometry table (PHANGS sample)
    │   └── hfs_lines.txt                ← hyperfine structure definitions
    ├── analysis/
-   │   ├── hexmaps_analysis.py          HexMapsAnalysis class
    │   └── hexmaps_example.ipynb        example notebook
-   ├── conversion_from_pystructure/     ← migration scripts
+   ├── conversion_from_pystructure/     ← migration scripts from PyStructure v4
    ├── data/                            ← example FITS input (NGC 5194)
    ├── docs/                            ← this documentation
    └── pyproject.toml
