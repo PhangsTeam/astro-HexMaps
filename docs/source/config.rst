@@ -5,8 +5,8 @@ This page walks through ``config.txt`` section by section. Every key has a
 sensible default; you only need to set what differs from those defaults.
 
 
-[meta]
-------
+Meta data
+---------
 
 Metadata stored in the output ``.ecsv`` table header for provenance.
 
@@ -17,8 +17,8 @@ Metadata stored in the output ``.ecsv`` table header for provenance.
    comments = Example HexMaps run
 
 
-[paths]
--------
+Directory paths
+---------------
 
 All file and directory paths. Relative paths are resolved relative to the
 location of ``config.txt``. The ``geom_file`` and ``hfs_file`` keys are optional; 
@@ -34,8 +34,8 @@ if not set, the pipeline will look for ``keys/target_definitions.txt`` and ``key
    folder_savefits = ./saved_fits_files/
 
 
-[targets]
----------
+Target list
+-----------
 
 .. code-block:: ini
 
@@ -47,8 +47,8 @@ prepended to the file extensions in the map and cube tables to form full
 filenames.
 
 
-[overlay]
----------
+Overlay file
+------------
 
 .. code-block:: ini
 
@@ -59,8 +59,8 @@ filenames.
 spatial extent and spectral axis of the hexagonal grid.
 
 
-Map and Cube Tables
--------------------
+Inpute maps and cubes
+---------------------
 
 Maps (2D) and cubes (3D) are defined as comma-separated table rows
 immediately after their comment markers.
@@ -82,29 +82,3 @@ immediately after their comment markers.
    for mask construction. Put your brightest, highest-SNR line first. For 
    more advanced line-selection options, see the ``ref_line`` key in the 
    :ref:`AdvancedConfig`.
-
-
-.. _geomFile:
-
-target_definitions.txt
------------------------
-
-The ``keys/target_definitions.txt`` file lists geometry for all targets
-that may ever be processed. Add targets here once; only those listed in
-``config.txt [targets]`` will be processed on any given run.
-
-.. code-block:: text
-
-   # target, x_ctr, y_ctr, dist_mpc, e_dist_mpc,
-   #         incl_deg, e_incl_deg, posang_deg, e_posang_deg, r25, e_r25
-   ngc5194, 202.4696, 47.1952, 8.58, 0.10, 22.0, 3.0, 173.0, 3.0, 3.54, 0.05
-
-The coordinate columns (``x_ctr``, ``y_ctr``) contain the sky coordinates
-of the target centre; their units and axis names are derived from the overlay
-FITS header, so they work for both equatorial (RA/Dec) and galactic
-(GLON/GLAT) data.
-
-Galaxy geometry columns (``incl_deg``, ``posang_deg``, ``r25``) are
-optional. Leave them blank or omit them for non-galaxy targets such as
-Milky Way molecular clouds — the pipeline will skip deprojection and
-print a warning.
