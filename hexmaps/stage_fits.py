@@ -75,7 +75,12 @@ from scipy.ndimage import label, binary_erosion
 from skimage.morphology import disk
 from datetime import date
 
-from hexmaps.utils_fits import twod_head, conv_with_gauss, reproject_cube, resolve_meta_resolution
+from hexmaps.utils_fits import (
+    twod_head,
+    conv_with_gauss,
+    reproject_cube,
+    resolve_meta_resolution,
+)
 from hexmaps.stage_regrid import _ensure_ms, _get_vaxis
 from hexmaps.utils_table import get_mom_maps, build_noise_mask, parse_ref_line
 
@@ -527,9 +532,18 @@ def get_mom_maps_ppv(cube, mask, vaxis, mom_calc, noise_mask=None):
     return mom_maps
 
 
-def make_clean_header(ov_hdr, is_cube=False, bunit=None, btype=None,
-                      line_name=None, line_desc=None, object_name=None,
-                      bmaj_as=None, restfrq=None, meta=None):
+def make_clean_header(
+    ov_hdr,
+    is_cube=False,
+    bunit=None,
+    btype=None,
+    line_name=None,
+    line_desc=None,
+    object_name=None,
+    bmaj_as=None,
+    restfrq=None,
+    meta=None,
+):
     """
     Build a clean FITS header containing only the mandatory keywords needed
     to locate and interpret the data — no residual keywords from the input
@@ -611,7 +625,7 @@ def make_clean_header(ov_hdr, is_cube=False, bunit=None, btype=None,
     if bmaj_as is not None:
         h["BMAJ"] = bmaj_as / 3600.0
         h["BMIN"] = bmaj_as / 3600.0
-        h["BPA"]  = 0.0
+        h["BPA"] = 0.0
     else:
         for kw in ("BMAJ", "BMIN", "BPA"):
             if kw in ov_hdr:
@@ -648,8 +662,9 @@ def make_clean_header(ov_hdr, is_cube=False, bunit=None, btype=None,
     return h
 
 
-def save_ppv_mask_to_fits(mask, ov_hdr, target, filename, folder,
-                          out_nan_mask=None, meta=None):
+def save_ppv_mask_to_fits(
+    mask, ov_hdr, target, filename, folder, out_nan_mask=None, meta=None
+):
     """
     Write a PPV-native velocity-integration mask to a 3-D FITS cube.
 
@@ -675,8 +690,12 @@ def save_ppv_mask_to_fits(mask, ov_hdr, target, filename, folder,
     Output filename: {target}_{filename}.fits
     """
     hdr_out = make_clean_header(
-        ov_hdr, is_cube=True, bunit="", btype="mask",
-        object_name=target, meta=None,
+        ov_hdr,
+        is_cube=True,
+        bunit="",
+        btype="mask",
+        object_name=target,
+        meta=None,
     )
     data_out = np.asarray(mask, dtype=float).copy()
     if out_nan_mask is not None:
@@ -785,10 +804,10 @@ def run_moments_ppv(
     # ------------------------------------------------------------------
     # Settings
     # ------------------------------------------------------------------
-    ref_line_method  = meta.get("ref_line", "first")
-    SN_processing    = meta.get("SN_processing", [2, 4])
-    strict_mask      = meta.get("strict_mask", False)
-    use_hfs_lines    = meta.get("use_hfs_lines", False)
+    ref_line_method = meta.get("ref_line", "first")
+    SN_processing = meta.get("SN_processing", [2, 4])
+    strict_mask = meta.get("strict_mask", False)
+    use_hfs_lines = meta.get("use_hfs_lines", False)
     fov_erosion_beams = float(meta.get("fov_erosion_beams", 0.5))
     mom_calc = [
         meta.get("mom_thresh", 5),
@@ -797,14 +816,15 @@ def run_moments_ppv(
     ]
 
     line_names = [str(ln) for ln in cubes["line_name"]]
-    n_lines    = len(line_names)
+    n_lines = len(line_names)
 
     # ------------------------------------------------------------------
     # Load overlay cube
     # ------------------------------------------------------------------
-    data_dir     = meta.get("data_dir", "data/")
+    data_dir = meta.get("data_dir", "data/")
     overlay_file = meta.get("overlay_file", "")
     from os import path as _path
+
     overlay_fname = (
         _path.join(data_dir, overlay_file)
         if target in overlay_file
@@ -822,9 +842,9 @@ def run_moments_ppv(
     # Velocity axis
     unit_v = ov_hdr.get("CUNIT3", "m/s")
     v0, dv, crpix = ov_hdr["CRVAL3"], ov_hdr["CDELT3"], ov_hdr["CRPIX3"]
-    n_chan  = ov_cube.shape[0]
-    vaxis   = (v0 + (np.arange(n_chan) - (crpix - 1)) * dv) * au.Unit(unit_v)
-    vaxis   = vaxis.to(au.km / au.s)
+    n_chan = ov_cube.shape[0]
+    vaxis = (v0 + (np.arange(n_chan) - (crpix - 1)) * dv) * au.Unit(unit_v)
+    vaxis = vaxis.to(au.km / au.s)
     delta_v_kms = abs(dv * au.Unit(unit_v).to(au.km / au.s))
 
     # Noise mask
@@ -843,21 +863,24 @@ def run_moments_ppv(
     cube_data = {}
     cube_hdrs = {}
     for _, row in cubes.iterrows():
-        name     = str(row["line_name"]).upper()
+        name = str(row["line_name"]).upper()
         raw_path = os.path.join(str(row["line_dir"]), target + str(row["line_ext"]))
         cube_hdrs[name] = fits.getheader(raw_path) if os.path.exists(raw_path) else {}
         data, _ = get_convolved_ppv_cube(
-            target, str(row["line_name"]), str(row["line_dir"]),
-            str(row["line_ext"]), meta, ov_hdr, log=LOG,
+            target,
+            str(row["line_name"]),
+            str(row["line_dir"]),
+            str(row["line_ext"]),
+            meta,
+            ov_hdr,
+            log=LOG,
         )
         cube_data[name] = data * au.Unit(str(row["line_unit"]))
 
     # ref_line: primary line name for shape fallback
     line_names_upper = [ln.upper() for ln in line_names]
     ref_line_str = str(ref_line_method).split(",")[0].strip().upper()
-    ref_line = (
-        ref_line_str if ref_line_str in line_names_upper else line_names_upper[0]
-    )
+    ref_line = ref_line_str if ref_line_str in line_names_upper else line_names_upper[0]
     if ref_line not in cube_data:
         LOG.warning(
             f"Nominal reference line {ref_line} not found; "
@@ -877,9 +900,9 @@ def run_moments_ppv(
             if window_mask is None or len(window_mask) == 0:
                 LOG.error("ref_line contains 'window' but no window_mask is defined.")
                 return None
-            mu   = window_mask["mask_unit"].iloc[0]
-            mst  = float(window_mask["mask_start"].iloc[0]) * au.Unit(mu)
-            mend = float(window_mask["mask_end"].iloc[0])   * au.Unit(mu)
+            mu = window_mask["mask_unit"].iloc[0]
+            mst = float(window_mask["mask_start"].iloc[0]) * au.Unit(mu)
+            mend = float(window_mask["mask_end"].iloc[0]) * au.Unit(mu)
             return fixed_velocity_mask_ppv(
                 cube_data[ref_line].shape, ov_hdr, mst, mend, mu
             ).astype(int)
@@ -905,7 +928,9 @@ def run_moments_ppv(
             ln_upper = line.upper()
             if ln_upper not in cube_data:
                 continue
-            lm = construct_mask_ppv(cube_data[ln_upper].value, SN_processing).astype(int)
+            lm = construct_mask_ppv(cube_data[ln_upper].value, SN_processing).astype(
+                int
+            )
             if strict_mask:
                 lm = apply_strict_mask_ppv(lm)
 
@@ -919,10 +944,14 @@ def run_moments_ppv(
                 if ext is not None:
                     ext_line = ext
                     if use_hfs_lines and hfs_data is not None:
-                        ext_hfs = build_hfs_mask_ppv(ext.astype(float), line, hfs_data, delta_v_kms)
+                        ext_hfs = build_hfs_mask_ppv(
+                            ext.astype(float), line, hfs_data, delta_v_kms
+                        )
                         if ext_hfs is not None:
                             ext_line = ext_hfs.astype(int)
-                            LOG.info(f"External input mask shifted to HFS frequencies for {line}.")
+                            LOG.info(
+                                f"External input mask shifted to HFS frequencies for {line}."
+                            )
                     lm = (lm & ext_line) if combinator == "AND" else (lm | ext_line)
                     LOG.info(f"PPV mask for {line} {combinator} input mask.")
             if use_window:
@@ -930,10 +959,14 @@ def run_moments_ppv(
                 if ext is not None:
                     ext_line = ext
                     if use_hfs_lines and hfs_data is not None:
-                        ext_hfs = build_hfs_mask_ppv(ext.astype(float), line, hfs_data, delta_v_kms)
+                        ext_hfs = build_hfs_mask_ppv(
+                            ext.astype(float), line, hfs_data, delta_v_kms
+                        )
                         if ext_hfs is not None:
                             ext_line = ext_hfs.astype(int)
-                            LOG.info(f"External window mask shifted to HFS frequencies for {line}.")
+                            LOG.info(
+                                f"External window mask shifted to HFS frequencies for {line}."
+                            )
                     lm = (lm & ext_line) if combinator == "AND" else (lm | ext_line)
                     LOG.info(f"PPV mask for {line} {combinator} window mask.")
 
@@ -1031,8 +1064,12 @@ def run_moments_ppv(
             for line, lm in ppv_line_masks.items():
                 lm_edge = (np.asarray(lm) * edge_mask[None, :, :]).astype(int)
                 save_ppv_mask_to_fits(
-                    lm_edge, ov_hdr, target, f"mask_{line.lower()}",
-                    folder, out_nan_mask=out_nan_mask,
+                    lm_edge,
+                    ov_hdr,
+                    target,
+                    f"mask_{line.lower()}",
+                    folder,
+                    out_nan_mask=out_nan_mask,
                 )
                 LOG.info(
                     f"Individual PPV mask for {line} written to: "
@@ -1043,8 +1080,8 @@ def run_moments_ppv(
     # Compute and write moments per line
     # ------------------------------------------------------------------
     for jj, row in cubes.iterrows():
-        line_name  = str(row["line_name"])
-        ln_upper   = line_name.upper()
+        line_name = str(row["line_name"])
+        ln_upper = line_name.upper()
         if ln_upper not in cube_data:
             continue
 
@@ -1060,8 +1097,12 @@ def run_moments_ppv(
             if save_mask and not np.array_equal(active_mask, mask):
                 hfs_mask_name = f"mask_{line_name.lower()}"
                 save_ppv_mask_to_fits(
-                    active_mask, ov_hdr, target, hfs_mask_name,
-                    folder, out_nan_mask=out_nan_mask,
+                    active_mask,
+                    ov_hdr,
+                    target,
+                    hfs_mask_name,
+                    folder,
+                    out_nan_mask=out_nan_mask,
                 )
                 LOG.info(
                     f"PPV mask cube for {line_name} written to: "
@@ -1077,7 +1118,8 @@ def run_moments_ppv(
             mom_calc,
             noise_mask=(
                 build_noise_mask(_noise_mask_df, vaxis, cube_data[ln_upper].shape)
-                if _noise_mask_df is not None else None
+                if _noise_mask_df is not None
+                else None
             ),
         )
 
@@ -1086,22 +1128,24 @@ def run_moments_ppv(
         line_unit = str(row["line_unit"])
 
         quantities = {
-            "mom0":  (mom_maps["mom0"],     "K km/s" if line_unit == "K" else f"{line_unit} km/s"),
+            "mom0": (
+                mom_maps["mom0"],
+                "K km/s" if line_unit == "K" else f"{line_unit} km/s",
+            ),
             "emom0": (mom_maps["mom0_err"], None),
-            "mom1":  (mom_maps["mom1"],     "km/s"),
+            "mom1": (mom_maps["mom1"], "km/s"),
             "emom1": (mom_maps["mom1_err"], "km/s"),
-            "mom2":  (mom_maps["mom2"],     "km/s"),
+            "mom2": (mom_maps["mom2"], "km/s"),
             "emom2": (mom_maps["mom2_err"], "km/s"),
-            "tpeak": (mom_maps["tpeak"],    line_unit),
-            "rms":   (mom_maps["rms"],      line_unit),
-            "ew":    (mom_maps["ew"],       "km/s"),
-            "eew":   (mom_maps["ew_err"],   "km/s"),
+            "tpeak": (mom_maps["tpeak"], line_unit),
+            "rms": (mom_maps["rms"], line_unit),
+            "ew": (mom_maps["ew"], "km/s"),
+            "eew": (mom_maps["ew_err"], "km/s"),
         }
 
         _raw_hdr = cube_hdrs.get(ln_upper, {})
         _restfrq = (
-            (_raw_hdr.get("RESTFRQ") or _raw_hdr.get("RESTFREQ"))
-            if _raw_hdr else None
+            (_raw_hdr.get("RESTFRQ") or _raw_hdr.get("RESTFREQ")) if _raw_hdr else None
         )
 
         for quantity, (arr, bunit) in quantities.items():
@@ -1122,14 +1166,14 @@ def run_moments_ppv(
                 folder, f"{target}_{line_name}_{res_suffix}_{quantity}.fits"
             )
             data_out = (
-                arr.value.copy() if hasattr(arr, "value")
+                arr.value.copy()
+                if hasattr(arr, "value")
                 else np.asarray(arr, dtype=float).copy()
             )
             data_out[out_nan_mask] = np.nan
             fits.writeto(fname_fits, data=data_out, header=hdr_out, overwrite=True)
 
         LOG.info(f"Compute moment maps and write to file for line: {line_name}.")
-
 
 
 def run_fits(
@@ -1276,8 +1320,13 @@ def run_fits(
             # --- primary map ---
             try:
                 map_data, _ = get_convolved_map(
-                    target, map_name, map_dir, map_ext,
-                    target_res_as, ov_hdr, log=LOG,
+                    target,
+                    map_name,
+                    map_dir,
+                    map_ext,
+                    target_res_as,
+                    ov_hdr,
+                    log=LOG,
                 )
                 map_data = np.where(_out_nan, np.nan, map_data)
                 map_hdr = make_clean_header(
@@ -1289,7 +1338,9 @@ def run_fits(
                     bmaj_as=target_res_as,
                     meta=meta,
                 )
-                fname_map = os.path.join(folder, f"{target}_{map_name}_{res_suffix}.fits")
+                fname_map = os.path.join(
+                    folder, f"{target}_{map_name}_{res_suffix}.fits"
+                )
                 fits.writeto(fname_map, data=map_data, header=map_hdr, overwrite=True)
             except FileNotFoundError:
                 LOG.warning(f"Skipping map {map_name}: raw input file not found.")
@@ -1299,8 +1350,13 @@ def run_fits(
             if map_uc and map_uc not in ("nan", ""):
                 try:
                     unc_data, _ = get_convolved_map(
-                        target, map_name, map_dir, map_uc,
-                        target_res_as, ov_hdr, log=LOG,
+                        target,
+                        map_name,
+                        map_dir,
+                        map_uc,
+                        target_res_as,
+                        ov_hdr,
+                        log=LOG,
                     )
                     unc_data = np.where(_out_nan, np.nan, unc_data)
                     unc_hdr = make_clean_header(
@@ -1315,7 +1371,9 @@ def run_fits(
                     fname_unc = os.path.join(
                         folder, f"{target}_{map_name}_{res_suffix}_err.fits"
                     )
-                    fits.writeto(fname_unc, data=unc_data, header=unc_hdr, overwrite=True)
+                    fits.writeto(
+                        fname_unc, data=unc_data, header=unc_hdr, overwrite=True
+                    )
                 except FileNotFoundError:
                     LOG.warning(
                         f"Skipping uncertainty map for {map_name}: "
@@ -1349,7 +1407,11 @@ def run_fits(
                 raw_cube_path = os.path.join(
                     str(row["line_dir"]), target + str(row["line_ext"])
                 )
-                _raw_hdr = fits.getheader(raw_cube_path) if os.path.exists(raw_cube_path) else {}
+                _raw_hdr = (
+                    fits.getheader(raw_cube_path)
+                    if os.path.exists(raw_cube_path)
+                    else {}
+                )
                 _restfrq = _raw_hdr.get("RESTFRQ") or _raw_hdr.get("RESTFREQ")
 
                 cube_data, cube_hdr = get_convolved_ppv_cube(

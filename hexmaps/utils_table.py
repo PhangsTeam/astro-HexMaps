@@ -594,11 +594,11 @@ def parse_ref_line(ref_line_method, line_names):
     # --- classify -------------------------------------------------------
     upper_to_orig = {ln.upper(): ln for ln in line_names}
 
-    combinator     = "OR"
-    use_input      = False
-    use_window     = False
+    combinator = "OR"
+    use_input = False
+    use_window = False
     use_individual = False
-    line_tokens    = []   # resolved line-names or keyword strings
+    line_tokens = []  # resolved line-names or keyword strings
 
     for raw in raw_tokens:
 
@@ -633,12 +633,12 @@ def parse_ref_line(ref_line_method, line_names):
                 raise ValueError(
                     f"parse_ref_line: integer token must be \u2265 1, got '{raw}'."
                 )
-            line_tokens.append(raw)   # store as string for uniform handling
+            line_tokens.append(raw)  # store as string for uniform handling
             continue
 
         # Named line from the cube list?
         if raw in upper_to_orig:
-            line_tokens.append(upper_to_orig[raw])   # preserve original case
+            line_tokens.append(upper_to_orig[raw])  # preserve original case
             continue
 
         # Nothing matched
@@ -650,8 +650,8 @@ def parse_ref_line(ref_line_method, line_names):
 
     # --- resolve line-selection tokens → mask_lines ---------------------
     keyword_found = [t for t in line_tokens if t in ("first", "all", "individual")]
-    named_found   = [t for t in line_tokens if t in line_names]
-    int_found     = []
+    named_found = [t for t in line_tokens if t in line_names]
+    int_found = []
     for t in line_tokens:
         try:
             int_found.append(int(t))
@@ -660,7 +660,7 @@ def parse_ref_line(ref_line_method, line_names):
 
     n_modes = (
         (1 if use_individual else 0)
-        + (1 if "all"   in keyword_found else 0)
+        + (1 if "all" in keyword_found else 0)
         + (1 if "first" in keyword_found else 0)
         + (1 if int_found else 0)
         + (1 if named_found else 0)
@@ -683,7 +683,7 @@ def parse_ref_line(ref_line_method, line_names):
         mask_lines = []
 
     elif use_individual:
-        mask_lines = list(line_names)   # all lines get their own mask
+        mask_lines = list(line_names)  # all lines get their own mask
 
     elif "all" in keyword_found:
         mask_lines = list(line_names)
@@ -696,6 +696,6 @@ def parse_ref_line(ref_line_method, line_names):
         mask_lines = list(line_names[:n])
 
     else:
-        mask_lines = named_found   # original case preserved
+        mask_lines = named_found  # original case preserved
 
     return mask_lines, use_individual, use_input, use_window, combinator

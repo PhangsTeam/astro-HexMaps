@@ -505,7 +505,7 @@ class KeyHandler:
             comment="#",
         )
         # Coerce all numeric columns; blank / "nan" / empty strings → NaN
-        for col in TARGET_COLUMNS[1:]:   # skip "target"
+        for col in TARGET_COLUMNS[1:]:  # skip "target"
             if col in self.target_table.columns:
                 self.target_table[col] = pd.to_numeric(
                     self.target_table[col], errors="coerce"
@@ -631,7 +631,7 @@ class KeyHandler:
                 # ----------------------------------------------------------
                 if section == "mask" and "=" in line:
                     key, _, rest = line.partition("=")
-                    key  = key.strip().lower()
+                    key = key.strip().lower()
                     parts = [p.strip() for p in rest.split(",")]
                     if key == "input_mask" and len(parts) >= 4:
                         input_mask_rows.append(parts)
@@ -658,7 +658,7 @@ class KeyHandler:
                     cube_rows.append(parts[: len(CUBE_COLUMNS)])
 
         # Build DataFrames
-        self.maps  = pd.DataFrame(map_rows,  columns=MAP_COLUMNS)
+        self.maps = pd.DataFrame(map_rows, columns=MAP_COLUMNS)
         self.cubes = pd.DataFrame(cube_rows, columns=CUBE_COLUMNS)
 
         # ------------------------------------------------------------------
@@ -772,9 +772,7 @@ class KeyHandler:
         if resolution == "physical":
             # Convert pc → arcsec using the first target's distance as a
             # placeholder.  run_sampling will recompute per-target correctly.
-            target_res_as = (
-                3600.0 * 180.0 / np.pi * 1e-6 * target_res_config / dist_mpc
-            )
+            target_res_as = 3600.0 * 180.0 / np.pi * 1e-6 * target_res_config / dist_mpc
             # Store the original pc value separately so run_sampling can
             # re-convert it correctly for each target's distance.
             self.meta["target_res_config"] = target_res_config
@@ -799,10 +797,10 @@ class KeyHandler:
         # meta["target_res"] always holds arcseconds from here on.
         # For physical mode the original pc value is preserved in
         # meta["target_res_config"] so run_sampling can re-convert per target.
-        self.meta["target_res"]    = target_res_as
+        self.meta["target_res"] = target_res_as
         self.meta["target_res_pc"] = target_res_pc
-        self.meta["res_suffix"]    = res_suffix
-        
+        self.meta["res_suffix"] = res_suffix
+
     def _load_hfs_key(self):
         """
         Load the optional keys/hfs_lines.txt file.

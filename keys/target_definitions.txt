@@ -5,7 +5,7 @@
 # Spaces and tabs around each comma are ignored; so feel free to align
 # columns with extra whitespace for readability.
 # All targets that may ever be used should be listed here.
-# The targets actually processed are defined in config.txt [sources].
+# The targets actually processed are defined in config.txt [targets].
 #
 # Columns (comma-separated; no header row):
 # [required]

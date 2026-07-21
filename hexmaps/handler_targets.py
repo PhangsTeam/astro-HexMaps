@@ -105,8 +105,16 @@ class TargetHandler:
         row = self.target_table.loc[self._index[target]].to_dict()
         # Fill any missing optional keys with NaN so callers always get a
         # complete dict regardless of how many columns the file had
-        for key in ["incl_deg", "e_incl_deg", "posang_deg", "e_posang_deg",
-                    "r25", "e_r25", "dist_mpc", "e_dist_mpc"]:
+        for key in [
+            "incl_deg",
+            "e_incl_deg",
+            "posang_deg",
+            "e_posang_deg",
+            "r25",
+            "e_r25",
+            "dist_mpc",
+            "e_dist_mpc",
+        ]:
             if key not in row or row[key] is None:
                 row.setdefault(key, float("nan"))
         return row
@@ -120,6 +128,7 @@ class TargetHandler:
         corresponding pipeline steps are skipped with a warning.
         """
         import math
+
         p = self.get_target_params(target)
         return not any(
             math.isnan(float(p.get(k, float("nan"))))

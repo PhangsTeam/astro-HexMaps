@@ -206,10 +206,12 @@ class TestKeyHandler:
         geom.write_text("ngc5194, 202.4696, 47.1952, 8.58\n")
 
         from hexmaps.handler_keys import KeyHandler
+
         kh = KeyHandler(str(conf_path))
         row = kh.target_table.iloc[0]
 
         import math
+
         assert math.isnan(float(row["incl_deg"]))
         assert math.isnan(float(row["posang_deg"]))
         assert math.isnan(float(row["r25"]))
@@ -222,6 +224,7 @@ class TestKeyHandler:
 
         from hexmaps.handler_keys import KeyHandler
         from hexmaps.handler_targets import TargetHandler
+
         kh = KeyHandler(str(conf_path))
         sh = TargetHandler(kh.target_table, kh.targets)
         assert sh.has_galaxy_geometry("ngc5194") is False
@@ -232,6 +235,7 @@ class TestKeyHandler:
 
         from hexmaps.handler_keys import KeyHandler
         from hexmaps.handler_targets import TargetHandler
+
         kh = KeyHandler(str(conf_path))
         sh = TargetHandler(kh.target_table, kh.targets)
         assert sh.has_galaxy_geometry("ngc5194") is True
@@ -658,6 +662,7 @@ class TestStageFits:
         """RA/Dec CTYPE values produce RA / DEC column names."""
         from astropy.io import fits
         from hexmaps.stage_regrid import _get_coord_names
+
         hdr = fits.Header()
         hdr["CTYPE1"] = "RA---TAN"
         hdr["CTYPE2"] = "DEC--TAN"
@@ -671,6 +676,7 @@ class TestStageFits:
         """Galactic CTYPE values produce GLON / GLAT column names."""
         from astropy.io import fits
         from hexmaps.stage_regrid import _get_coord_names
+
         hdr = fits.Header()
         hdr["CTYPE1"] = "GLON-CAR"
         hdr["CTYPE2"] = "GLAT-CAR"

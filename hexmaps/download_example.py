@@ -36,20 +36,19 @@ from pathlib import Path
 
 #: Base URL of the raw data files on GitHub.
 _BASE_URL = (
-    "https://raw.githubusercontent.com/"
-    "lukas-neumann-astro/astro-HexMaps/main/data/"
+    "https://raw.githubusercontent.com/" "lukas-neumann-astro/astro-HexMaps/main/data/"
 )
 
 #: Files that are actually needed to run the example pipeline.
 #: Keys are destination filenames; values are source filenames on GitHub
 #: (same in this case, but kept explicit for future flexibility).
 _EXAMPLE_FILES = {
-    "ngc5194_12co21.fits":              "ngc5194_12co21.fits",
-    "ngc5194_12co10.fits":              "ngc5194_12co10.fits",
-    "ngc5194_spire250_gauss21.fits":    "ngc5194_spire250_gauss21.fits",
-    "ngc5194_spire250_gauss21_unc.fits":"ngc5194_spire250_gauss21_unc.fits",
-    "ngc5194_12co21_ii.fits":           "ngc5194_12co21_ii.fits",
-    "ngc5194_12co21_ii_uc.fits":        "ngc5194_12co21_ii_uc.fits",
+    "ngc5194_12co21.fits": "ngc5194_12co21.fits",
+    "ngc5194_12co10.fits": "ngc5194_12co10.fits",
+    "ngc5194_spire250_gauss21.fits": "ngc5194_spire250_gauss21.fits",
+    "ngc5194_spire250_gauss21_unc.fits": "ngc5194_spire250_gauss21_unc.fits",
+    "ngc5194_12co21_ii.fits": "ngc5194_12co21_ii.fits",
+    "ngc5194_12co21_ii_uc.fits": "ngc5194_12co21_ii_uc.fits",
 }
 
 # Total approximate download size (shown to user before starting)
@@ -59,6 +58,7 @@ _TOTAL_MB = 46
 # ---------------------------------------------------------------------------
 # Progress hook
 # ---------------------------------------------------------------------------
+
 
 def _progress_hook(filename: str):
     """Return a reporthook function that prints a simple progress bar."""
@@ -83,6 +83,7 @@ def _progress_hook(filename: str):
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def download_example_data(workdir: str = ".", force: bool = False) -> None:
     """
@@ -117,20 +118,22 @@ def download_example_data(workdir: str = ".", force: bool = False) -> None:
     for dst_name, src_name in _EXAMPLE_FILES.items():
         dst = data_dir / dst_name
         if dst.exists() and not force:
-            print(f"  [skip]     {dst_name}  (already exists; use --force to overwrite)")
+            print(
+                f"  [skip]     {dst_name}  (already exists; use --force to overwrite)"
+            )
             skipped.append(dst_name)
             continue
 
         url = _BASE_URL + src_name
         try:
             urllib.request.urlretrieve(url, dst, reporthook=_progress_hook(dst_name))
-            sys.stdout.write("\n")   # newline after progress bar
+            sys.stdout.write("\n")  # newline after progress bar
             downloaded.append(dst_name)
         except Exception as exc:
             sys.stdout.write("\n")
             print(f"  [ERROR]    Failed to download {dst_name}: {exc}")
             if dst.exists():
-                dst.unlink()         # remove partial file
+                dst.unlink()  # remove partial file
             failed.append(dst_name)
 
     # ------------------------------------------------------------------
@@ -143,7 +146,9 @@ def download_example_data(workdir: str = ".", force: bool = False) -> None:
             size_kb = (data_dir / f).stat().st_size // 1024
             print(f"[INFO]       {f}  ({size_kb:,} KB)")
     if skipped:
-        print(f"[INFO]     Skipped {len(skipped)} existing file(s) (use --force to overwrite).")
+        print(
+            f"[INFO]     Skipped {len(skipped)} existing file(s) (use --force to overwrite)."
+        )
     if failed:
         print(
             f"[ERROR]    {len(failed)} file(s) could not be downloaded:\n"
@@ -204,7 +209,9 @@ def download_notebook(workdir: str = ".", force: bool = False) -> None:
 
     print(f"[INFO]     Downloading example notebook into:\n[INFO]       {dst}\n")
     try:
-        urllib.request.urlretrieve(_NOTEBOOK_URL, dst, reporthook=_progress_hook(_NOTEBOOK_NAME))
+        urllib.request.urlretrieve(
+            _NOTEBOOK_URL, dst, reporthook=_progress_hook(_NOTEBOOK_NAME)
+        )
         sys.stdout.write("\n")
         size_kb = dst.stat().st_size // 1024
         print(f"[INFO]     Downloaded {_NOTEBOOK_NAME}  ({size_kb:,} KB)")

@@ -349,6 +349,7 @@ def run_sampling(target: str, params: dict, meta: dict) -> dict:
     # res_suffix) — single authoritative implementation shared with the
     # fits stage so both stages always compute the same values.
     from hexmaps.utils_fits import resolve_meta_resolution
+
     resolve_meta_resolution(target, params, meta, ov_hdr=ov_hdr, log=LOG)
     target_res_as = meta["target_res"]
     # Apply configurable FOV erosion to the hex grid footprint so that the
@@ -935,9 +936,7 @@ def run_regrid(target, params, meta, maps, cubes, input_mask, window_mask=None):
         else:
             _mask_label = "SPEC_" + str(input_mask["mask_name"].iloc[0]).upper()
             input_headers[_mask_label] = fits.getheader(mask_file)
-            spec_mask, _ = sample_mask(
-                mask_file, samp_ra, samp_dec, target_hdr=ov_hdr
-            )
+            spec_mask, _ = sample_mask(mask_file, samp_ra, samp_dec, target_hdr=ov_hdr)
             tag = "SPEC_" + str(input_mask["mask_name"].iloc[0]).upper()
             this_data[tag] = Column(
                 spec_mask,
@@ -948,9 +947,9 @@ def run_regrid(target, params, meta, maps, cubes, input_mask, window_mask=None):
 
     # window_mask: fixed velocity-window mask built from the spectral axis
     if window_mask is not None and len(window_mask) > 0:
-        mask_unit  = window_mask["mask_unit"].iloc[0]
+        mask_unit = window_mask["mask_unit"].iloc[0]
         mask_start = float(window_mask["mask_start"].iloc[0]) * au.Unit(mask_unit)
-        mask_end   = float(window_mask["mask_end"].iloc[0])   * au.Unit(mask_unit)
+        mask_end = float(window_mask["mask_end"].iloc[0]) * au.Unit(mask_unit)
         unit_v = ov_hdr.get("CUNIT3", "m/s")
         v0, dv, crpix = ov_hdr["CRVAL3"], ov_hdr["CDELT3"], ov_hdr["CRPIX3"]
         vaxis = (v0 + (np.arange(n_chan) - (crpix - 1)) * dv) * au.Unit(unit_v)
@@ -989,6 +988,7 @@ def run_regrid(target, params, meta, maps, cubes, input_mask, window_mask=None):
     # round-trip reason as config_file. Decode with:
     #   text = table.meta["pipeline_log"].replace("\\n", "\n")
     from hexmaps.logger import logger as _logger
+
     try:
         this_data.meta["pipeline_log"] = _logger.as_text().replace("\n", "\\n")
     except Exception as e:
@@ -1044,8 +1044,8 @@ def _get_coord_names(ov_hdr):
 
     # Map known FITS type codes to friendly names
     _name_map = {
-        "RA":   ("ra",   "Right ascension"),
-        "DEC":  ("dec",  "Declination"),
+        "RA": ("ra", "Right ascension"),
+        "DEC": ("dec", "Declination"),
         "GLON": ("glon", "Galactic longitude"),
         "GLAT": ("glat", "Galactic latitude"),
         "ELON": ("elon", "Ecliptic longitude"),
@@ -1137,33 +1137,30 @@ def _init_table(
     # table is correct for any coordinate system (RA/Dec, galactic, etc.)
     # ------------------------------------------------------------------
     col1_name, col2_name, col1_desc, col2_desc = _get_coord_names(ov_hdr)
-    this_data[col1_name] = Column(
-        samp_ra, unit=au.deg, description=col1_desc
-    )
-    this_data[col2_name] = Column(
-        samp_dec, unit=au.deg, description=col2_desc
-    )
+    this_data[col1_name] = Column(samp_ra, unit=au.deg, description=col1_desc)
+    this_data[col2_name] = Column(samp_dec, unit=au.deg, description=col2_desc)
 
     # Target geometry metadata — only the always-available values
-    this_data.meta["dist_mpc"]  = params.get("dist_mpc", float("nan"))  * au.Mpc
-    this_data.meta["beam_as"]   = target_res_as * au.arcsec
+    this_data.meta["dist_mpc"] = params.get("dist_mpc", float("nan")) * au.Mpc
+    this_data.meta["beam_as"] = target_res_as * au.arcsec
 
     # Optional galaxy geometry (PA, inclination) — stored only when valid
-    incl_deg   = float(params.get("incl_deg",   float("nan")))
+    incl_deg = float(params.get("incl_deg", float("nan")))
     posang_deg = float(params.get("posang_deg", float("nan")))
-    r25        = float(params.get("r25",        float("nan")))
+    r25 = float(params.get("r25", float("nan")))
     import math
+
     has_geom = not any(math.isnan(v) for v in (incl_deg, posang_deg, r25))
 
     if has_geom:
         this_data.meta["posang_deg"] = posang_deg * au.deg
-        this_data.meta["incl_deg"]   = incl_deg   * au.deg
+        this_data.meta["incl_deg"] = incl_deg * au.deg
 
     # Spectral axis metadata (from the overlay cube header)
     unit_v = ov_hdr.get("CUNIT3", "m/s")
     this_data.meta["SPEC_VCHAN0"] = ov_hdr["CRVAL3"] * au.Unit(unit_v)
     this_data.meta["SPEC_DELTAV"] = ov_hdr["CDELT3"] * au.Unit(unit_v)
-    this_data.meta["SPEC_CRPIX"]  = ov_hdr["CRPIX3"]
+    this_data.meta["SPEC_CRPIX"] = ov_hdr["CRPIX3"]
 
     # ------------------------------------------------------------------
     # Deprojected galactocentric coordinates — galaxy targets only.
@@ -1172,7 +1169,7 @@ def _init_table(
     # or any other target type where these parameters are not meaningful.
     # ------------------------------------------------------------------
     if has_geom:
-        ra_ctr  = float(params.get("ra_ctr",  0.0))
+        ra_ctr = float(params.get("ra_ctr", 0.0))
         dec_ctr = float(params.get("dec_ctr", 0.0))
         dist_mpc = float(params.get("dist_mpc", float("nan")))
 
@@ -1235,8 +1232,11 @@ def _fill_checker(fname, samp_ra, samp_dec, maps, cubes):
     # Determine the coordinate column names from the existing table — they
     # depend on the WCS of the overlay cube and may be RA/DEC,
     # GLON/GLAT, etc.
-    coord_cols = [c for c in this_data.colnames
-                  if c.endswith("_deg") and c not in ("incl_deg", "posang_deg")]
+    coord_cols = [
+        c
+        for c in this_data.colnames
+        if c.endswith("_deg") and c not in ("incl_deg", "posang_deg")
+    ]
     if len(coord_cols) >= 2:
         col1_name, col2_name = coord_cols[0], coord_cols[1]
     else:
