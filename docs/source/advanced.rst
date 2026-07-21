@@ -1,3 +1,5 @@
+.. _AdvancedConfig:
+
 Advanced Configuration
 ======================
 
@@ -30,22 +32,6 @@ Grid Parameters
    max_rad         = auto    # "auto" derives radius from overlay footprint
    NAXIS_shuff     = 200     # channels in the shuffled spectrum
    CDELT_SHUFF     = 4000.0  # channel width of shuffled spectrum [m/s]
-
-
-FOV Edge Erosion
-----------------
-
-Pixels near the map boundary are computed from a partial kernel and are
-biased. HexMaps trims these by eroding the footprint:
-
-.. code-block:: ini
-
-   [masking]
-   fov_erosion_beams = 0.5   # trim 0.5 × beam FWHM (default)
-   # fov_erosion_beams = 0   # disable — keep full overlay footprint
-   # fov_erosion_beams = 1.0 # conservative — trim one full beam
-
-The same erosion is applied to the hex-grid, moment maps, and FITS outputs.
 
 
 Reference Line and Mask Combinations
@@ -201,6 +187,22 @@ When ``use_hfs_lines = true``:
   already finds the satellite emission by construction, so no additional HFS
   extension is applied to it. External masks (``input``, ``window``) are
   still extended to the satellite frequencies before combining.
+
+
+FOV Edge Erosion
+----------------
+
+Pixels near the map boundary are computed from a partial kernel and are
+biased. HexMaps trims these by eroding the footprint:
+
+.. code-block:: ini
+
+   [masking]
+   fov_erosion_beams = 0.5   # trim 0.5 × beam FWHM (default)
+   # fov_erosion_beams = 0   # disable — keep full overlay footprint
+   # fov_erosion_beams = 1.0 # conservative — trim one full beam
+
+The same erosion is applied to the hex-grid, moment maps, and FITS outputs.
 
 
 Database Fill Mode
