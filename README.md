@@ -106,8 +106,8 @@ pip install -e ".[dev]"
 hexmaps --init
 
 # Or target a specific directory
-hexmaps --init --workdir ~/my_survey
-cd ~/my_survey
+hexmaps --init --workdir ~/my_project
+cd ~/my_project
 ```
 
 This copies template configuration files into your working directory.
@@ -119,18 +119,18 @@ To try the pipeline immediately with real data, download the bundled
 NGC 5194 example dataset (~46 MB):
 
 ```bash
-hexmaps --download-example --workdir ~/my_survey
+hexmaps --download-example --workdir ~/my_project
 ```
 
 This fetches the input FITS files (CO(2–1) cube, CO(1–0) cube, SPIRE 250 µm
-map and associated files) into `~/my_survey/data/`. The bundled `config.txt`
+map and associated files) into `~/my_project/data/`. The bundled `config.txt`
 is already configured to use these files. Use `--force` to re-download
 existing files.
 
 You can also download the example Jupyter notebook separately:
 
 ```bash
-hexmaps --download-notebook --workdir ~/my_survey
+hexmaps --download-notebook --workdir ~/my_project
 ```
 
 ### 3 — Edit your configuration
