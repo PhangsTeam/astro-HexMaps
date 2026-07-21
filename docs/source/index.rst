@@ -49,7 +49,7 @@ The code has been used in the following peer-reviewed publications:
    :hidden:
 
    installing
-   codeStruct
+   code_structure
    quickstart
 
 .. toctree::
@@ -57,8 +57,10 @@ The code has been used in the following peer-reviewed publications:
    :maxdepth: 2
    :hidden:
 
-   simpleExample
+   config
    advanced
+   target_definitions
+   hfs_lines
 
 .. toctree::
    :caption: Analysis
