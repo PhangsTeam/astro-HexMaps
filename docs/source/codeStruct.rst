@@ -6,9 +6,9 @@ Repository Layout
 
 .. code-block:: text
 
-   astro-HexMaps/                       ← git root (pip install this)
-   ├── hexmaps/                         ← installable Python package
-   │   ├── handler_keys.py              reads & validates config.txt and key files
+   astro-HexMaps/                       ← git repository root (pip install this)
+   ├── hexmaps/                         ← installable package
+   │   ├── handler_keys.py              reads & validates config and key files
    │   ├── handler_targets.py           target geometry lookups
    │   ├── handler_pipeline.py          PipelineHandler: stage orchestration
    │   ├── stage_regrid.py              hex grid + convolution + sampling → .ecsv
@@ -16,22 +16,32 @@ Repository Layout
    │   ├── stage_fits.py                FITS moment maps / cubes / band images
    │   ├── utils_fits.py                FITS/WCS helpers (convolution, reprojection)
    │   ├── utils_table.py               table I/O, spectral shuffle, moments
-   │   ├── hexmaps_analysis.py          HexMapsAnalysis class (installed with package)
+   │   ├── hexmaps_analysis.py          HexMapsAnalysis class (importable as part of package)
    │   ├── logger.py                    centralised stage-labelled logger
    │   ├── init_workdir.py              --init scaffolding
-   │   ├── download_example.py          --download-example / --download-notebook
+   │   ├── download_example.py          --download-example and --download-notebook
    │   ├── cli.py                       hexmaps console-script entry point
    │   ├── test_hexmaps.py              unit and integration tests
-   │   └── templates/                   files copied by --init
+   │   └── templates/                   template files copied by --init
+   │       ├── config.txt
+   │       ├── run_hexmaps.py
+   │       └── keys/
+   │           ├── target_definitions.txt
+   │           └── hfs_lines.txt
    ├── config.txt                       ← example / template config file
    ├── keys/
-   │   ├── target_definitions.txt       ← target geometry table (PHANGS sample)
+   │   ├── target_definitions.txt       ← target geometry table (PHANGS example)
    │   └── hfs_lines.txt                ← hyperfine structure definitions
    ├── analysis/
-   │   └── hexmaps_example.ipynb        example notebook
-   ├── conversion_from_pystructure/     ← migration scripts from PyStructure v4
+   │   └── hexmaps_example.ipynb        example analysis notebook
+   ├── conversion_from_pystructure/     ← migration scripts from old PyStructure
+   │   ├── config_conversion.py
+   │   ├── target_definitions_conversion.py
+   │   └── hfs_lines_conversion.py
    ├── data/                            ← example FITS input (NGC 5194)
-   ├── docs/                            ← this documentation
+   ├── docs/                            ← Sphinx / Read the Docs source
+   ├── images/                          ← README images (logo, screenshot)
+   ├── run_hexmaps.py                   ← example run script
    └── pyproject.toml
 
 
@@ -43,21 +53,21 @@ A typical project directory looks like:
 
 .. code-block:: text
 
-   ~/my_survey/
-   ├── config.txt               ← edit this for every run
+   ~/my_project/
+   ├── config.txt                   ← edit this for every run
    ├── keys/
    │   ├── target_definitions.txt   ← add your targets here
-   │   └── hfs_lines.txt
-   ├── data/                    ← your FITS files
-   ├── output/                  ← .ecsv database written here
-   ├── saved_fits_files/        ← FITS moment maps written here (optional)
-   └── run_hexmaps.py
+   │   └── hfs_lines.txt            ← hyperfine structure definitions (optional)
+   ├── data/                        ← your FITS input files
+   ├── output/                      ← .ecsv database written here
+   ├── saved_fits_files/            ← FITS output files written here (optional)
+   └── run_hexmaps.py               ← script to run the pipeline (optional)
 
 Create this layout in one command:
 
 .. code-block:: console
 
-   $ hexmaps --init --workdir ~/my_survey
+   $ hexmaps --init --workdir ~/my_project
 
 
 How HexMaps Works
@@ -66,23 +76,26 @@ How HexMaps Works
 The pipeline has three stages:
 
 **1 — Regrid**
-   Based on the overlay cube and the target angular resolution, all input
-   maps and cubes are convolved to a common beam and sampled onto a
+   Based on the overlay cube and the target (user-defined) angular and velocity 
+   resolution, all input maps and cubes are convolved to a common beam and smoothed 
+   to the same velocity resolution (for cubes) and then resampled onto a common 
    hexagonal grid. The grid spacing is ``target_res / pixels_per_beam``
    (default: half-beam). The result is an Astropy ``.ecsv`` table with one
    row per hexagonal sightline.
 
 **2 — Products**
-   For each spectral cube, an S/N mask is constructed from the reference
-   line(s) specified in ``ref_line``. Moment maps (mom0, mom1, mom2, Tpeak,
-   rms, equivalent width) are computed for every line. Spectra are also
-   shuffled by the line-of-sight velocity to enable spectral stacking.
+   For each spectral cube, a S/N mask is constructed from either a set of reference
+   line(s), a fixed velocity window or an input mask, specified in ``ref_line``. 
+   Moment maps (mom0, mom1, mom2, Tpeak, rms, equivalent width) are computed for 
+   every line. Spectra are also shuffled by the line-of-sight velocity to enable 
+   spectral stacking.
 
 **3 — FITS** *(optional)*
-   Convolved cubes are reconstructed from the raw inputs. Moment maps are
-   computed directly in PPV space and written as FITS images. This stage
-   runs independently and can be combined with the regrid+products run or
-   executed on its own.
+   The products can also be written as FITS cubes and moment maps. This stages
+   mimmicks the regrid and products stages, but works entirely independently
+   and only on the FITS grids. Moment maps are computed directly in PPV space 
+   and written as FITS images. This stage runs independently and can be 
+   combined with the regrid+products run or executed on its own.
 
 
 Design Philosophy
