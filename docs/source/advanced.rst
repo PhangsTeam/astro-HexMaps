@@ -89,6 +89,15 @@ The external masks (``input_mask``, ``window_mask``) must be defined in the
 Strict and Broad Mask Modes
 -----------------------------
 
+.. warning::
+
+   The ``strict`` and ``broad`` options for ``strict_mask`` are experimental
+   and have not been thoroughly tested across a wide range of datasets.
+   Use the default value (``false``) unless you have a specific reason to
+   apply a coherence filter.  If you do use ``strict`` or ``broad``, treat
+   the results with care and validate them against your expectations for the
+   source structure and noise level.
+
 The ``strict_mask`` key controls an optional post-processing coherence filter:
 
 * ``false`` — no additional spatial filtering (default)

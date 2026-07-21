@@ -54,7 +54,7 @@ The code has been used in the following peer-reviewed publications:
 
 .. toctree::
    :caption: Configuration Guide
-   :maxdepth: 2
+   :maxdepth: 4
    :hidden:
 
    config
