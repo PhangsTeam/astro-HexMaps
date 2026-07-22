@@ -21,7 +21,7 @@ Grid Sampling
 
    [resolution]
    pixels_per_beam = 2
-   max_rad         = auto
+   max_rad = auto
 
 ``pixels_per_beam``
    Number of hex-grid sampling points per beam FWHM.  The grid spacing
@@ -61,8 +61,8 @@ Shuffled Spectrum
 .. code-block:: ini
 
    [resolution]
-   NAXIS_shuff     = 200
-   CDELT_SHUFF     = 4000.0
+   NAXIS_shuff = 200
+   CDELT_SHUFF = 4000.0
 
 ``NAXIS_shuff``
    Number of spectral channels in the shuffled spectrum output.  Each
@@ -150,7 +150,7 @@ Reference Line and Mask Combinations
 .. code-block:: ini
 
    [masking]
-   ref_line             = first
+   ref_line = first
 
 ``ref_line``
    The central masking control.  A comma-separated list of tokens that
@@ -481,10 +481,10 @@ Moment Computation
 .. code-block:: ini
 
    [output]
-   save_cubes    = false
+   save_cubes = false
    save_mom_maps = true
-   save_maps     = true
-   save_mask     = false
+   save_maps = true
+   save_mask = false
 
 ``save_cubes``
    When ``true``, write each convolved PPV cube to a FITS file in

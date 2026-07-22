@@ -2,7 +2,7 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
 project   = 'HexMaps'
-copyright = '2025, Jakob den Brok & Lukas Neumann'
+copyright = '2026, Jakob den Brok & Lukas Neumann'
 author    = 'Jakob den Brok & Lukas Neumann'
 release   = '5.0.0'
 

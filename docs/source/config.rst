@@ -47,11 +47,11 @@ All file and directory locations. Relative paths are resolved relative to
 .. code-block:: ini
 
    [paths]
-   data_dir        = data/
-   out_dir         = output/
+   data_dir = data/
+   out_dir = output/
    folder_savefits = ./saved_fits_files/
-   # geom_file     = keys/target_definitions.txt
-   # hfs_file      = keys/hfs_lines.txt
+   # geom_file = keys/target_definitions.txt
+   # hfs_file = keys/hfs_lines.txt
 
 ``data_dir``
    Directory that contains the input FITS files. The pipeline prepends the
@@ -242,8 +242,8 @@ are processed.
 .. code-block:: ini
 
    [resolution]
-   target_res      = 27.0
-   resolution      = angular
+   target_res = 27.0
+   resolution = angular
 
 ``resolution``
    Controls how ``target_res`` is interpreted and whether the input data
