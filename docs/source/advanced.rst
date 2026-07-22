@@ -29,7 +29,7 @@ Grid Sampling
 
    .. math::
 
-      \Delta\theta = \frac{\text{target\_res}}{\text{pixels\_per\_beam}}
+      \Delta\theta = \frac{\text{target_res}}{\text{pixels_per_beam}}
 
    * ``2`` *(default)* — half-beam spacing.  Adjacent sightlines share
      roughly 50 % of their beam area; a good balance between spatial
