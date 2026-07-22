@@ -81,7 +81,7 @@ reproject  radio_beam  spectral_cube  scikit-image
 ### Installation
 
 ```bash
-# From PyPI (once published)
+# From PyPI
 pip install astro-hexmaps
 
 # From GitHub — latest version
