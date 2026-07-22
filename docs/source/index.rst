@@ -54,11 +54,17 @@ The code has been used in the following peer-reviewed publications:
 
 .. toctree::
    :caption: Configuration Guide
-   :maxdepth: 4
+   :maxdepth: 2
    :hidden:
 
    config
    advanced
+
+.. toctree::
+   :caption: Keys
+   :maxdepth: 2
+   :hidden:
+
    target_definitions
    hfs_lines
 
