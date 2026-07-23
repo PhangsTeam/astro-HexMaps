@@ -54,10 +54,10 @@ docs = [
 hexmaps = "hexmaps.cli:main"
 
 [project.urls]
-Homepage      = "https://github.com/PhangsTeam/HexMaps"
-Repository    = "https://github.com/PhangsTeam/HexMaps"
-Issues        = "https://github.com/PhangsTeam/HexMaps/issues"
-Documentation = "https://hexmaps.readthedocs.io/en/latest/"
+Homepage      = "https://github.com/PhangsTeam//astro-HexMaps"
+Repository    = "https://github.com/PhangsTeam//astro-HexMaps"
+Issues        = "https://github.com/PhangsTeam//astro-HexMaps/issues"
+Documentation = "https://astro-hexmaps.readthedocs.io/en/latest/"
 
 [tool.setuptools.packages.find]
 where   = ["."]
