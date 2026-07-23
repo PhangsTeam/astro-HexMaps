@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "astro-hexmaps"
-version = "5.0.0"
+version = "5.0.1"
 description = "HexMaps: Hexagonal-grid Multi-data Analysis and Processing Software for multi-wavelength astronomical datasets."
 readme = "README.md"
 license = { file = "LICENSE" }
