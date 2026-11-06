@@ -143,7 +143,7 @@ class PipelineLogger:
 
         if self.log_file:
             with open(self.log_file, "a") as f:
-                f.write(f"{timestamp}  {formatted}\n")
+                f.write(f"{formatted}\n")
 
     def info(self, stage: str, message: str):
         """Log an INFO-level message for *stage*."""
