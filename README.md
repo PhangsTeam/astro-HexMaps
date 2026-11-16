@@ -4,7 +4,11 @@
 <br />
 <div align="center">
 
-  <h3 align="center">HexMaps</h3>
+  <!-- version badge reads project.version from pyproject.toml on main -->
+  <h3 align="center">
+    HexMaps
+    <img src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FPhangsTeam%2Fastro-HexMaps%2Fmain%2Fpyproject.toml&query=%24.project.version&label=&prefix=v&color=blue" alt="version" align="center">
+  </h3>
 
   <p align="center">
     Hexagonal-grid Multi-data Analysis and Processing Software
@@ -353,5 +357,5 @@ Neumann et al. (2023), Stuber et al. (2025), and others. See the
 [issues-shield]: https://img.shields.io/github/issues/PhangsTeam/astro-HexMaps.svg?style=for-the-badge
 [issues-url]: https://github.com/PhangsTeam/astro-HexMaps/issues
 [license-shield]: https://img.shields.io/github/license/PhangsTeam/astro-HexMaps.svg?style=for-the-badge
-[license-url]: https://github.com/PhangsTeam/astro-HexMaps/blob/master/LICENSE
+[license-url]: https://github.com/PhangsTeam/astro-HexMaps/blob/main/LICENSE
 [product-screenshot]: images/screenshot.png
