@@ -39,6 +39,7 @@ import pandas as pd
 from pathlib import Path
 
 from hexmaps.logger import get_logger
+from hexmaps.utils_table import parse_mask_expression
 
 LOG = get_logger("Loading")
 
@@ -156,8 +157,29 @@ class KeyHandler:
         self._load_settings()
         self._load_target_definitions()
         self._load_targets_and_tables()
+        self._check_ref_line()
         self._resolve_resolution()
         self._load_hfs_key()
+
+    def _check_ref_line(self):
+        """
+        Parse ref_line against the cube list now, so that a typo in the mask
+        expression fails at configuration time instead of after the regrid
+        stage. Raises ValueError for an invalid expression; warns if it uses
+        'input' or 'window' without the matching row in the mask table.
+        """
+        if self.cubes is None or len(self.cubes) == 0:
+            return  # nothing to check against (validate() reports this)
+        try:
+            spec = parse_mask_expression(
+                self.meta["ref_line"], [str(n) for n in self.cubes["line_name"]]
+            )
+        except ValueError as exc:
+            raise ValueError(f"Invalid [masking] ref_line: {exc}") from None
+        if spec.uses_input and (self.input_mask is None or len(self.input_mask) == 0):
+            LOG.warning("ref_line uses 'input' but no input_mask row is defined.")
+        if spec.uses_window and (self.window_mask is None or len(self.window_mask) == 0):
+            LOG.warning("ref_line uses 'window' but no window_mask row is defined.")
 
     def get_targets(self) -> list:
         """Return the ordered list of target names to be processed."""
@@ -391,7 +413,8 @@ class KeyHandler:
 
         Masking settings
         ----------------
-        ref_line          : str   — which line to use for mask construction. MANDATORY.
+        ref_line          : str   — mask expression, e.g. "(12co21 | 12co10) & window",
+                                    or legacy comma list "first, window, AND". MANDATORY.
         SN_processing     : list  — [low_SN, high_SN] thresholds
         strict_mask       : bool  — apply spatial connectivity filter
         use_fixed_noise_mask: bool — use explicit velocity windows for noise estimation

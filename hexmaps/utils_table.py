@@ -703,3 +703,315 @@ def parse_ref_line(ref_line_method, line_names):
         mask_lines = named_found  # original case preserved
 
     return mask_lines, use_individual, use_input, use_window, combinator
+
+
+# ============================================================================
+# Mask expressions:  ref_line = (12co21 | 12co10) & window
+# ============================================================================
+#
+# A mask expression is parsed into a small tree of tuples:
+#
+#   ("line", name)        S/N mask of one cube line (original case)
+#   ("input",)            external FITS input mask
+#   ("window",)           fixed velocity-window mask
+#   ("self",)             the current line's own S/N mask (``individual``)
+#   ("and", (c1, c2, …))  all children True
+#   ("or",  (c1, c2, …))  any child True
+#   ("not", c)            complement of the child
+#
+# Both pipeline stages evaluate the same tree with evaluate_mask_expression();
+# each stage supplies a resolver that returns its own arrays for the leaves
+# (hex-grid masks in stage_products, PPV cubes in stage_fits).
+
+_EXPR_OPERATOR_CHARS = "&|~()"
+
+
+class MaskSpec:
+    """
+    Parsed ``ref_line`` specification (see :func:`parse_mask_expression`).
+
+    Attributes
+    ----------
+    tree        : tuple — expression tree (node types listed above)
+    individual  : bool  — True if the expression contains ``individual``;
+                  the tree is then evaluated once per cube line, with the
+                  ``("self",)`` leaf standing for that line's own S/N mask.
+    lines       : tuple of str — cube lines referenced by name (incl. the
+                  expansion of first / all / n), in order of first appearance.
+                  Excludes the per-line ``individual`` leaf.
+    uses_input  : bool — the expression references ``input``.
+    uses_window : bool — the expression references ``window``.
+    expression  : str  — canonical text form of the tree, for logging.
+    """
+
+    def __init__(self, tree):
+        self.tree = tree
+        leaves = list(_iter_leaves(tree))
+        self.individual = ("self",) in leaves
+        self.lines = tuple(
+            dict.fromkeys(leaf[1] for leaf in leaves if leaf[0] == "line")
+        )
+        self.uses_input = ("input",) in leaves
+        self.uses_window = ("window",) in leaves
+        self.expression = mask_expression_to_str(tree)
+
+    def __repr__(self):
+        return f"MaskSpec({self.expression!r})"
+
+
+def _iter_leaves(node):
+    kind = node[0]
+    if kind in ("and", "or"):
+        for child in node[1]:
+            yield from _iter_leaves(child)
+    elif kind == "not":
+        yield from _iter_leaves(node[1])
+    else:
+        yield node
+
+
+def _combine(op, children):
+    """Build an n-ary and/or node, flattening nested nodes of the same type."""
+    flat = []
+    for child in children:
+        if child[0] == op:
+            flat.extend(child[1])
+        else:
+            flat.append(child)
+    return flat[0] if len(flat) == 1 else (op, tuple(flat))
+
+
+def mask_expression_to_str(node, _parent=None):
+    """Canonical text form of a mask expression tree, e.g. ``(12co21 | 12co10) & window``."""
+    kind = node[0]
+    if kind == "line":
+        return node[1]
+    if kind == "self":
+        return "individual"
+    if kind in ("input", "window"):
+        return kind
+    if kind == "not":
+        return "~" + mask_expression_to_str(node[1], "not")
+    sep = " & " if kind == "and" else " | "
+    text = sep.join(mask_expression_to_str(c, kind) for c in node[1])
+    # '&' binds tighter than '|': parenthesise an OR inside AND/NOT, and any
+    # n-ary node directly under NOT.
+    if _parent == "not" or (_parent == "and" and kind == "or"):
+        text = f"({text})"
+    return text
+
+
+def _tokenize_mask_expression(text):
+    """Split a mask expression into (kind, text, position) tokens."""
+    symbols = {"&": "AND", "|": "OR", "~": "NOT", "(": "(", ")": ")"}
+    tokens = []
+    i = 0
+    while i < len(text):
+        c = text[i]
+        if c.isspace():
+            i += 1
+        elif c in symbols:
+            tokens.append((symbols[c], c, i))
+            i += 1
+        else:
+            j = i
+            while (
+                j < len(text)
+                and not text[j].isspace()
+                and text[j] not in _EXPR_OPERATOR_CHARS
+            ):
+                j += 1
+            word = text[i:j]
+            kind = word.upper() if word.upper() in ("AND", "OR", "NOT") else "NAME"
+            tokens.append((kind, word, i))
+            i = j
+    return tokens
+
+
+def parse_mask_expression(ref_line, line_names):
+    """
+    Parse the ``ref_line`` config value into a :class:`MaskSpec`.
+
+    Two syntaxes are accepted:
+
+    **Boolean expression** (no commas)::
+
+        ref_line = (12co21 | 12co10) & window
+        ref_line = (12co21 OR 12co10) AND (input OR window)
+        ref_line = 12co21 & ~input            # exclude the input-mask region
+        ref_line = individual & window        # per-line S/N mask AND window
+
+    Operators: ``&`` / ``AND``, ``|`` / ``OR``, ``~`` / ``NOT`` (case-
+    insensitive words), with the usual precedence NOT > AND > OR, and
+    parentheses for grouping. Operands are the same tokens as before:
+    a cube line name (case-insensitive), ``first``, ``all`` (OR of all
+    lines), a positive integer *n* (OR of the first *n* lines), ``input``,
+    ``window`` and ``individual``.
+
+    **Legacy comma list** (see :func:`parse_ref_line`), e.g.
+    ``12co21, input, AND``. It is translated into the equivalent expression:
+    all parts combined with the single combinator, so existing configs give
+    identical masks.
+
+    Raises
+    ------
+    ValueError — empty value, syntax error, unknown operand, or a mix of
+                 both syntaxes.
+    """
+    if not line_names:
+        raise ValueError("parse_mask_expression: line_names is empty.")
+    text = str(ref_line).strip()
+    if not text:
+        raise ValueError("ref_line is empty.")
+
+    # ---- legacy comma syntax -------------------------------------------
+    if "," in text:
+        if any(c in text for c in _EXPR_OPERATOR_CHARS):
+            raise ValueError(
+                f"ref_line '{text}' mixes the comma list syntax with expression "
+                "operators. Use either a comma list (e.g. '12co21, window, AND') "
+                "or an expression (e.g. '(12co21 | 12co10) & window')."
+            )
+        try:
+            mask_lines, individual, use_input, use_window, combinator = parse_ref_line(
+                text, line_names
+            )
+        except ValueError as exc:
+            raise ValueError(
+                f"{exc} (Hint: in a comma list, AND/OR apply to all parts; for "
+                "grouping write an expression without commas, e.g. "
+                "'(12co21 | 12co10) & window'.)"
+            ) from None
+        leaves = [("self",)] if individual else [("line", ln) for ln in mask_lines]
+        leaves += [("input",)] if use_input else []
+        leaves += [("window",)] if use_window else []
+        return MaskSpec(_combine(combinator.lower(), leaves))
+
+    # ---- boolean expression --------------------------------------------
+    upper_to_orig = {str(ln).upper(): str(ln) for ln in line_names}
+    tokens = _tokenize_mask_expression(text)
+    pos = 0
+
+    def _error(msg, tok=None):
+        where = f" at position {tok[2] + 1}" if tok is not None else " at end"
+        return ValueError(f"ref_line '{text}': {msg}{where}.")
+
+    def _peek():
+        return tokens[pos] if pos < len(tokens) else None
+
+    def _leaf(tok):
+        word, up = tok[1], tok[1].upper()
+        if up == "INPUT":
+            return ("input",)
+        if up == "WINDOW":
+            return ("window",)
+        if up == "INDIVIDUAL":
+            return ("self",)
+        if up == "FIRST":
+            return ("line", str(line_names[0]))
+        if up == "ALL":
+            return _combine("or", [("line", str(ln)) for ln in line_names])
+        try:
+            n = int(word)
+        except ValueError:
+            n = None
+        if n is not None:
+            if n < 1:
+                raise _error(f"line count must be >= 1, got '{word}'", tok)
+            return _combine(
+                "or", [("line", str(ln)) for ln in line_names[: min(n, len(line_names))]]
+            )
+        if up in upper_to_orig:
+            return ("line", upper_to_orig[up])
+        raise _error(
+            f"unknown operand '{word}' (expected a cube line name from "
+            f"{list(line_names)}, first, all, a positive integer, input, window "
+            "or individual)",
+            tok,
+        )
+
+    def _parse_or():
+        nonlocal pos
+        children = [_parse_and()]
+        while _peek() is not None and _peek()[0] == "OR":
+            pos += 1
+            children.append(_parse_and())
+        return _combine("or", children)
+
+    def _parse_and():
+        nonlocal pos
+        children = [_parse_not()]
+        while _peek() is not None and _peek()[0] == "AND":
+            pos += 1
+            children.append(_parse_not())
+        return _combine("and", children)
+
+    def _parse_not():
+        nonlocal pos
+        tok = _peek()
+        if tok is not None and tok[0] == "NOT":
+            pos += 1
+            return ("not", _parse_not())
+        return _parse_atom()
+
+    def _parse_atom():
+        nonlocal pos
+        tok = _peek()
+        if tok is None:
+            raise _error("expected an operand")
+        if tok[0] == "(":
+            pos += 1
+            node = _parse_or()
+            close = _peek()
+            if close is None or close[0] != ")":
+                raise _error("missing ')'", close)
+            pos += 1
+            return node
+        if tok[0] == "NAME":
+            pos += 1
+            return _leaf(tok)
+        raise _error(f"expected an operand, found '{tok[1]}'", tok)
+
+    tree = _parse_or()
+    if _peek() is not None:
+        tok = _peek()
+        raise _error(f"unexpected '{tok[1]}' (missing operator?)", tok)
+    return MaskSpec(tree)
+
+
+def evaluate_mask_expression(node, resolve):
+    """
+    Evaluate a mask expression tree.
+
+    Parameters
+    ----------
+    node    : tuple — expression tree (``MaskSpec.tree``)
+    resolve : callable(leaf) -> array-like or None — returns the 0/1 mask
+              array for a leaf node (``("line", name)``, ``("input",)``,
+              ``("window",)`` or ``("self",)``). ``None`` means the mask is
+              unavailable; it is then skipped, i.e. it does not constrain an
+              AND and adds nothing to an OR (the behaviour of the former flat
+              combination when an external mask was missing).
+
+    Returns
+    -------
+    np.ndarray of int (0/1), or None if no operand could be resolved.
+    """
+    kind = node[0]
+    if kind in ("and", "or"):
+        values = [evaluate_mask_expression(c, resolve) for c in node[1]]
+        values = [v for v in values if v is not None]
+        if not values:
+            return None
+        out = values[0].astype(bool)
+        for v in values[1:]:
+            out = (out & v.astype(bool)) if kind == "and" else (out | v.astype(bool))
+        return out.astype(int)
+    if kind == "not":
+        value = evaluate_mask_expression(node[1], resolve)
+        return None if value is None else (~value.astype(bool)).astype(int)
+    value = resolve(node)
+    if value is None:
+        return None
+    value = np.asarray(value.value if hasattr(value, "value") else value)
+    return (value != 0).astype(int)

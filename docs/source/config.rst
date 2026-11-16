@@ -314,18 +314,20 @@ are processed.
    ref_line = first
 
 ``ref_line``
-   Comma-separated list of tokens that controls which masks are built and
-   how they are combined. See the :ref:`AdvancedConfig` page for the full
-   token reference and examples.
+   Boolean expression that controls which masks are built and how they are
+   combined, e.g. ``ref_line = (12co21 | 12co10) & window``. See the
+   :ref:`AdvancedConfig` page for the full reference and examples.
 
    Quick summary:
 
-   * Line-selection: ``first`` *(default)*, ``all``, ``<n>``
-     (first *n* lines), ``<LINE_NAME>`` or ``<LINE1>, <LINE2>, ...``
-     (one or more named lines, case-insensitive), ``individual``
-   * External-mask: ``input``, ``window``
-   * Combinator: ``OR`` *(default)*, ``AND``
+   * Operands: ``first``, ``all``, ``<n>`` (OR of the first *n* lines),
+     ``<LINE_NAME>`` (case-insensitive), ``input``, ``window``,
+     ``individual`` (each line's own mask, applied per line)
+   * Operators: ``|`` / ``OR``, ``&`` / ``AND``, ``~`` / ``NOT``, and
+     parentheses; ``AND`` binds tighter than ``OR``
+   * The older comma list (``12co21, input, AND``) still works; its
+     combinator applies to all parts
 
-   *Default:* ``first``
+   *Required* (no default).
 
 ----

@@ -149,33 +149,31 @@ CDELT_SHUFF = 4000.0
 
 
 [masking]
-# Reference line for mask construction.
-# A comma-separated list of tokens controls which masks are built and
-# how they are combined.
+# Mask expression: which S/N / external masks are built and how they are
+# combined into the velocity-integration mask.
 #
-# Line-selection tokens (S/N mask from cube data):
-#   first        - first cube in the cube list (default)
-#   <LINE_NAME>  - a specific named line (case-insensitive)
-#   all          - all cubes
-#   n            - first n cubes
-#   individual   - one independent mask per cube, applied per-line
+# Operands:
+#   first        - S/N mask of the first cube in the cube list
+#   <LINE_NAME>  - S/N mask of a named line (case-insensitive)
+#   all          - OR of the S/N masks of all cubes
+#   n            - OR of the S/N masks of the first n cubes
+#   input        - external FITS mask (input_mask row in the mask table)
+#   window       - fixed velocity-window mask (window_mask row in the mask table)
+#   individual   - each line's own S/N mask, evaluated and applied per line
 #
-# External-mask tokens (additional masks to include):
-#   input        - external FITS mask (defined as a file row in [mask] table)
-#   window       - fixed velocity-window mask (vel_mask row in [mask] table)
-#
-# Combinator token (how all masks are combined; default: OR):
-#   OR           - include a sightline if it passes ANY mask (default)
-#   AND          - include a sightline only if it passes ALL masks
+# Operators: | or OR, & or AND, ~ or NOT, and ( ) for grouping.
+# AND binds tighter than OR: "a | b & window" means "a | (b & window)".
 #
 # Examples:
-#   ref_line = first                  # S/N mask from first cube
-#   ref_line = 12co21                 # S/N mask from 12co21
-#   ref_line = first, input           # OR of first-cube mask and input mask
-#   ref_line = 12co21, input, AND     # 12co21 mask AND input mask
-#   ref_line = first, window, AND     # first-cube mask AND velocity window
-#   ref_line = all, input, window     # OR of all-cube + input + window masks
-#   ref_line = individual             # one mask per line
+#   ref_line = first                         # S/N mask from first cube
+#   ref_line = 12co21 | 12co10               # OR of two line masks
+#   ref_line = (12co21 | 12co10) & window    # either line, inside the window
+#   ref_line = first & input                 # first-cube mask AND input mask
+#   ref_line = 12co21 & ~input               # 12co21, outside the input mask
+#   ref_line = individual & window           # per-line mask AND window
+#
+# The older comma list still works, with one combinator for all parts:
+#   ref_line = 12co21, input, AND            # = 12co21 & input
 ref_line = first
 
 # Signal-to-noise thresholds for the two-step mask: [low, high]

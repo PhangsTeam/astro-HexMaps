@@ -82,7 +82,12 @@ from hexmaps.utils_fits import (
     resolve_meta_resolution,
 )
 from hexmaps.stage_regrid import _ensure_ms, _get_vaxis
-from hexmaps.utils_table import get_mom_maps, build_noise_mask, parse_ref_line
+from hexmaps.utils_table import (
+    get_mom_maps,
+    build_noise_mask,
+    parse_mask_expression,
+    evaluate_mask_expression,
+)
 
 from hexmaps import __version__ as _HEXMAPS_VERSION
 from hexmaps.logger import get_logger
@@ -808,11 +813,11 @@ def run_moments_ppv(
     Compute and write PPV-native moment maps for every cube of *target*.
 
     Mask construction mirrors stage_products.run_products exactly:
-    parse_ref_line decodes ref_line into mask_lines, use_individual,
-    use_input, use_window, and combinator; individual mode builds one
-    S/N mask per line applied only to that line; combined mode builds a
-    single master mask applied to all lines.  External masks (input,
-    window) are combined with the S/N mask(s) using the combinator.
+    parse_mask_expression turns ref_line into a Boolean expression of line
+    S/N masks and the external masks (input, window), e.g.
+    "(12co21 | 12co10) & window". Individual mode (the expression contains
+    "individual") evaluates it once per line, applied only to that line;
+    combined mode evaluates it once into a master mask applied to all lines.
     """
     # ------------------------------------------------------------------
     # Settings
@@ -890,28 +895,31 @@ def run_moments_ppv(
         )
         cube_data[name] = data * au.Unit(str(row["line_unit"]))
 
-    # ref_line: primary line name for shape fallback
-    line_names_upper = [ln.upper() for ln in line_names]
-    ref_line_str = str(ref_line_method).split(",")[0].strip().upper()
-    ref_line = ref_line_str if ref_line_str in line_names_upper else line_names_upper[0]
-    if ref_line not in cube_data:
-        LOG.warning(
-            f"Nominal reference line {ref_line} not found; "
-            "mask construction will use available cubes via parse_ref_line."
-        )
+    # ------------------------------------------------------------------
+    # Mask construction — mirrors stage_products.run_products: the same
+    # mask expression (utils_table.parse_mask_expression) is evaluated with
+    # a resolver that returns PPV (n_chan, ny, nx) 0/1 cubes for each operand.
+    # ------------------------------------------------------------------
+    spec = parse_mask_expression(ref_line_method, line_names)
+    use_individual = spec.individual
+    LOG.info(
+        f"PPV mask expression: {spec.expression}"
+        + (" (evaluated per line)" if use_individual else "")
+    )
 
-    # ------------------------------------------------------------------
-    # Mask construction — mirrors stage_products.run_products exactly.
-    # ------------------------------------------------------------------
-    mask_lines, use_individual, use_input, use_window, combinator = parse_ref_line(
-        ref_line_method, line_names
+    # Reference line for array shapes: first line in the expression that was
+    # loaded, else the first loaded cube.
+    line_names_upper = [ln.upper() for ln in line_names]
+    ref_line = next(
+        (ln.upper() for ln in spec.lines if ln.upper() in cube_data),
+        next((ln for ln in line_names_upper if ln in cube_data), line_names_upper[0]),
     )
 
     def _load_ppv_ext(kind):
         """Load an external PPV mask ('input' or 'window')."""
         if kind == "window":
             if window_mask is None or len(window_mask) == 0:
-                LOG.error("ref_line contains 'window' but no window_mask is defined.")
+                LOG.error("ref_line uses 'window' but no window_mask is defined; ignoring it.")
                 return None
             mu = window_mask["mask_unit"].iloc[0]
             mst = float(window_mask["mask_start"].iloc[0]) * au.Unit(mu)
@@ -921,7 +929,7 @@ def run_moments_ppv(
             ).astype(int)
         else:  # "input"
             if input_mask is None or len(input_mask) == 0:
-                LOG.error("ref_line contains 'input' but no input_mask is defined.")
+                LOG.error("ref_line uses 'input' but no input_mask is defined; ignoring it.")
                 return None
             mfile = os.path.join(
                 str(input_mask["mask_dir"].iloc[0]),
@@ -932,103 +940,86 @@ def run_moments_ppv(
                 return None
             return external_mask_ppv(mfile, ov_hdr, log=LOG).astype(int)
 
+    # External masks, loaded once
+    ext_ppv = {}
+    if spec.uses_input:
+        ext_ppv["input"] = _load_ppv_ext("input")
+    if spec.uses_window:
+        ext_ppv["window"] = _load_ppv_ext("window")
+
+    # S/N masks per line, built once on demand
+    sn_ppv = {}
+
+    def _sn_ppv(line, strict=False):
+        key = (line.upper(), strict)
+        if key not in sn_ppv:
+            if line.upper() not in cube_data:
+                LOG.warning(f"Mask line {line} not in loaded cubes; skipping it.")
+                sn_ppv[key] = None
+            else:
+                lm = construct_mask_ppv(
+                    cube_data[line.upper()].value, SN_processing
+                ).astype(int)
+                sn_ppv[key] = apply_strict_mask_ppv(lm) if strict else lm
+        return sn_ppv[key]
+
+    def _ext_for_line(kind, line):
+        """External PPV mask, shifted to the HFS satellite frequencies of
+        *line* when use_hfs_lines is set."""
+        ext = ext_ppv.get(kind)
+        if ext is None or not (use_hfs_lines and hfs_data is not None):
+            return ext
+        ext_hfs = build_hfs_mask_ppv(ext.astype(float), line, hfs_data, delta_v_kms)
+        if ext_hfs is None:
+            return ext
+        LOG.info(f"External {kind} mask shifted to HFS frequencies for {line}.")
+        return ext_hfs.astype(int)
+
     ppv_line_masks = {}
 
     # ---- individual mode ------------------------------------------------
+    # The expression is evaluated once per line; "individual" stands for
+    # that line's own S/N mask (strict-filtered if strict_mask is set).
     if use_individual:
-        LOG.info(f"Building individual PPV masks for {', '.join(mask_lines)}.")
-        for line in mask_lines:
-            ln_upper = line.upper()
-            if ln_upper not in cube_data:
+        LOG.info(f"Building individual PPV masks for {', '.join(line_names)}.")
+        for line in line_names:
+            if line.upper() not in cube_data:
                 continue
-            lm = construct_mask_ppv(cube_data[ln_upper].value, SN_processing).astype(
-                int
-            )
-            if strict_mask:
-                lm = apply_strict_mask_ppv(lm)
 
-            # Combine with external masks per-line.
-            # When use_hfs_lines is True and the line has HFS satellite entries,
-            # the external mask is first duplicated and shifted to each satellite
-            # frequency before combining, so it covers the same spectral extent
-            # as the per-line S/N mask.
-            if use_input:
-                ext = _load_ppv_ext("input")
-                if ext is not None:
-                    ext_line = ext
-                    if use_hfs_lines and hfs_data is not None:
-                        ext_hfs = build_hfs_mask_ppv(
-                            ext.astype(float), line, hfs_data, delta_v_kms
-                        )
-                        if ext_hfs is not None:
-                            ext_line = ext_hfs.astype(int)
-                            LOG.info(
-                                f"External input mask shifted to HFS frequencies for {line}."
-                            )
-                    lm = (lm & ext_line) if combinator == "AND" else (lm | ext_line)
-                    LOG.info(f"PPV mask for {line} {combinator} input mask.")
-            if use_window:
-                ext = _load_ppv_ext("window")
-                if ext is not None:
-                    ext_line = ext
-                    if use_hfs_lines and hfs_data is not None:
-                        ext_hfs = build_hfs_mask_ppv(
-                            ext.astype(float), line, hfs_data, delta_v_kms
-                        )
-                        if ext_hfs is not None:
-                            ext_line = ext_hfs.astype(int)
-                            LOG.info(
-                                f"External window mask shifted to HFS frequencies for {line}."
-                            )
-                    lm = (lm & ext_line) if combinator == "AND" else (lm | ext_line)
-                    LOG.info(f"PPV mask for {line} {combinator} window mask.")
+            def _resolve(leaf, line=line):
+                if leaf[0] == "self":
+                    return _sn_ppv(line, strict=strict_mask)
+                if leaf[0] == "line":
+                    return _sn_ppv(leaf[1], strict=strict_mask)
+                return _ext_for_line(leaf[0], line)
 
-            ppv_line_masks[ln_upper] = lm
+            lm = evaluate_mask_expression(spec.tree, _resolve)
+            if lm is None:
+                LOG.warning(f"No PPV mask operand resolved for {line}; using empty mask.")
+                lm = np.zeros(cube_data[line.upper()].shape, dtype=int)
+            ppv_line_masks[line.upper()] = lm
             LOG.info(f"Individual PPV mask built for {line}.")
 
         # Union of per-line masks for edge-erosion and saved combined mask
-        mask = np.zeros_like(next(iter(ppv_line_masks.values())), dtype=int)
+        mask = np.zeros(cube_data[ref_line].shape, dtype=int)
         for lm in ppv_line_masks.values():
             mask = mask | np.asarray(lm).astype(int)
 
     # ---- combined mask mode ---------------------------------------------
     else:
-        mask_parts = []
+        if spec.lines:
+            LOG.info(f"Building PPV velocity mask from: {', '.join(spec.lines)}.")
 
-        if mask_lines:
-            LOG.info(f"Building PPV velocity mask from: {', '.join(mask_lines)}.")
-            for line in mask_lines:
-                ln_upper = line.upper()
-                if ln_upper not in cube_data:
-                    LOG.warning(f"Mask line {line} not in loaded cubes; skipping.")
-                    continue
-                lm = construct_mask_ppv(
-                    cube_data[ln_upper].value, SN_processing
-                ).astype(int)
-                mask_parts.append(lm)
-                LOG.info(f"PPV mask includes {line}.")
+        def _resolve(leaf):
+            if leaf[0] == "line":
+                return _sn_ppv(leaf[1])
+            return ext_ppv.get(leaf[0])  # "input" / "window"
 
-        if use_input:
-            ext = _load_ppv_ext("input")
-            if ext is not None:
-                mask_parts.append(ext)
-                LOG.info("Input mask included in PPV mask.")
-
-        if use_window:
-            ext = _load_ppv_ext("window")
-            if ext is not None:
-                mask_parts.append(ext)
-                LOG.info("Velocity-window mask included in PPV mask.")
-
-        if not mask_parts:
-            LOG.warning("No PPV mask parts resolved; using empty mask.")
-            mask = np.zeros(next(iter(cube_data.values())).shape, dtype=int)
-        else:
-            mask = mask_parts[0].copy()
-            for part in mask_parts[1:]:
-                mask = (mask & part) if combinator == "AND" else (mask | part)
-            if len(mask_parts) > 1:
-                LOG.info(f"Combined {len(mask_parts)} PPV mask(s) with {combinator}.")
+        mask = evaluate_mask_expression(spec.tree, _resolve)
+        if mask is None:
+            LOG.warning("No PPV mask operand resolved; using empty mask.")
+            mask = np.zeros(cube_data[ref_line].shape, dtype=int)
+        LOG.info(f"PPV mask built from: {spec.expression}.")
 
         if strict_mask:
             LOG.info("Applying strict spatial mask filter (PPV).")
