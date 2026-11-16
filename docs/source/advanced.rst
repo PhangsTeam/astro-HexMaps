@@ -150,89 +150,107 @@ Reference Line and Mask Combinations
 .. code-block:: ini
 
    [masking]
-   ref_line = first
+   ref_line = (12co21 | 12co10) & window
 
 ``ref_line``
-   The central masking control.  A comma-separated list of tokens that
-   specifies which masks are built, what external data are included, and
-   how everything is combined.  At least one token must be present.
+   The central masking control: a Boolean expression that says which masks
+   are built and how they are combined. The result is the velocity-integration
+   mask used for the moments of every line (or of each line, in
+   ``individual`` mode).
 
-   **Line-selection tokens** — choose *exactly one*:
-
-   ``first``
-      Build the S/N mask from the first cube in the ``# ---- cubes ----``
-      table.  This is the default when no token is given.  Put your
-      brightest, highest-SNR line first in the cube list.
+   **Operands**
 
    ``<LINE_NAME>``
-      A specific named line (e.g. ``12co21``), matched **case-insensitively**
-      against the cube names — ``12co21``, ``12CO21``, and ``12Co21`` all
-      resolve to the same line.  For two or more named lines, give them as a
-      comma-separated sub-list; their S/N masks are OR-combined into the
-      master mask:
+      The S/N mask of a named cube (e.g. ``12co21``), matched
+      **case-insensitively** against the cube names.
 
-      .. code-block:: ini
-
-         ref_line = 12co21                # single named line
-         ref_line = 12CO21                # same — case does not matter
-         ref_line = 12co21, 12co10        # OR of two named-line masks
-         ref_line = 12co21, 12co10, AND   # AND of two named-line masks
+   ``first``
+      The S/N mask of the first cube in the ``# ---- cubes ----`` table. Put
+      your brightest, highest-S/N line first in the cube list.
 
    ``all``
-      OR-combine the S/N masks from every cube in the list into a single
-      master mask.  Useful when you want any detected line to define the
-      integration window.
+      OR of the S/N masks of every cube (``line1 | line2 | ...``).
 
    ``<n>`` (positive integer)
-      OR-combine the S/N masks from the first *n* cubes in the list
-      (``1`` is equivalent to ``first``).
-
-   ``individual``
-      Build one independent S/N mask per cube and apply each mask only to
-      that line's moment computation.  No master mask is created.  External
-      masks (``input``, ``window``) are combined with each per-line mask
-      individually; when HFS correction is active, the external mask is also
-      extended to the satellite frequencies for that line.
-
-   **External-mask tokens** — zero or more, appended after the line-selection
-   token:
+      OR of the S/N masks of the first *n* cubes (``1`` is ``first``).
 
    ``input``
-      Include the pre-sampled binary mask defined by an ``input_mask`` row
-      in the mask table.  The mask is OR- or AND-combined with the S/N mask
-      according to the combinator.
+      The pre-sampled binary mask defined by an ``input_mask`` row in the mask
+      table.
 
    ``window``
-      Include the fixed velocity-window mask defined by a ``window_mask``
-      row in the mask table.  Channels inside the window are 1, all others 0.
+      The fixed velocity-window mask defined by a ``window_mask`` row in the
+      mask table (channels inside the window are 1, all others 0).
 
-   **Combinator token** — optional, default ``OR``:
+   ``individual``
+      Each cube's *own* S/N mask. An expression containing ``individual`` is
+      evaluated once per cube and applied only to that cube's moments; no
+      master mask is created. When HFS correction is active, ``input`` and
+      ``window`` are shifted to the satellite frequencies of each line.
 
-   ``OR``
-      A sightline/channel is included in the mask if it passes *any* of
-      the selected masks (logical union).  This is the most inclusive option.
+   **Operators** (case-insensitive words or symbols)
 
-   ``AND``
-      A sightline/channel is included only if it passes *all* selected
-      masks (logical intersection).  Use this to restrict integration to
-      the overlap of a bright-line S/N mask and an external spatial mask.
+   ``|`` or ``OR``
+      Union: a sightline/channel passes if it passes *any* operand.
+
+   ``&`` or ``AND``
+      Intersection: it passes only if it passes *all* operands.
+
+   ``~`` or ``NOT``
+      Complement, e.g. to exclude the region of an input mask.
+
+   ``( … )``
+      Grouping. Without parentheses ``NOT`` binds tightest, then ``AND``,
+      then ``OR`` — so ``a | b & window`` means ``a | (b & window)``.
 
    **Examples:**
 
    .. code-block:: ini
 
-      ref_line = first                   # default: S/N mask from first cube
-      ref_line = 12co21                  # S/N mask from 12co21
-      ref_line = all                     # OR of all cube S/N masks
-      ref_line = 2                       # OR of first two cube S/N masks
-      ref_line = individual              # one independent mask per cube
-      ref_line = first, input            # OR of first-cube S/N + input mask
-      ref_line = 12co21, input, AND      # 12co21 S/N AND input mask
-      ref_line = first, window, AND      # first-cube S/N AND velocity window
-      ref_line = all, input, window      # OR of all-cube + input + window
-      ref_line = individual, input, AND  # per-line S/N AND input mask
+      ref_line = first                         # S/N mask from the first cube
+      ref_line = 12co21                        # S/N mask from 12co21
+      ref_line = 12co21 | 12co10               # OR of two line masks
+      ref_line = (12co21 | 12co10) & window    # either line, inside the window
+      ref_line = all & window                  # any line, inside the window
+      ref_line = 2 | input                     # first two lines, or the input mask
+      ref_line = 12co21 & ~input               # 12co21, excluding the input region
+      ref_line = (12co21 OR 12co10) AND (input OR window)
+      ref_line = individual                    # one independent mask per cube
+      ref_line = individual & window           # per-line mask, inside the window
 
-   *Default:* ``first``
+   The expression is checked when the configuration is loaded, so a typo or
+   unbalanced parenthesis fails immediately with the position of the problem.
+   The parsed expression is written to the log. If an ``input`` or
+   ``window`` operand has no matching row in the mask table, a warning is
+   given and the operand is ignored (it neither restricts an ``AND`` nor adds
+   to an ``OR``).
+
+   The shuffled spectra are centred on the mean velocity of the first line
+   named in the expression, or of the first cube if the expression names no
+   line (e.g. ``ref_line = window``).
+
+   **Comma-list syntax (still supported)**
+
+   Older configurations use a comma-separated list: one line selection
+   (``first``, ``all``, ``<n>``, ``individual`` or line names), optional
+   ``input`` / ``window``, and an optional combinator ``AND`` or ``OR``
+   (default ``OR``) that is applied between *all* parts. These give exactly
+   the same masks as before:
+
+   .. code-block:: ini
+
+      ref_line = first, input            # = first | input
+      ref_line = 12co21, input, AND      # = 12co21 & input
+      ref_line = 12co21, 12co10, AND     # = 12co21 & 12co10
+      ref_line = all, input, window      # = all | input | window
+      ref_line = individual, input, AND  # = individual & input
+
+   A comma list cannot group parts — ``12co21, 12co10, window, AND`` means
+   ``12co21 & 12co10 & window``. For "either line, inside the window" use
+   the expression ``(12co21 | 12co10) & window``. The two syntaxes cannot be
+   mixed in one value.
+
+   *Required* (no default).
 
 ----
 
@@ -381,7 +399,7 @@ Hyperfine Structure Lines
 
 The behaviour depends on the masking mode:
 
-**Combined mode** (any ``ref_line`` other than ``individual``):
+**Combined mode** (a ``ref_line`` expression without ``individual``):
    After the master mask is assembled, HexMaps loops over every HFS-capable
    line listed in ``hfs_lines.txt``.  For each satellite component, the
    master mask is shifted by the velocity offset between the satellite and
@@ -392,7 +410,7 @@ The behaviour depends on the masking mode:
    extended to the satellite frequencies as well before being combined with
    the S/N mask.
 
-**Individual mode** (``ref_line = individual``):
+**Individual mode** (a ``ref_line`` expression containing ``individual``):
    Each line's S/N mask is built independently from that line's own cube,
    so the satellite emission is naturally detected if it exceeds the S/N
    threshold.  The S/N mask itself is therefore *not* extended further.

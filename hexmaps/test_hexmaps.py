@@ -1090,6 +1090,229 @@ class TestTableUtils:
 # ---------------------------------------------------------------------------
 
 
+class TestMaskExpression:
+    """Boolean mask expressions in ref_line, e.g. "(12co21 | 12co10) & window"."""
+
+    LINES = ["12co21", "12co10", "13co10"]
+
+    @staticmethod
+    def _random_masks(seed=0, shape=(50, 30)):
+        rng = np.random.RandomState(seed)
+        return {
+            key: (rng.rand(*shape) > 0.5).astype(int)
+            for key in ("12co21", "12co10", "13co10", "input", "window", "self")
+        }
+
+    @staticmethod
+    def _resolver(masks):
+        def resolve(leaf):
+            return masks[leaf[1]] if leaf[0] == "line" else masks[leaf[0]]
+
+        return resolve
+
+    def _eval(self, text, masks):
+        from hexmaps.utils_table import parse_mask_expression, evaluate_mask_expression
+
+        spec = parse_mask_expression(text, self.LINES)
+        return evaluate_mask_expression(spec.tree, self._resolver(masks)).astype(bool)
+
+    def test_or_then_and_with_parentheses(self):
+        m = {k: v.astype(bool) for k, v in self._random_masks().items()}
+        got = self._eval("(12co21 | 12co10) & window", m)
+        assert np.array_equal(got, (m["12co21"] | m["12co10"]) & m["window"])
+
+    def test_and_binds_tighter_than_or(self):
+        m = {k: v.astype(bool) for k, v in self._random_masks(1).items()}
+        got = self._eval("12co21 | 12co10 & window", m)
+        assert np.array_equal(got, m["12co21"] | (m["12co10"] & m["window"]))
+
+    def test_word_operators_case_insensitive_and_not(self):
+        m = {k: v.astype(bool) for k, v in self._random_masks(2).items()}
+        got = self._eval("(12CO21 or 12co10) AND not input", m)
+        assert np.array_equal(got, (m["12co21"] | m["12co10"]) & ~m["input"])
+        got = self._eval("~(12co21 | window)", m)
+        assert np.array_equal(got, ~(m["12co21"] | m["window"]))
+
+    def test_keyword_operands_expand_to_lines(self):
+        from hexmaps.utils_table import parse_mask_expression
+
+        assert parse_mask_expression("first & window", self.LINES).expression == (
+            "12co21 & window"
+        )
+        assert parse_mask_expression("all", self.LINES).expression == (
+            "12co21 | 12co10 | 13co10"
+        )
+        spec = parse_mask_expression("2 & input", self.LINES)
+        assert spec.expression == "(12co21 | 12co10) & input"
+        assert spec.lines == ("12co21", "12co10")
+        assert spec.uses_input and not spec.uses_window and not spec.individual
+
+    def test_individual_marks_per_line_mode(self):
+        from hexmaps.utils_table import parse_mask_expression
+
+        spec = parse_mask_expression("individual & window", self.LINES)
+        assert spec.individual and spec.uses_window and spec.lines == ()
+
+    @pytest.mark.parametrize(
+        "legacy",
+        [
+            "first",
+            "12co21, 12co10",
+            "12co21, 12co10, AND",
+            "first, input",
+            "12co21, input, AND",
+            "first, window, AND",
+            "all, input, window",
+            "2, window, AND",
+            "individual, input, AND",
+            "individual, input, window",
+            "input",
+            "window, input, AND",
+        ],
+    )
+    def test_legacy_comma_syntax_unchanged(self, legacy):
+        """The old comma list must give exactly the old flat combination:
+        all parts folded with the single combinator."""
+        from hexmaps.utils_table import parse_ref_line
+
+        m = self._random_masks(3)
+        mask_lines, individual, use_input, use_window, comb = parse_ref_line(
+            legacy, self.LINES
+        )
+        parts = [m["self"]] if individual else [m[ln] for ln in mask_lines]
+        parts += [m["input"]] if use_input else []
+        parts += [m["window"]] if use_window else []
+        expected = parts[0].astype(bool)
+        for p in parts[1:]:
+            expected = (expected & p.astype(bool)) if comb == "AND" else (expected | p.astype(bool))
+        assert np.array_equal(self._eval(legacy, m), expected)
+
+    def test_unavailable_operand_is_skipped(self):
+        """A missing external mask neither constrains an AND nor adds to an OR."""
+        from hexmaps.utils_table import parse_mask_expression, evaluate_mask_expression
+
+        m = self._random_masks(4)
+        resolve = lambda leaf: None if leaf[0] == "window" else self._resolver(m)(leaf)
+        spec = parse_mask_expression("(12co21 | 12co10) & window", self.LINES)
+        got = evaluate_mask_expression(spec.tree, resolve)
+        assert np.array_equal(got, m["12co21"] | m["12co10"])
+        spec = parse_mask_expression("window", self.LINES)
+        assert evaluate_mask_expression(spec.tree, resolve) is None
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "",
+            "(12co21 | 12co10",
+            "12co21 | 12co10)",
+            "12co21 &",
+            "& window",
+            "12co21 12co10",
+            "()",
+            "co32 & window",
+            "0 & window",
+            "12co21, (window)",
+            "12co21 OR 12co10, window",
+        ],
+    )
+    def test_invalid_expressions_raise(self, bad):
+        from hexmaps.utils_table import parse_mask_expression
+
+        with pytest.raises(ValueError):
+            parse_mask_expression(bad, self.LINES)
+
+    def test_keyhandler_rejects_invalid_ref_line_at_load(self, tmp_path):
+        from hexmaps.handler_keys import KeyHandler
+
+        conf = TestKeyHandler()._write_minimal_config(tmp_path)
+        conf.write_text(conf.read_text().replace("ref_line = first", "ref_line = (12co21 &"))
+        with pytest.raises(ValueError, match="ref_line"):
+            KeyHandler(str(conf)).load()
+
+    # -- products stage ---------------------------------------------------
+
+    def _products_table(self, tmp_path, ref_line, window=True, input_1d=False):
+        """
+        Run stage_products on a synthetic table: co10 emits at channel 15 in
+        points 0-9, co21 at channel 40 in points 10-19, both at channel 28 in
+        points 20-29; the velocity window spans channels 10-32.
+        """
+        import astropy.units as au
+        import pandas as pd
+        from astropy.table import Table, Column
+        from hexmaps.stage_products import run_products
+
+        rng = np.random.RandomState(5)
+        n_pts, n_chan = 30, 60
+        v = np.arange(n_chan)
+
+        def line(c):
+            return 15 * np.exp(-0.5 * ((v - c) / 2.0) ** 2)
+
+        co10 = rng.normal(0, 1, (n_pts, n_chan))
+        co21 = rng.normal(0, 1, (n_pts, n_chan))
+        co10[:10] += line(15)
+        co21[10:20] += line(40)
+        co10[20:] += line(28)
+        co21[20:] += line(28)
+        win = ((v >= 10) & (v <= 32)).astype(int)
+
+        t = Table()
+        t["SPEC_CO10"] = Column(co10, unit=au.K)
+        t["SPEC_CO21"] = Column(co21, unit=au.K)
+        t["SPEC_WIN"] = Column(np.tile(win, (n_pts, 1)))
+        inp = np.zeros(n_pts, dtype=int)
+        inp[:5] = 1
+        t["SPEC_INP"] = Column(inp if input_1d else np.tile(inp[:, None], (1, n_chan)))
+        t.meta.update(SPEC_VCHAN0=0 * au.km / au.s, SPEC_DELTAV=1 * au.km / au.s, SPEC_CRPIX=1)
+        fname = tmp_path / "t.ecsv"
+        t.write(fname)
+
+        cubes = pd.DataFrame(
+            {"line_name": ["co10", "co21"], "line_desc": ["a", "b"], "map_ext": ["", ""]}
+        )
+        wm = pd.DataFrame(
+            {"mask_name": ["win"], "mask_start": [10], "mask_end": [32], "mask_unit": ["km/s"]}
+        )
+        im = pd.DataFrame({"mask_name": ["inp"], "mask_ext": ["_inp.fits"], "mask_dir": ["."]})
+        meta = {"ref_line": ref_line, "SN_processing": [2, 4], "NAXIS_shuff": 60, "CDELT_SHUFF": 1000.0}
+        run_products("t", str(fname), meta, cubes, im, None, window_mask=wm if window else None)
+        return Table.read(fname), win, inp
+
+    def test_products_or_of_lines_and_window(self, tmp_path):
+        r, win, _ = self._products_table(tmp_path, "(co10 | co21) & window")
+        m = np.asarray(r["SPEC_MASK"]).astype(int)
+        m10 = np.asarray(r["SPEC_MASK_CO10"]).astype(int)
+        m21 = np.asarray(r["SPEC_MASK_CO21"]).astype(int)
+        assert np.array_equal(m, (m10 | m21) & win[None, :])
+        assert m[:10].sum() > 0  # co10 line inside the window is kept
+        assert m[10:20].sum() == 0  # co21 line at channel 40 lies outside the window
+        assert m21[10:20].sum() > 0  # ... although its own S/N mask found it
+
+    def test_products_legacy_and_is_and_of_everything(self, tmp_path):
+        r, win, _ = self._products_table(tmp_path, "co10, co21, window, AND")
+        m = np.asarray(r["SPEC_MASK"]).astype(int)
+        m10 = np.asarray(r["SPEC_MASK_CO10"]).astype(int)
+        m21 = np.asarray(r["SPEC_MASK_CO21"]).astype(int)
+        assert np.array_equal(m, m10 & m21 & win[None, :])
+
+    def test_products_individual_and_window(self, tmp_path):
+        from hexmaps.stage_products import construct_mask
+
+        r, win, _ = self._products_table(tmp_path, "individual & window")
+        for line in ("co10", "co21"):
+            sn, _, _ = construct_mask(line, r, [2, 4])
+            expected = np.asarray(sn.value).astype(int) & win[None, :]
+            assert np.array_equal(np.asarray(r[f"SPEC_MASK_{line.upper()}"]).astype(int), expected)
+
+    def test_products_accepts_2d_input_mask(self, tmp_path):
+        """A sky-only input mask (one value per point) applies to every channel."""
+        r, _, inp = self._products_table(tmp_path, "co10 & input", input_1d=True)
+        m = np.asarray(r["SPEC_MASK"]).astype(int)
+        m10 = np.asarray(r["SPEC_MASK_CO10"]).astype(int)
+        assert np.array_equal(m, m10 & inp[:, None])
+
+
 class TestInitWorkdir:
 
     def test_creates_expected_files(self, tmp_path):

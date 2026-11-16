@@ -6,10 +6,11 @@ spectra, and writes the result back to the same file.
 
 Processing steps
 ----------------
-1. Determine the reference line for mask construction (first cube by default,
-   or the line named in config_key ref_line).
-2. Build or load the velocity-integration mask.
-3. Optionally combine masks from multiple lines or from an HI map.
+1. Parse ref_line into a mask expression of line S/N masks and external
+   masks, e.g. "(12co21 | 12co10) & window" (utils_table.parse_mask_expression).
+2. Build the S/N masks of the lines it names and load the external masks.
+3. Evaluate the expression into the velocity-integration mask (once, or
+   once per line in individual mode).
 4. Optionally apply a spatial connectivity (strict) filter.
 5. For each spectral line:
    a. Compute moment maps (mom0/1/2, Tpeak, rms, EW) within the mask.
@@ -44,7 +45,8 @@ EW_<LINE>     : equivalent width (∑ T dv / Tpeak / sqrt(2π))
 EEW_<LINE>    : uncertainty on EW
 SPEC_SHUFF_<LINE>  : shuffled spectrum (n_pts × n_shuff_chan)
 SPEC_MASK          : combined velocity-integration mask (n_pts × n_chan)
-SPEC_MASK_<LINE>   : per-line mask (stored if ref_line != "first")
+SPEC_MASK_<LINE>   : per-line mask: the S/N mask of each line named in ref_line,
+                     the HFS-extended mask, or (individual mode) the line's own mask
 SPEC_VAXIS         : velocity axis in km/s (n_pts × n_chan)
 SPEC_VAXIS_SHUFF   : shuffled velocity axis in km/s (n_pts × n_shuff_chan)
 """
@@ -55,7 +57,13 @@ from astropy import units as au
 from astropy.stats import median_absolute_deviation
 from astropy.table import Table, Column
 
-from hexmaps.utils_table import shuffle, get_mom_maps, build_noise_mask, parse_ref_line
+from hexmaps.utils_table import (
+    shuffle,
+    get_mom_maps,
+    build_noise_mask,
+    parse_mask_expression,
+    evaluate_mask_expression,
+)
 
 from hexmaps.logger import get_logger
 
@@ -336,24 +344,23 @@ def run_products(
     line_names = [str(l) for l in cubes["line_name"]]
     n_lines = len(line_names)
 
-    # ref_line: the first line in the list (used for vmean / shuffling fallback)
-    ref_line = (
-        ref_line_method
-        if isinstance(ref_line_method, str) and ref_line_method in line_names
-        else line_names[0]
+    # ------------------------------------------------------------------
+    # Parse ref_line into a mask expression (see utils_table.parse_mask_expression):
+    #   e.g. "(12co21 | 12co10) & window", or the legacy "12co21, input, AND".
+    # The expression tree is evaluated with a resolver that returns the
+    # hex-grid (n_pts, n_chan) 0/1 array for each operand.
+    # ------------------------------------------------------------------
+    spec = parse_mask_expression(ref_line_method, line_names)
+    use_individual = spec.individual
+    LOG.info(
+        f"Mask expression: {spec.expression}"
+        + (" (evaluated per line)" if use_individual else "")
     )
 
-    n_chan = np.shape(this_data[f"SPEC_{ref_line.upper()}"])[1]
-    #   mask_lines  — cube lines for S/N masking
-    #   use_input   — whether to include the external input mask
-    #   use_window  — whether to include the fixed velocity-window mask
-    #   combinator  — "AND" or "OR" (default "OR")
-    #
-    # All requested masks are collected and combined with the combinator.
-    # ------------------------------------------------------------------
-    mask_lines, use_individual, use_input, use_window, combinator = parse_ref_line(
-        ref_line_method, line_names
-    )
+    # Reference line: first line named in the expression, else the first cube
+    # (used for the array shape and the shuffle reference velocity).
+    ref_line = spec.lines[0] if spec.lines else line_names[0]
+    n_pts, n_chan = np.shape(this_data[f"SPEC_{ref_line.upper()}"])
 
     # Helper: fetch the external mask array from the table column
     def _get_ext_col(tag):
@@ -363,7 +370,11 @@ def run_products(
             return None
         ext = this_data[tag]
         del this_data[tag]
-        return np.asarray(ext.value if hasattr(ext, "value") else ext).astype(int)
+        arr = np.asarray(ext.value if hasattr(ext, "value") else ext).astype(int)
+        if arr.ndim == 1:
+            # 2D (sky-only) mask sampled to one value per point: same mask in every channel
+            arr = np.repeat(arr[:, None], n_chan, axis=1)
+        return arr
 
     def _input_tag():
         return (
@@ -379,164 +390,104 @@ def run_products(
             else None
         )
 
+    # External masks (pre-sampled onto the hex grid by stage_regrid)
+    ext_masks = {}
+    if spec.uses_input:
+        tag = _input_tag()
+        if tag is None:
+            LOG.error("ref_line uses 'input' but no input_mask is defined; ignoring it.")
+        else:
+            ext_masks["input"] = _get_ext_col(tag)
+    if spec.uses_window:
+        tag = _window_tag()
+        if tag is None:
+            LOG.error("ref_line uses 'window' but no window_mask is defined; ignoring it.")
+        else:
+            ext_masks["window"] = _get_ext_col(tag)
+
+    # S/N masks per line, built once on demand: line -> (mask, vmean)
+    sn_masks = {}
+
+    def _sn_mask(line):
+        if line not in sn_masks:
+            m, vmean, _ = construct_mask(line, this_data, SN_processing)
+            sn_masks[line] = (
+                np.asarray(m.value if hasattr(m, "value") else m).astype(int),
+                vmean,
+            )
+        return sn_masks[line]
+
+    def _ext_for_line(kind, line):
+        """External mask, shifted to the HFS satellite frequencies of *line*
+        when use_hfs_lines is set, so it covers the same spectral extent as
+        the per-line S/N mask."""
+        ext = ext_masks.get(kind)
+        if ext is None or not (use_hfs_lines and hfs_data is not None):
+            return ext
+        ext_hfs = _build_hfs_mask(ext.astype(float), line, hfs_data, this_data)
+        if ext_hfs is None:
+            return ext
+        LOG.info(f"External {kind} mask shifted to HFS frequencies for {line}.")
+        return np.asarray(ext_hfs.value if hasattr(ext_hfs, "value") else ext_hfs).astype(
+            int
+        )
+
+    # Shuffle reference velocity: from the first line in the expression, or the
+    # first cube if the expression names no line (e.g. "input" or "window" only).
+    if not spec.lines and not use_individual:
+        LOG.info(
+            f"No cube line in the mask expression; using {line_names[0]} "
+            "for the shuffle reference velocity."
+        )
+    ref_line_vmean = _sn_mask(ref_line)[1]
+
     # ---- individual mode ------------------------------------------------
+    # The expression is evaluated once per line; "individual" stands for
+    # that line's own S/N mask, external masks are HFS-shifted per line.
     if use_individual:
-        LOG.info(f"Building individual masks for {', '.join(mask_lines)}.")
-        ref_line_vmean = None
-        for line in mask_lines:
-            mask_line, vmean_line, _ = construct_mask(line, this_data, SN_processing)
+        LOG.info(f"Building individual masks for {', '.join(line_names)}.")
+        for line in line_names:
+
+            def _resolve(leaf, line=line):
+                if leaf[0] == "self":
+                    return _sn_mask(line)[0]
+                if leaf[0] == "line":
+                    return _sn_mask(leaf[1])[0]
+                return _ext_for_line(leaf[0], line)
+
+            mask_line = evaluate_mask_expression(spec.tree, _resolve)
+            if mask_line is None:
+                LOG.warning(f"No mask operand resolved for {line}; using empty mask.")
+                mask_line = np.zeros((n_pts, n_chan), dtype=int)
             this_data[f"SPEC_MASK_{line.upper()}"] = Column(
                 mask_line,
                 unit=au.dimensionless_unscaled,
                 description=f"Velocity-integration mask for {line}",
             )
-            if ref_line_vmean is None:
-                ref_line_vmean = vmean_line
-
-        # Apply external masks per-line if requested.
-        # When use_hfs_lines is True and a line has HFS satellite entries,
-        # the external mask is first duplicated and shifted to each satellite
-        # frequency before combining, so the external mask covers the same
-        # spectral extent as the per-line S/N mask.
-        if use_input:
-            ext_tag = _input_tag()
-            if ext_tag is None:
-                LOG.error("ref_line contains 'input' but no input_mask is defined.")
-            else:
-                ext_arr = _get_ext_col(ext_tag)
-                if ext_arr is not None:
-                    for line in mask_lines:
-                        ext_line = ext_arr
-                        if use_hfs_lines and hfs_data is not None:
-                            ext_hfs = _build_hfs_mask(
-                                ext_arr.astype(float), line, hfs_data, this_data
-                            )
-                            if ext_hfs is not None:
-                                ext_line = np.asarray(
-                                    ext_hfs.value
-                                    if hasattr(ext_hfs, "value")
-                                    else ext_hfs
-                                ).astype(int)
-                                LOG.info(
-                                    f"External input mask shifted to HFS frequencies for {line}."
-                                )
-                        mask_line = this_data[f"SPEC_MASK_{line.upper()}"].astype(int)
-                        mask_line = (
-                            (mask_line & ext_line)
-                            if combinator == "AND"
-                            else (mask_line | ext_line)
-                        ) * au.dimensionless_unscaled
-                        this_data[f"SPEC_MASK_{line.upper()}"] = Column(
-                            mask_line,
-                            unit=au.dimensionless_unscaled,
-                            description=f"Velocity-integration mask for {line}",
-                        )
-                    LOG.info(f"Individual masks {combinator} input mask.")
-        if use_window:
-            ext_tag = _window_tag()
-            if ext_tag is None:
-                LOG.error("ref_line contains 'window' but no window_mask is defined.")
-            else:
-                ext_arr = _get_ext_col(ext_tag)
-                if ext_arr is not None:
-                    for line in mask_lines:
-                        ext_line = ext_arr
-                        if use_hfs_lines and hfs_data is not None:
-                            ext_hfs = _build_hfs_mask(
-                                ext_arr.astype(float), line, hfs_data, this_data
-                            )
-                            if ext_hfs is not None:
-                                ext_line = np.asarray(
-                                    ext_hfs.value
-                                    if hasattr(ext_hfs, "value")
-                                    else ext_hfs
-                                ).astype(int)
-                                LOG.info(
-                                    f"External window mask shifted to HFS frequencies for {line}."
-                                )
-                        mask_line = this_data[f"SPEC_MASK_{line.upper()}"].astype(int)
-                        mask_line = (
-                            (mask_line & ext_line)
-                            if combinator == "AND"
-                            else (mask_line | ext_line)
-                        ) * au.dimensionless_unscaled
-                        this_data[f"SPEC_MASK_{line.upper()}"] = Column(
-                            mask_line,
-                            unit=au.dimensionless_unscaled,
-                            description=f"Velocity-integration mask for {line}",
-                        )
-                    LOG.info(f"Individual masks {combinator} velocity-window mask.")
 
     # ---- combined mask mode ---------------------------------------------
     else:
-        mask_parts = []
+        # Per-line S/N masks of the lines named in the expression
+        if spec.lines:
+            LOG.info(f"Building velocity mask from: {', '.join(spec.lines)}.")
+        for line in spec.lines:
+            this_data[f"SPEC_MASK_{line.upper()}"] = Column(
+                _sn_mask(line)[0],
+                unit=au.dimensionless_unscaled,
+                description=f"Velocity-integration mask for {line}",
+            )
 
-        # S/N masks from cube lines
-        ref_line_vmean = None
-        if mask_lines:
-            LOG.info(f"Building velocity mask from: {', '.join(mask_lines)}.")
-            for line in mask_lines:
-                mask_line, vmean_line, _ = construct_mask(
-                    line, this_data, SN_processing
-                )
-                this_data[f"SPEC_MASK_{line.upper()}"] = Column(
-                    mask_line,
-                    unit=au.dimensionless_unscaled,
-                    description=f"Velocity-integration mask for {line}",
-                )
-                if ref_line_vmean is None:
-                    ref_line_vmean = vmean_line
-                mask_parts.append(
-                    np.asarray(
-                        mask_line.value if hasattr(mask_line, "value") else mask_line
-                    ).astype(int)
-                )
+        def _resolve(leaf):
+            if leaf[0] == "line":
+                return _sn_mask(leaf[1])[0]
+            return ext_masks.get(leaf[0])  # "input" / "window"
 
-        # External FITS input mask (pre-sampled onto hex grid by stage_regrid).
-        # When use_hfs_lines is active, the external mask is first extended to
-        # cover the HFS satellite frequencies of every HFS-capable line, then
-        # combined into mask_parts so the master mask covers all components.
-        if use_input:
-            ext_tag = _input_tag()
-            if ext_tag is None:
-                LOG.error("ref_line contains 'input' but no input_mask is defined.")
-            else:
-                ext_arr = _get_ext_col(ext_tag)
-                if ext_arr is not None:
-                    mask_parts.append(ext_arr)
-                    LOG.info("Input mask included.")
-
-        # Fixed velocity-window mask (pre-sampled onto hex grid by stage_regrid).
-        # Same HFS extension logic as for the input mask above.
-        if use_window:
-            ext_tag = _window_tag()
-            if ext_tag is None:
-                LOG.error("ref_line contains 'window' but no window_mask is defined.")
-            else:
-                ext_arr = _get_ext_col(ext_tag)
-                if ext_arr is not None:
-                    mask_parts.append(ext_arr)
-                    LOG.info("Velocity-window mask included.")
-                    # Use ref_line vmean for shuffling when only window provided
-                    if ref_line_vmean is None:
-                        _, ref_line_vmean, _ = construct_mask(
-                            line_names[0], this_data, SN_processing
-                        )
-
-        # Combine all parts with the combinator
-        if not mask_parts:
-            LOG.warning("No mask parts resolved; using empty mask.")
-            n_pts, n_chan = np.shape(this_data[f"SPEC_{ref_line.upper()}"])
-            mask = np.zeros((n_pts, n_chan), dtype=int) * au.dimensionless_unscaled
-        else:
-            combined = mask_parts[0].copy()
-            for part in mask_parts[1:]:
-                combined = (
-                    (combined & part) if combinator == "AND" else (combined | part)
-                )
-            mask = combined * au.dimensionless_unscaled
-            if len(mask_parts) > 1:
-                LOG.info(f"Combined {len(mask_parts)} mask(s) with {combinator}.")
+        combined = evaluate_mask_expression(spec.tree, _resolve)
+        if combined is None:
+            LOG.warning("No mask operand resolved; using empty mask.")
+            combined = np.zeros((n_pts, n_chan), dtype=int)
+        mask = combined * au.dimensionless_unscaled
+        LOG.info(f"Mask built from: {spec.expression}.")
 
         # Optional strict spatial connectivity filter
         if strict_mask:
