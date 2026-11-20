@@ -1313,6 +1313,152 @@ class TestMaskExpression:
         assert np.array_equal(m, m10 & inp[:, None])
 
 
+class TestBinning:
+    """Binned trends (utils_binning) and the HexMapsAnalysis wrappers."""
+
+    def test_bin_edges_include_every_point_once(self):
+        from hexmaps.utils_binning import assign_bins
+
+        edges = np.array([0.0, 1.0, 2.0, 3.0])
+        x = np.array([0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 3.5, -0.1, np.nan])
+        # (e_i, e_i+1], first bin also includes e_0; outside / NaN -> -1
+        assert assign_bins(x, edges).tolist() == [0, 0, 0, 1, 1, 2, -1, -1, -1]
+
+    def test_bin_uncertainty_formula(self):
+        from hexmaps.utils_binning import bin_uncertainty
+
+        err = np.array([1.0, 2.0, 2.0, np.nan])  # NaN ignored -> n = 3
+        mean_err = np.sqrt((1 + 4 + 4) / 3) / np.sqrt(3 / 1.5)
+        assert np.isclose(bin_uncertainty(err, 1.5, "mean"), mean_err)
+        assert np.isclose(bin_uncertainty(err, 1.5, "median"), 1.25 * mean_err)
+        assert np.isnan(bin_uncertainty([np.nan], 1.0, "mean"))
+
+    def test_bin_trend_values(self):
+        import astropy.units as au
+        from hexmaps.utils_binning import bin_trend
+
+        x = np.array([0.5, 1.5, 1.6, 2.5, 2.6, 2.7, 5.0]) * au.kpc
+        y = np.array([1.0, 2.0, 4.0, -1.0, 3.0, 5.0, 9.0]) * au.K
+        y_err = np.full(7, 2.0)
+        tab = bin_trend(x, y, y_err=y_err, bins=[0, 1, 2, 3, 4], oversample=1, method="median")
+        assert list(tab["n"]) == [1, 2, 3]  # 5.0 is outside, empty bin [3, 4] dropped
+        assert np.allclose(tab["y"], [1.0, 3.0, 3.0])
+        assert np.allclose(tab["x"], [0.5, 1.55, 2.6])
+        assert np.allclose(tab["y_err"], 1.25 * 2.0 / np.sqrt([1, 2, 3]))
+        assert np.allclose(tab["snr"], tab["y"] / tab["y_err"])
+        assert list(tab["n_pos"]) == [1, 2, 2] and list(tab["n_neg"]) == [0, 0, 1]
+        assert np.allclose(tab["y_p84"][2], np.percentile([-1.0, 3.0, 5.0], 84.1))
+        assert tab["x"].unit == au.kpc and tab["y"].unit == au.K
+        assert np.isnan(tab["x_err"]).all()  # no x errors given
+        full = bin_trend(x, y, bins=[0, 1, 2, 3, 4], keep_empty=True)
+        assert len(full) == 4 and full["n"][3] == 0 and np.isnan(full["y"][3])
+
+    def test_bin_trend_rejects_unknown_method(self):
+        from hexmaps.utils_binning import bin_trend
+
+        with pytest.raises(ValueError, match="method"):
+            bin_trend([1, 2], [1, 2], method="mode")
+
+    def test_bin_ratio_values_and_limits(self):
+        from hexmaps.utils_binning import bin_ratio_trend
+
+        x = np.array([0.5, 0.6, 1.5, 1.6, 2.5, 2.6])
+        y1 = np.array([10.0, 10.0, 0.1, 0.1, 10.0, 10.0])  # numerator undetected in bin 1
+        y2 = np.array([5.0, 5.0, 5.0, 5.0, 0.3, -0.1])  # denominator undetected in bin 2
+        e = np.ones(6)
+        tab = bin_ratio_trend(x, y1, y2, e, e, bins=[0, 1, 2, 3], method="mean", snr_limit=3)
+        e_bin = 1.0 / np.sqrt(2)  # mean of two points with unit errors
+        assert np.allclose(tab["y"][0], 2.0)
+        assert np.isclose(tab["y_err"][0], np.sqrt((e_bin / 5) ** 2 + (10 / 25 * e_bin) ** 2))
+        assert np.isnan(tab["upper_limit"][0]) and np.isnan(tab["lower_limit"][0])
+        assert np.isclose(tab["upper_limit"][1], 3 * e_bin / 5.0)
+        assert np.isnan(tab["lower_limit"][1])
+        assert np.isclose(tab["lower_limit"][2], 10.0 / (3 * e_bin))
+        # a point is "positive" only if numerator and denominator are > 0
+        assert list(tab["n_pos"]) == [2, 2, 1] and list(tab["n_neg"]) == [0, 0, 1]
+
+    def test_extra_quantities_are_binned(self):
+        from hexmaps.utils_binning import bin_trend
+
+        x = np.array([0.5, 0.6, 1.5])
+        tab = bin_trend(x, x, bins=[0, 1, 2], extra={"z": (np.array([1.0, 3.0, 5.0]), np.ones(3))})
+        assert np.allclose(tab["z"], [2.0, 5.0]) and np.all(np.isfinite(tab["z_err"]))
+
+    # -- HexMapsAnalysis wrappers ----------------------------------------
+
+    @staticmethod
+    def _hex_database(tmp_path, beam_as=20.0, spacing_as=10.0):
+        """Small .ecsv on a hexagonal grid (spacing = beam / 2) with two lines."""
+        import astropy.units as au
+        from astropy.table import Table
+
+        rng = np.random.default_rng(0)
+        dec0 = 40.0
+        pts = []
+        for j in range(-6, 7):
+            for i in range(-6, 7):
+                dx = (i + 0.5 * (j % 2)) * spacing_as
+                dy = j * spacing_as * np.sqrt(3) / 2
+                pts.append((dx, dy))
+        dx, dy = np.array(pts).T
+        r = np.hypot(dx, dy) / 60.0
+        t = Table()
+        t["RA"] = (150.0 + dx / 3600 / np.cos(np.deg2rad(dec0))) * au.deg
+        t["DEC"] = (dec0 + dy / 3600) * au.deg
+        t["RGAL_KPC"] = r * au.kpc
+        n = len(t)
+        for line, amp in (("A", 10.0), ("B", 5.0)):
+            t[f"MOM0_{line}"] = (amp * np.exp(-r) + rng.normal(0, 0.2, n)) * au.K * au.km / au.s
+            t[f"EMOM0_{line}"] = np.full(n, 0.2) * au.K * au.km / au.s
+        t["TPEAK_A"] = np.exp(-r) * au.K
+        t["RMS_A"] = np.full(n, 0.05) * au.K
+        t.meta["beam_as"] = beam_as * au.arcsec
+        path = tmp_path / "hex.ecsv"
+        t.write(path)
+        return str(path)
+
+    def test_oversampling_factor_from_beam_and_spacing(self, tmp_path):
+        from hexmaps.hexmaps_analysis import HexMapsAnalysis
+
+        hm = HexMapsAnalysis(self._hex_database(tmp_path))
+        assert np.isclose(hm._sampling_spacing_as(), 10.0, rtol=1e-3)
+        expected = (np.pi / (4 * np.log(2)) * 20.0**2) / (np.sqrt(3) / 2 * 10.0**2)
+        assert np.isclose(hm.oversampling_factor(), expected, rtol=1e-3)  # ~5.23
+
+    def test_names_and_error_columns_are_resolved(self, tmp_path):
+        from hexmaps.hexmaps_analysis import HexMapsAnalysis
+
+        hm = HexMapsAnalysis(self._hex_database(tmp_path))
+        tab = hm.bin_trend("rgal_kpc", "a", nbins=4, oversample=1)
+        assert tab.meta["x_name"] == "RGAL_KPC" and tab.meta["y_name"] == "MOM0_A"
+        assert np.all(np.isfinite(tab["y_err"]))  # from EMOM0_A
+        assert np.isnan(tab["x_err"]).all()  # RGAL_KPC has no error column
+        tp = hm.bin_trend("RGAL_KPC", "TPEAK_A", nbins=4, oversample=1)
+        assert np.all(np.isfinite(tp["y_err"]))  # from RMS_A
+        auto = hm.bin_trend("RGAL_KPC", "A", nbins=4)
+        assert np.isclose(auto.meta["oversample"], hm.oversampling_factor())
+        with pytest.raises(KeyError):
+            hm.bin_trend("RGAL_KPC", "C")
+
+    def test_bin_ratio_and_plot(self, tmp_path):
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from hexmaps.hexmaps_analysis import HexMapsAnalysis
+
+        hm = HexMapsAnalysis(self._hex_database(tmp_path))
+        tab = hm.bin_ratio("RGAL_KPC", "A", "B", nbins=4, oversample=1)
+        assert np.allclose(tab["y"], tab["y1"] / tab["y2"])
+        assert np.allclose(tab["y"][0], 2.0, atol=0.2)  # A = 2 B by construction
+        assert tab.meta["y_name"] == "MOM0_A / MOM0_B" and tab["y"].unit is None
+        fig, ax = plt.subplots()
+        assert hm.quickplot_binned(tab, ax=ax, logy=True) is ax
+        plt.close(fig)
+        with pytest.raises(ValueError, match="uncertainties"):
+            hm.bin_ratio("RGAL_KPC", "A", "RGAL_KPC", denominator_err=None)
+
+
 class TestInitWorkdir:
 
     def test_creates_expected_files(self, tmp_path):
