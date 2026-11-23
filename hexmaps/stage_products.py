@@ -31,6 +31,10 @@ all adjacent channels above low_thresh (up to 5 dilation passes), followed by
 two additional edge-growing passes.  This naturally captures asymmetric line
 profiles without requiring a fixed velocity window.
 
+With mask_growth = 3d the core is instead grown until convergence, both
+along the spectrum and to neighbouring sampling points, so faint emission
+next to a bright core on the sky is also captured.
+
 Output column naming convention
 ---------------------------------
 MOM0_<LINE>   : integrated intensity (K km/s or equiv.)
@@ -56,6 +60,8 @@ import pandas as pd
 from astropy import units as au
 from astropy.stats import median_absolute_deviation
 from astropy.table import Table, Column
+from scipy.sparse import coo_matrix
+from scipy.spatial import cKDTree
 
 from hexmaps.utils_table import (
     shuffle,
@@ -75,7 +81,7 @@ LOG = get_logger("Products")
 # ============================================================================
 
 
-def construct_mask(ref_line, this_data, SN_processing):
+def construct_mask(ref_line, this_data, SN_processing, growth="spectral"):
     """
     Build a two-level S/N velocity-integration mask from *ref_line*.
 
@@ -90,6 +96,10 @@ def construct_mask(ref_line, this_data, SN_processing):
     ref_line      : str         — column name suffix, e.g. "12CO21" (without "SPEC_")
     this_data     : Table       — the HexMaps table (must contain SPEC_<ref_line>)
     SN_processing : list[float] — [low_SN_thresh, high_SN_thresh]
+    growth        : str         — "spectral" (default): grow the core into the
+                                  low-S/N mask along each spectrum (5 passes);
+                                  "3d": grow until convergence along the
+                                  spectrum and to neighbouring sampling points
 
     Returns
     -------
@@ -140,11 +150,18 @@ def construct_mask(ref_line, this_data, SN_processing):
         (low_mask + np.roll(low_mask, 1, 1) + np.roll(low_mask, -1, 1)) >= 3
     ).astype(int)
 
-    # Dilate high-S/N core into low-S/N wings (5 passes)
-    for _ in range(5):
-        mask = ((mask + np.roll(mask, 1, 1) + np.roll(mask, -1, 1)) >= 1).astype(
-            int
-        ) * low_mask
+    if growth == "3d":
+        # Grow the high-S/N core through the low-S/N mask until convergence,
+        # spectrally and to neighbouring sampling points
+        mask = _grow_mask_3d(mask, low_mask, _spatial_neighbours(this_data))
+    elif growth == "spectral":
+        # Dilate high-S/N core into low-S/N wings (5 passes)
+        for _ in range(5):
+            mask = ((mask + np.roll(mask, 1, 1) + np.roll(mask, -1, 1)) >= 1).astype(
+                int
+            ) * low_mask
+    else:
+        raise ValueError(f"growth must be 'spectral' or '3d', not {growth!r}.")
 
     # Grow mask edge by 2 channels to ensure full line coverage
     for _ in range(2):
@@ -161,6 +178,69 @@ def construct_mask(ref_line, this_data, SN_processing):
             )
 
     return mask_q, line_vmean, line_vaxis
+
+
+def _spatial_neighbours(this_data):
+    """
+    Sparse adjacency matrix linking each sampling point to its nearest
+    neighbours on the sky (the six hex-grid neighbours; four on a square grid).
+
+    Points closer than 1.2 × the median nearest-neighbour separation are
+    neighbours. RA offsets are scaled by cos(Dec), as in the hex grid.
+
+    Parameters
+    ----------
+    this_data : Table — HexMaps table with the sampling coordinate columns
+
+    Returns
+    -------
+    adjacency : scipy.sparse matrix (n_pts × n_pts) — 1 for neighbours
+    """
+    # Coordinate columns may be RA/DEC, GLON/GLAT, etc. (as in stage_regrid)
+    _skip = {"incl_deg", "posang_deg"}
+    coord_cols = [c for c in this_data.colnames if c.endswith("_deg") and c not in _skip]
+    if len(coord_cols) < 2:
+        coord_cols = ["RA", "DEC"]
+    lon = np.asarray(this_data[coord_cols[0]], dtype=float)
+    lat = np.asarray(this_data[coord_cols[1]], dtype=float)
+
+    xy = np.column_stack([lon * np.cos(np.deg2rad(np.nanmedian(lat))), lat])
+    tree = cKDTree(xy)
+    spacing = np.median(tree.query(xy, k=2)[0][:, 1])
+    pairs = tree.query_pairs(1.2 * spacing, output_type="ndarray")
+    rows = np.concatenate([pairs[:, 0], pairs[:, 1]])
+    cols = np.concatenate([pairs[:, 1], pairs[:, 0]])
+    n_pts = len(xy)
+    return coo_matrix((np.ones(len(rows)), (rows, cols)), shape=(n_pts, n_pts)).tocsr()
+
+
+def _grow_mask_3d(mask, low_mask, adjacency):
+    """
+    Grow *mask* through *low_mask* until convergence, one step at a time to
+    the neighbouring channels (no wrap-around) and the neighbouring sampling
+    points given by *adjacency*. Matches scipy.ndimage.binary_dilation with a
+    6-connected structure and mask=low_mask on a regular grid.
+
+    Parameters
+    ----------
+    mask      : np.ndarray (n_pts × n_chan) — 0/1 seed mask
+    low_mask  : np.ndarray (n_pts × n_chan) — 0/1 mask the growth may enter
+    adjacency : scipy.sparse matrix (n_pts × n_pts) — spatial neighbours
+
+    Returns
+    -------
+    mask : np.ndarray (n_pts × n_chan) — 0/1 grown mask
+    """
+    mask = np.asarray(mask).astype(bool)
+    low = np.asarray(low_mask).astype(bool)
+    while True:
+        step = (adjacency @ mask.astype(float)) > 0
+        step[:, 1:] |= mask[:, :-1]
+        step[:, :-1] |= mask[:, 1:]
+        grown = mask | (step & low)
+        if np.array_equal(grown, mask):
+            return grown.astype(int)
+        mask = grown
 
 
 # ============================================================================
@@ -330,6 +410,7 @@ def run_products(
     # ------------------------------------------------------------------
     ref_line_method = meta.get("ref_line", "first")
     SN_processing = meta.get("SN_processing", [2, 4])
+    mask_growth = meta.get("mask_growth", "spectral")
     strict_mask = meta.get("strict_mask", False)
     use_hfs_lines = meta.get("use_hfs_lines", False)
     velocity_window = meta.get("velocity_window", None)
@@ -410,7 +491,9 @@ def run_products(
 
     def _sn_mask(line):
         if line not in sn_masks:
-            m, vmean, _ = construct_mask(line, this_data, SN_processing)
+            m, vmean, _ = construct_mask(
+                line, this_data, SN_processing, growth=mask_growth
+            )
             sn_masks[line] = (
                 np.asarray(m.value if hasattr(m, "value") else m).astype(int),
                 vmean,

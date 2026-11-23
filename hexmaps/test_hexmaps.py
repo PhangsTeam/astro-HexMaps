@@ -72,6 +72,8 @@ class TestKeyHandler:
         assert len(kh.maps) == 1
         assert len(kh.cubes) == 1
         assert kh.meta["target_res"] == 27.0
+        # mask_growth is not in the minimal config: default is spectral only
+        assert kh.meta["mask_growth"] == "spectral"
 
     def test_resolve_resolution_sets_all_three_keys_angular(self, tmp_path):
         """
@@ -914,6 +916,69 @@ class TestStageFits:
 
         mask_hex_reshaped = np.moveaxis(mask_hex.value.reshape(ny, nx, n_chan), -1, 0)
         assert np.array_equal(mask_ppv, mask_hex_reshaped)
+
+    @staticmethod
+    def _make_faint_neighbour_cube():
+        """Noise cube with a bright line in the centre pixel and a faint
+        copy (above low_SN, below high_SN) in the pixels around it."""
+        rng = np.random.default_rng(1)
+        n_chan, ny, nx = 60, 7, 7
+        cube = rng.normal(0, 1.0, size=(n_chan, ny, nx))
+        chan = np.arange(n_chan)
+        line = np.exp(-0.5 * ((chan - 30) / 4.0) ** 2)
+        cube[:, 3, 3] += 20 * line
+        for y, x in [(2, 3), (4, 3), (3, 2), (3, 4)]:
+            cube[:, y, x] += 2.0 * line
+        return cube
+
+    def test_construct_mask_ppv_3d_growth_reaches_faint_neighbours(self):
+        from hexmaps.stage_fits import construct_mask_ppv
+
+        cube = self._make_faint_neighbour_cube()
+        mask_spec = construct_mask_ppv(cube, [2, 4])
+        mask_3d = construct_mask_ppv(cube, [2, 4], growth="3d")
+
+        ys, xs = [2, 4, 3, 3], [3, 3, 2, 4]
+        assert mask_spec[30, 3, 3] == 1 and mask_3d[30, 3, 3] == 1
+        # The faint neighbours have no high-S/N core of their own: only the
+        # 3D growth reaches them (where noise keeps them above low_SN)
+        assert np.all(mask_spec[30, ys, xs] == 0)
+        assert np.sum(mask_3d[30, ys, xs]) >= 2
+        # 3D growth only adds to the spectral mask
+        assert np.all(mask_3d >= mask_spec)
+
+    def test_construct_mask_3d_matches_ppv_on_square_grid(self):
+        """
+        On a square grid of sampling points the hex-grid 3D growth (neighbours
+        found from the coordinates) must give the PPV result exactly.
+        """
+        import astropy.units as au
+        from astropy.table import Table, Column
+        from hexmaps.stage_fits import construct_mask_ppv
+        from hexmaps.stage_products import construct_mask
+
+        cube = self._make_faint_neighbour_cube()
+        n_chan, ny, nx = cube.shape
+        yy, xx = np.mgrid[0:ny, 0:nx]
+        t = Table()
+        t["RA"] = Column(xx.ravel() * 0.01)
+        t["DEC"] = Column(yy.ravel() * 0.01)
+        t["SPEC_LINE"] = Column(np.moveaxis(cube, 0, -1).reshape(ny * nx, n_chan))
+        t.meta["SPEC_VCHAN0"] = 0.0 * au.km / au.s
+        t.meta["SPEC_DELTAV"] = 1.0 * au.km / au.s
+        t.meta["SPEC_CRPIX"] = 1
+
+        mask_ppv = construct_mask_ppv(cube, [2, 4], growth="3d")
+        mask_hex, _, _ = construct_mask("LINE", t, [2, 4], growth="3d")
+        assert np.array_equal(
+            mask_ppv, np.moveaxis(mask_hex.value.reshape(ny, nx, n_chan), -1, 0)
+        )
+
+    def test_construct_mask_ppv_rejects_unknown_growth(self):
+        from hexmaps.stage_fits import construct_mask_ppv
+
+        with pytest.raises(ValueError, match="growth"):
+            construct_mask_ppv(self._make_faint_neighbour_cube(), [2, 4], growth="2d")
 
     def test_apply_strict_mask_ppv_removes_small_components(self):
         from hexmaps.stage_fits import apply_strict_mask_ppv

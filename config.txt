@@ -179,6 +179,12 @@ ref_line = first
 # Signal-to-noise thresholds for the two-step mask: [low, high]
 SN_processing = 2, 4
 
+# How the high-S/N core grows into the low-S/N mask:
+#   spectral - along each spectrum only, up to 5 channels (default)
+#   3d       - until convergence, along the spectrum and to neighbouring
+#              positions, so faint emission next to a bright core is kept
+mask_growth = spectral
+
 # If true, apply a strict spatial consistency check on the mask
 strict_mask = false
 

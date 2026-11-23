@@ -71,7 +71,8 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.table import Table
 from astropy.stats import median_absolute_deviation
-from scipy.ndimage import label, binary_erosion
+from scipy.ndimage import label, binary_erosion, binary_dilation
+from scipy.ndimage import generate_binary_structure
 from skimage.morphology import disk
 from datetime import date
 
@@ -267,7 +268,7 @@ def get_convolved_map(
     return data, hdr
 
 
-def construct_mask_ppv(ref_cube, SN_processing):
+def construct_mask_ppv(ref_cube, SN_processing, growth="spectral"):
     """
     Build a two-level S/N velocity-integration mask from a PPV cube.
 
@@ -278,10 +279,15 @@ def construct_mask_ppv(ref_cube, SN_processing):
     requiring 3-of-3 consecutive channels, dilation into the low-S/N mask
     (5 passes), then a 2-channel edge grow.
 
+    With growth="3d" the 5 spectral passes are replaced by dilation into the
+    low-S/N mask until convergence, through spectral and 4-connected spatial
+    neighbours, so faint emission next to a bright core in position is kept.
+
     Parameters
     ----------
     ref_cube      : np.ndarray (n_chan, ny, nx) — reference line PPV cube
     SN_processing : list[float] — [low_SN_thresh, high_SN_thresh]
+    growth        : str — "spectral" (default) or "3d"
 
     Returns
     -------
@@ -318,11 +324,23 @@ def construct_mask_ppv(ref_cube, SN_processing):
         (low_mask + np.roll(low_mask, 1, 0) + np.roll(low_mask, -1, 0)) >= 3
     ).astype(int)
 
-    # Dilate high-S/N core into low-S/N wings (5 passes)
-    for _ in range(5):
-        mask = ((mask + np.roll(mask, 1, 0) + np.roll(mask, -1, 0)) >= 1).astype(
-            int
-        ) * low_mask
+    if growth == "3d":
+        # Grow the high-S/N core through the low-S/N mask until convergence,
+        # spectrally and spatially (6-connected voxels)
+        mask = binary_dilation(
+            mask.astype(bool),
+            structure=generate_binary_structure(3, 1),
+            iterations=0,
+            mask=low_mask.astype(bool),
+        ).astype(int)
+    elif growth == "spectral":
+        # Dilate high-S/N core into low-S/N wings (5 passes)
+        for _ in range(5):
+            mask = ((mask + np.roll(mask, 1, 0) + np.roll(mask, -1, 0)) >= 1).astype(
+                int
+            ) * low_mask
+    else:
+        raise ValueError(f"growth must be 'spectral' or '3d', not {growth!r}.")
 
     # Grow mask edge by 2 channels to ensure full line coverage
     for _ in range(2):
@@ -824,6 +842,7 @@ def run_moments_ppv(
     # ------------------------------------------------------------------
     ref_line_method = meta.get("ref_line", "first")
     SN_processing = meta.get("SN_processing", [2, 4])
+    mask_growth = meta.get("mask_growth", "spectral")
     strict_mask = meta.get("strict_mask", False)
     use_hfs_lines = meta.get("use_hfs_lines", False)
     fov_erosion_beams = float(meta.get("fov_erosion_beams", 0.5))
@@ -960,7 +979,7 @@ def run_moments_ppv(
                 sn_ppv[key] = None
             else:
                 lm = construct_mask_ppv(
-                    cube_data[line.upper()].value, SN_processing
+                    cube_data[line.upper()].value, SN_processing, growth=mask_growth
                 ).astype(int)
                 sn_ppv[key] = apply_strict_mask_ppv(lm) if strict else lm
         return sn_ppv[key]
