@@ -849,7 +849,9 @@ def run_moments_ppv(
         else _path.join(data_dir, target + overlay_file)
     )
     ov_cube, ov_hdr = fits.getdata(overlay_fname, header=True)
-    ov_hdr, _ = _ensure_ms(ov_hdr.copy())
+    # Increasing velocity axis, as in stage_regrid: cubes are reprojected
+    # onto this header, so their channels (and HFS shifts) run in +v order.
+    ov_hdr, ov_cube = _ensure_ms(ov_hdr.copy(), ov_cube)
 
     resolve_meta_resolution(target, params, meta, ov_hdr=ov_hdr, log=LOG)
     target_res_as = meta["target_res"]
@@ -1266,6 +1268,9 @@ def run_fits(
 
     LOG.info(f"Overlay file: {overlay_fname}")
     ov_cube, ov_hdr = fits.getdata(overlay_fname, header=True)
+    # Increasing velocity axis: saved convolved cubes are reprojected onto it
+    # (reproject_cube_to_overlay) and written with this header.
+    ov_hdr, ov_cube = _ensure_ms(ov_hdr, ov_cube)
 
     # Resolve per-target target resolution (target_res, target_res_pc,
     # res_suffix) from the overlay header and target params.  This handles

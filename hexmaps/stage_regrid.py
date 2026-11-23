@@ -83,20 +83,29 @@ def _get_vaxis(hdr):
 
 def _ensure_ms(hdr, data=None):
     """
-    Ensure the velocity axis is in m/s and monotonically increasing.
+    Make the spectral axis increasing (CDELT3 > 0).
 
-    Modifies the header in place.  If *data* is provided and the axis needs
-    flipping, the data array is also flipped along axis 0 and returned.
+    If CDELT3 < 0, the header is rewritten in place to describe the same
+    channels in increasing order (CRVAL3 = last channel's value, CRPIX3 = 1,
+    CDELT3 = |CDELT3|), and *data*, if given, is flipped along axis 0 to
+    match. Call it without *data* only for a header that defines a target
+    grid (e.g. for reprojection), never for a header whose data you keep
+    using channel by channel.
+
+    The pipeline normalises the overlay header this way when it is read, so
+    every product (table spectra and metadata, masks, FITS output) uses an
+    increasing velocity axis.
+
+    Note: despite its name, this does not convert units; the spectral axis
+    keeps the unit given by CUNIT3.
     """
-
-    # Flip decreasing axis
-    if data is not None and hdr["CDELT3"] < 0:
-        vaxis_inv = _get_vaxis(hdr)
+    if hdr["CDELT3"] < 0:
+        vaxis = _get_vaxis(hdr)
         hdr["CDELT3"] = abs(hdr["CDELT3"])
         hdr["CRPIX3"] = 1
-        hdr["CRVAL3"] = vaxis_inv[-1]
-        data = np.flip(data, axis=0)
-
+        hdr["CRVAL3"] = vaxis[-1]
+        if data is not None:
+            data = np.flip(data, axis=0)
     return hdr, data
 
 
@@ -338,6 +347,10 @@ def run_sampling(target: str, params: dict, meta: dict) -> dict:
         LOG.error(f"4D overlay cube for {target}. " "Please provide a 3D cube.")
         raise ValueError(f"4D overlay cube for {target}. " "Please provide a 3D cube.")
 
+    # Increasing velocity axis: all spectra are reprojected onto this header,
+    # and the table metadata and velocity masks are derived from it.
+    ov_hdr, ov_cube = _ensure_ms(ov_hdr, ov_cube)
+
     # ------------------------------------------------------------------
     # Build the footprint mask and generate the hex grid
     # ------------------------------------------------------------------
@@ -524,20 +537,6 @@ def sample_at_res(
         if trg_hdr is not None:
             trg_hdr, _ = _ensure_ms(trg_hdr)
         hdr_out, data = _ensure_ms(hdr_out, data)
-
-        # Flip the target header if its axis is also decreasing
-        if trg_hdr is not None and trg_hdr["CDELT3"] < 0:
-            vaxis_inv = _get_vaxis(trg_hdr)
-            trg_hdr["CDELT3"] = abs(trg_hdr["CDELT3"])
-            trg_hdr["CRPIX3"] = 1
-            trg_hdr["CRVAL3"] = vaxis_inv[-1]
-
-        if hdr_out["CDELT3"] < 0:
-            vaxis_inv = _get_vaxis(hdr_out)
-            hdr_out["CDELT3"] = abs(hdr_out["CDELT3"])
-            hdr_out["CRPIX3"] = 1
-            hdr_out["CRVAL3"] = vaxis_inv[-1]
-            data = np.flip(data, axis=0)
 
     # ------------------------------------------------------------------
     # Spectral smoothing
