@@ -182,6 +182,10 @@ SN_processing = 2, 4
 # If true, apply a strict spatial consistency check on the mask
 strict_mask = false
 
+# Strict mask: remove connected mask regions (per channel) smaller than this
+# many beam areas. 1 beam is ~5 hex points at pixels_per_beam = 2.
+strict_mask_beams = 1
+
 # Use explicit velocity windows (noise_mask rows in the [mask] table) for
 # noise (RMS) estimation instead of using channels outside the signal mask.
 # Useful when the line-free baseline is contaminated by other lines.

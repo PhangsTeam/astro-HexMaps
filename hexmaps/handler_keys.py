@@ -417,6 +417,8 @@ class KeyHandler:
                                     or legacy comma list "first, window, AND". MANDATORY.
         SN_processing     : list  — [low_SN, high_SN] thresholds
         strict_mask       : bool  — apply spatial connectivity filter
+        strict_mask_beams : float — strict filter minimum component area,
+                                    in beam areas (default 1)
         use_fixed_noise_mask: bool — use explicit velocity windows for noise estimation
         use_hfs_lines     : bool  — apply HFS correction (requires hfs_file)
         fov_erosion_beams : float — FOV erosion in units of the beam FWHM (default 0.5);
@@ -488,6 +490,11 @@ class KeyHandler:
         self.meta["strict_mask"] = (
             _get("masking", "strict_mask", "false").lower() == "true"
         )
+        self.meta["strict_mask_beams"] = float(
+            _get("masking", "strict_mask_beams", 1.0)
+        )
+        if self.meta["strict_mask_beams"] < 0:
+            raise ValueError("[masking] strict_mask_beams must be nonnegative.")
         self.meta["use_fixed_noise_mask"] = (
             _get("masking", "use_fixed_noise_mask", "false").lower() == "true"
         )

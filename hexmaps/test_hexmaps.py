@@ -72,6 +72,8 @@ class TestKeyHandler:
         assert len(kh.maps) == 1
         assert len(kh.cubes) == 1
         assert kh.meta["target_res"] == 27.0
+        # strict_mask_beams is not in the minimal config: default is one beam
+        assert kh.meta["strict_mask_beams"] == 1.0
 
     def test_resolve_resolution_sets_all_three_keys_angular(self, tmp_path):
         """
@@ -914,6 +916,19 @@ class TestStageFits:
 
         mask_hex_reshaped = np.moveaxis(mask_hex.value.reshape(ny, nx, n_chan), -1, 0)
         assert np.array_equal(mask_ppv, mask_hex_reshaped)
+
+    def test_strict_min_size_scales_with_beam_area(self):
+        from hexmaps.utils_table import strict_min_size
+
+        # Hex grid, pixels_per_beam = 2: one beam is ~5.2 points -> 5,
+        # matching the old fixed 5-point cut
+        assert strict_min_size(1.0, 2.0, np.sin(np.deg2rad(60))) == 5
+        # PPV: 27" beam on 3" pixels is ~92 pixels per beam
+        beam_pix = np.pi * 27.0**2 / (4 * np.log(2)) / 9.0
+        assert strict_min_size(1.0, 27.0, 9.0) == int(round(beam_pix))
+        assert strict_min_size(2.0, 27.0, 9.0) == int(round(2 * beam_pix))
+        # Zero beams keeps every non-empty component
+        assert strict_min_size(0.0, 27.0, 9.0) == 1
 
     def test_apply_strict_mask_ppv_removes_small_components(self):
         from hexmaps.stage_fits import apply_strict_mask_ppv

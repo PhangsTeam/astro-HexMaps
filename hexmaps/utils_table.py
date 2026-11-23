@@ -1015,3 +1015,33 @@ def evaluate_mask_expression(node, resolve):
         return None
     value = np.asarray(value.value if hasattr(value, "value") else value)
     return (value != 0).astype(int)
+
+
+# ============================================================================
+# Strict mask size
+# ============================================================================
+
+
+def strict_min_size(strict_mask_beams, beam_fwhm, area_per_point):
+    """
+    Minimum connected-component size, in sampling points, for the strict mask.
+
+    Converts *strict_mask_beams* Gaussian beam areas into a number of points:
+
+        n = round(strict_mask_beams × π FWHM² / (4 ln 2) / area_per_point)
+
+    At least 1 is returned, so a component is never kept when it is empty.
+
+    Parameters
+    ----------
+    strict_mask_beams : float — minimum component area in beam areas
+    beam_fwhm         : float — beam FWHM
+    area_per_point    : float — sky area of one point (hex cell or pixel), in
+                        the same angular unit as beam_fwhm, squared
+
+    Returns
+    -------
+    min_size : int — minimum number of points a component must have to be kept
+    """
+    beam_area = np.pi * beam_fwhm**2 / (4 * np.log(2))
+    return max(1, int(round(strict_mask_beams * beam_area / area_per_point)))

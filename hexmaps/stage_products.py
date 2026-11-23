@@ -63,6 +63,7 @@ from hexmaps.utils_table import (
     build_noise_mask,
     parse_mask_expression,
     evaluate_mask_expression,
+    strict_min_size,
 )
 
 from hexmaps.logger import get_logger
@@ -168,19 +169,20 @@ def construct_mask(ref_line, this_data, SN_processing):
 # ============================================================================
 
 
-def _apply_strict_mask(mask, this_data):
+def _apply_strict_mask(mask, this_data, min_points=5):
     """
     Remove spatially isolated mask features using a connected-component filter.
 
     For each spectral channel, label spatially connected groups of masked pixels
-    (using the hex-grid neighbour distance).  Groups with fewer than 5 members
-    are removed.  This suppresses noise peaks that happen to exceed the S/N
-    threshold but lack spatial coherence.
+    (using the hex-grid neighbour distance).  Groups with fewer than
+    *min_points* members are removed.  This suppresses noise peaks that happen
+    to exceed the S/N threshold but lack spatial coherence.
 
     Parameters
     ----------
     mask      : np.ndarray (n_pts × n_chan) — 0/1 mask array
     this_data : Table — used for spatial coordinate columns, and beam_as metadata
+    min_points : int  — minimum group size to keep (see utils_table.strict_min_size)
 
     Returns
     -------
@@ -227,7 +229,7 @@ def _apply_strict_mask(mask, this_data):
         for lab in np.unique(mask_labels):
             if lab <= 0:
                 continue
-            if len(mask[:, jj][mask_labels == lab]) < 5:
+            if len(mask[:, jj][mask_labels == lab]) < min_points:
                 mask[:, jj][mask_labels == lab] = 0
 
     return mask
@@ -491,13 +493,25 @@ def run_products(
 
         # Optional strict spatial connectivity filter
         if strict_mask:
-            LOG.info("Applying strict spatial mask filter.")
+            # Hex cell area = spacing² sin(60°), spacing = beam / pixels_per_beam
+            beam_as = this_data.meta["beam_as"].to(au.arcsec).value
+            spacing_as = beam_as / float(meta.get("pixels_per_beam", 2.0))
+            min_points = strict_min_size(
+                float(meta.get("strict_mask_beams", 1.0)),
+                beam_as,
+                spacing_as**2 * np.sin(np.deg2rad(60)),
+            )
+            LOG.info(
+                f"Applying strict spatial mask filter "
+                f"(minimum {min_points} points per component)."
+            )
             mask = (
                 _apply_strict_mask(
                     np.asarray(mask.value if hasattr(mask, "value") else mask).astype(
                         int
                     ),
                     this_data,
+                    min_points,
                 )
                 * au.dimensionless_unscaled
             )
