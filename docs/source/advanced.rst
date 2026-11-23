@@ -261,6 +261,7 @@ Mask Tuning
 
    [masking]
    SN_processing = 2, 4
+   mask_growth = spectral
    use_fixed_noise_mask = false
    fov_erosion_beams = 0.5
    conseq_channels = 3
@@ -281,6 +282,23 @@ Mask Tuning
    ``2, 4`` or ``3, 5``.
 
    *Default:* ``2, 4``
+
+``mask_growth``
+   How the core mask is grown into the ``low_SN`` mask (step 2 above).
+
+   * ``spectral`` *(default)* — along each spectrum only, for up to 5
+     channels on either side of the core. A position is only masked if its
+     own spectrum has a ``high_SN`` core.
+   * ``3d`` — until nothing more can be added, along the spectrum and to
+     neighbouring positions (the six hex-grid neighbours, or the four
+     neighbouring pixels for the FITS products). Faint emission that is
+     connected on the sky to a bright core is kept even if its own spectrum
+     never reaches ``high_SN``. This is the kind of growth used by the
+     PHANGS-ALMA pipeline and ``spectral_cube_plus`` expanded masks.
+
+   In both modes the mask is then widened by two channels on each side.
+
+   *Default:* ``spectral``
 
 ``use_fixed_noise_mask``
    When ``true``, use the velocity windows defined by ``noise_mask`` rows

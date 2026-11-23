@@ -416,6 +416,8 @@ class KeyHandler:
         ref_line          : str   — mask expression, e.g. "(12co21 | 12co10) & window",
                                     or legacy comma list "first, window, AND". MANDATORY.
         SN_processing     : list  — [low_SN, high_SN] thresholds
+        mask_growth       : str   — "spectral" | "3d" — how the high-S/N core
+                                    grows into the low-S/N mask
         strict_mask       : bool  — apply spatial connectivity filter
         use_fixed_noise_mask: bool — use explicit velocity windows for noise estimation
         use_hfs_lines     : bool  — apply HFS correction (requires hfs_file)
@@ -485,6 +487,14 @@ class KeyHandler:
         self.meta["SN_processing"] = [
             float(x) for x in _get("masking", "SN_processing", "2,4").split(",")
         ]
+        self.meta["mask_growth"] = (
+            _get("masking", "mask_growth", "spectral").strip().lower()
+        )
+        if self.meta["mask_growth"] not in ("spectral", "3d"):
+            raise ValueError(
+                "[masking] mask_growth must be 'spectral' or '3d', "
+                f"not {self.meta['mask_growth']!r}."
+            )
         self.meta["strict_mask"] = (
             _get("masking", "strict_mask", "false").lower() == "true"
         )
