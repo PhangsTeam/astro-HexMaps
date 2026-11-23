@@ -261,6 +261,7 @@ Mask Tuning
 
    [masking]
    SN_processing = 2, 4
+   noise_estimator = mad
    use_fixed_noise_mask = false
    fov_erosion_beams = 0.5
    conseq_channels = 3
@@ -280,7 +281,27 @@ Mask Tuning
    more of the faint line wings. Typical values for extragalactic surveys are
    ``2, 4`` or ``3, 5``.
 
+   The thresholds are multiples of the per-sightline noise, whose unit is
+   set by ``noise_estimator``.
+
    *Default:* ``2, 4``
+
+``noise_estimator``
+   How the per-sightline noise used by ``SN_processing`` is measured.
+
+   * ``mad`` *(default)* — the raw median absolute deviation (MAD) of the
+     line-free channels. For Gaussian noise the MAD is about 0.67 σ, so
+     ``SN_processing = 2, 4`` corresponds to roughly 1.3 σ and 2.7 σ.
+   * ``mad_std`` — the MAD multiplied by 1.4826, the same estimate as
+     ``astropy.stats.mad_std``. ``SN_processing`` is then in units of a
+     Gaussian σ, and the mask is more conservative at the same thresholds.
+
+   The option only changes the mask thresholds. ``RMS_<LINE>`` and the
+   moment uncertainties are still the standard deviation of the channels
+   outside the mask, so they change only because the mask does. It applies
+   to both the hex-grid table and the FITS products.
+
+   *Default:* ``mad``
 
 ``use_fixed_noise_mask``
    When ``true``, use the velocity windows defined by ``noise_mask`` rows

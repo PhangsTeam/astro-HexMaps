@@ -416,6 +416,8 @@ class KeyHandler:
         ref_line          : str   — mask expression, e.g. "(12co21 | 12co10) & window",
                                     or legacy comma list "first, window, AND". MANDATORY.
         SN_processing     : list  — [low_SN, high_SN] thresholds
+        noise_estimator   : str   — "mad" | "mad_std" — noise unit of the S/N
+                                    thresholds (raw MAD, or MAD × 1.4826)
         strict_mask       : bool  — apply spatial connectivity filter
         use_fixed_noise_mask: bool — use explicit velocity windows for noise estimation
         use_hfs_lines     : bool  — apply HFS correction (requires hfs_file)
@@ -485,6 +487,14 @@ class KeyHandler:
         self.meta["SN_processing"] = [
             float(x) for x in _get("masking", "SN_processing", "2,4").split(",")
         ]
+        self.meta["noise_estimator"] = (
+            _get("masking", "noise_estimator", "mad").strip().lower()
+        )
+        if self.meta["noise_estimator"] not in ("mad", "mad_std"):
+            raise ValueError(
+                "[masking] noise_estimator must be 'mad' or 'mad_std', "
+                f"not {self.meta['noise_estimator']!r}."
+            )
         self.meta["strict_mask"] = (
             _get("masking", "strict_mask", "false").lower() == "true"
         )

@@ -25,6 +25,9 @@ line wings:
   high_thresh = SN_processing[1] × per-spectrum MAD
   low_thresh  = SN_processing[0] × per-spectrum MAD
 
+The MAD is used unscaled by default; with noise_estimator = mad_std it is
+multiplied by 1.4826 so that the thresholds are in units of a Gaussian sigma.
+
 A channel is masked if it exceeds high_thresh AND has at least one adjacent
 channel above high_thresh.  This core mask is then dilated outward to include
 all adjacent channels above low_thresh (up to 5 dilation passes), followed by
@@ -69,13 +72,39 @@ from hexmaps.logger import get_logger
 
 LOG = get_logger("Products")
 
+# Scale factor converting a median absolute deviation into a Gaussian
+# standard deviation (1 / Phi^-1(3/4)), as used by astropy.stats.mad_std.
+MAD_TO_STD = 1.482602218505602
+
+
+def noise_scale(noise_estimator):
+    """
+    Factor applied to the raw MAD noise estimate in the S/N mask.
+
+    Parameters
+    ----------
+    noise_estimator : str — "mad" (raw MAD, the default) or "mad_std"
+                      (MAD scaled to a Gaussian sigma, as astropy.stats.mad_std)
+
+    Returns
+    -------
+    scale : float — 1 for "mad", MAD_TO_STD for "mad_std"
+    """
+    if noise_estimator == "mad":
+        return 1.0
+    if noise_estimator == "mad_std":
+        return MAD_TO_STD
+    raise ValueError(
+        f"noise_estimator must be 'mad' or 'mad_std', not {noise_estimator!r}."
+    )
+
 
 # ============================================================================
 # Mask construction
 # ============================================================================
 
 
-def construct_mask(ref_line, this_data, SN_processing):
+def construct_mask(ref_line, this_data, SN_processing, noise_estimator="mad"):
     """
     Build a two-level S/N velocity-integration mask from *ref_line*.
 
@@ -90,6 +119,8 @@ def construct_mask(ref_line, this_data, SN_processing):
     ref_line      : str         — column name suffix, e.g. "12CO21" (without "SPEC_")
     this_data     : Table       — the HexMaps table (must contain SPEC_<ref_line>)
     SN_processing : list[float] — [low_SN_thresh, high_SN_thresh]
+    noise_estimator : str       — "mad" (raw MAD) or "mad_std" (MAD scaled
+                                  by 1.4826 to a Gaussian sigma); see noise_scale
 
     Returns
     -------
@@ -115,8 +146,9 @@ def construct_mask(ref_line, this_data, SN_processing):
     line_vaxis = line_vaxis.to(au.km / au.s)
 
     # Two-pass global MAD to estimate the noise floor
-    rms = median_absolute_deviation(ref_line_data, axis=None, ignore_nan=True)
-    rms = median_absolute_deviation(
+    scale = noise_scale(noise_estimator)
+    rms = scale * median_absolute_deviation(ref_line_data, axis=None, ignore_nan=True)
+    rms = scale * median_absolute_deviation(
         ref_line_data[np.where(ref_line_data < 3 * rms)], ignore_nan=True
     )
 
@@ -124,7 +156,7 @@ def construct_mask(ref_line, this_data, SN_processing):
     mask_rough = ref_line_data < 3 * rms
     masked_cube = np.where(mask_rough, ref_line_data, np.nan)
     med_mask = np.nanmedian(masked_cube, axis=1)
-    mad_mask = np.nanmedian(np.abs(masked_cube - med_mask[:, None]), axis=1)
+    mad_mask = scale * np.nanmedian(np.abs(masked_cube - med_mask[:, None]), axis=1)
 
     low_thresh = SN_processing[0] * mad_mask[:, None]
     high_thresh = SN_processing[1] * mad_mask[:, None]
@@ -331,6 +363,7 @@ def run_products(
     ref_line_method = meta.get("ref_line", "first")
     SN_processing = meta.get("SN_processing", [2, 4])
     strict_mask = meta.get("strict_mask", False)
+    noise_estimator = meta.get("noise_estimator", "mad")
     use_hfs_lines = meta.get("use_hfs_lines", False)
     velocity_window = meta.get("velocity_window", None)
     mom_calc = [
@@ -410,7 +443,9 @@ def run_products(
 
     def _sn_mask(line):
         if line not in sn_masks:
-            m, vmean, _ = construct_mask(line, this_data, SN_processing)
+            m, vmean, _ = construct_mask(
+                line, this_data, SN_processing, noise_estimator
+            )
             sn_masks[line] = (
                 np.asarray(m.value if hasattr(m, "value") else m).astype(int),
                 vmean,

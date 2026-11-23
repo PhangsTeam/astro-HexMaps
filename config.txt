@@ -179,6 +179,12 @@ ref_line = first
 # Signal-to-noise thresholds for the two-step mask: [low, high]
 SN_processing = 2, 4
 
+# Noise unit for SN_processing:
+#   mad     - raw median absolute deviation (default; ~0.67 sigma for
+#             Gaussian noise, so thresholds sit lower than their face value)
+#   mad_std - MAD scaled by 1.4826 to a Gaussian sigma (astropy mad_std)
+noise_estimator = mad
+
 # If true, apply a strict spatial consistency check on the mask
 strict_mask = false
 
