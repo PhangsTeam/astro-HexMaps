@@ -72,6 +72,8 @@ class TestKeyHandler:
         assert len(kh.maps) == 1
         assert len(kh.cubes) == 1
         assert kh.meta["target_res"] == 27.0
+        # mask_closing_beams is not in the minimal config: default is off
+        assert kh.meta["mask_closing_beams"] == 0.0
 
     def test_resolve_resolution_sets_all_three_keys_angular(self, tmp_path):
         """
@@ -914,6 +916,46 @@ class TestStageFits:
 
         mask_hex_reshaped = np.moveaxis(mask_hex.value.reshape(ny, nx, n_chan), -1, 0)
         assert np.array_equal(mask_ppv, mask_hex_reshaped)
+
+    @staticmethod
+    def _make_holey_mask():
+        """One channel: two 5x5 blocks one pixel apart, one with a hole."""
+        mask = np.zeros((1, 20, 20), dtype=int)
+        mask[0, 5:10, 5:10] = 1
+        mask[0, 5:10, 11:16] = 1
+        mask[0, 7, 7] = 0
+        return mask
+
+    def test_close_mask_ppv_fills_holes_and_gaps(self):
+        from hexmaps.stage_fits import close_mask_ppv
+
+        mask = self._make_holey_mask()
+        closed = close_mask_ppv(mask, radius_pix=2)
+        assert closed[0, 7, 7] == 1  # hole filled
+        # Gap between blocks bridged (the rounded disk leaves the corners)
+        assert np.all(closed[0, 6:9, 10] == 1)
+        assert np.all(closed >= mask)  # nothing removed
+        assert closed[0, 2, 2] == 0  # outer edges not grown
+        # Radius below one pixel: unchanged
+        assert np.array_equal(close_mask_ppv(mask, radius_pix=0.4), mask)
+
+    def test_close_mask_hex_matches_ppv_on_square_grid(self):
+        """On a square grid of sampling points the hex-grid closing gives
+        the PPV result exactly (away from the map edges)."""
+        from astropy.table import Table, Column
+        from hexmaps.stage_fits import close_mask_ppv
+        from hexmaps.stage_products import _close_mask_hex
+
+        mask = self._make_holey_mask()
+        _, ny, nx = mask.shape
+        yy, xx = np.mgrid[0:ny, 0:nx]
+        t = Table()
+        t["RA"] = Column(xx.ravel() * 0.01)
+        t["DEC"] = Column(yy.ravel() * 0.01)
+
+        closed_ppv = close_mask_ppv(mask, radius_pix=2)
+        closed_hex = _close_mask_hex(mask[0].reshape(ny * nx, 1), t, 2 * 36.0)
+        assert np.array_equal(closed_ppv[0], closed_hex.reshape(ny, nx))
 
     def test_apply_strict_mask_ppv_removes_small_components(self):
         from hexmaps.stage_fits import apply_strict_mask_ppv

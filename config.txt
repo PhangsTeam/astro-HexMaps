@@ -179,6 +179,11 @@ ref_line = first
 # Signal-to-noise thresholds for the two-step mask: [low, high]
 SN_processing = 2, 4
 
+# Close each channel of the S/N mask with a disk of this radius, in units of
+# the beam FWHM, to fill holes and gaps between nearby regions. 0 = off.
+# 0.5 matches the spectral_cube_plus default (half the beam FWHM).
+mask_closing_beams = 0
+
 # If true, apply a strict spatial consistency check on the mask
 strict_mask = false
 

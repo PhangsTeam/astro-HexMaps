@@ -261,6 +261,7 @@ Mask Tuning
 
    [masking]
    SN_processing = 2, 4
+   mask_closing_beams = 0
    use_fixed_noise_mask = false
    fov_erosion_beams = 0.5
    conseq_channels = 3
@@ -281,6 +282,28 @@ Mask Tuning
    ``2, 4`` or ``3, 5``.
 
    *Default:* ``2, 4``
+
+``mask_closing_beams``
+   Radius, in units of the beam FWHM, of a morphological closing applied to
+   each channel of the S/N mask after the core has been grown into the
+   ``low_SN`` mask (and before the final two-channel widening).
+
+   Closing (a dilation followed by an erosion with the same disk) fills
+   holes and gaps narrower than the disk and joins nearby mask regions,
+   without moving the outer edge of the mask. Positions already in the mask
+   are always kept, so the map edges are not eroded. On the hex grid the
+   disk contains every sampling point within the radius; for the FITS
+   products it is a disk of pixels.
+
+   * ``0`` *(default)* — no closing
+   * ``0.5`` — a disk of half the beam FWHM, the default of the
+     ``spectral_cube_plus`` expanded mask
+
+   The closing is applied within each channel only; unlike
+   ``spectral_cube_plus`` it does not extend along the spectral axis.
+   Closing can add positions below ``low_SN``.
+
+   *Default:* ``0``
 
 ``use_fixed_noise_mask``
    When ``true``, use the velocity windows defined by ``noise_mask`` rows

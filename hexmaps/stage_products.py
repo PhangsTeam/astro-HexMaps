@@ -31,6 +31,10 @@ all adjacent channels above low_thresh (up to 5 dilation passes), followed by
 two additional edge-growing passes.  This naturally captures asymmetric line
 profiles without requiring a fixed velocity window.
 
+With mask_closing_beams > 0 each channel of the grown mask is closed with a
+beam-sized disk (before the edge-growing passes), filling holes and gaps
+between nearby mask regions.
+
 Output column naming convention
 ---------------------------------
 MOM0_<LINE>   : integrated intensity (K km/s or equiv.)
@@ -56,6 +60,8 @@ import pandas as pd
 from astropy import units as au
 from astropy.stats import median_absolute_deviation
 from astropy.table import Table, Column
+from scipy.sparse import coo_matrix, identity
+from scipy.spatial import cKDTree
 
 from hexmaps.utils_table import (
     shuffle,
@@ -75,7 +81,7 @@ LOG = get_logger("Products")
 # ============================================================================
 
 
-def construct_mask(ref_line, this_data, SN_processing):
+def construct_mask(ref_line, this_data, SN_processing, closing_beams=0.0):
     """
     Build a two-level S/N velocity-integration mask from *ref_line*.
 
@@ -90,6 +96,9 @@ def construct_mask(ref_line, this_data, SN_processing):
     ref_line      : str         — column name suffix, e.g. "12CO21" (without "SPEC_")
     this_data     : Table       — the HexMaps table (must contain SPEC_<ref_line>)
     SN_processing : list[float] — [low_SN_thresh, high_SN_thresh]
+    closing_beams : float       — if > 0, close each channel of the grown mask
+                                  with a disk of this radius in beam FWHM
+                                  (see _close_mask_hex); 0 = off
 
     Returns
     -------
@@ -146,6 +155,11 @@ def construct_mask(ref_line, this_data, SN_processing):
             int
         ) * low_mask
 
+    # Optional beam-sized spatial closing
+    if closing_beams > 0:
+        radius_as = closing_beams * this_data.meta["beam_as"].to(au.arcsec).value
+        mask = _close_mask_hex(mask, this_data, radius_as)
+
     # Grow mask edge by 2 channels to ensure full line coverage
     for _ in range(2):
         mask = ((mask + np.roll(mask, 1, 1) + np.roll(mask, -1, 1)) >= 1).astype(int)
@@ -161,6 +175,51 @@ def construct_mask(ref_line, this_data, SN_processing):
             )
 
     return mask_q, line_vmean, line_vaxis
+
+
+def _close_mask_hex(mask, this_data, radius_as):
+    """
+    Morphologically close each channel of a hex-grid mask with a disk.
+
+    The hex-grid equivalent of stage_fits.close_mask_ppv: a point is set by
+    the dilation if any point within *radius_as* is set, and kept by the
+    erosion only if every point within *radius_as* is set. The input mask
+    is always kept, so mask at the map edges is not eroded away.
+
+    Parameters
+    ----------
+    mask      : np.ndarray (n_pts × n_chan) — 0/1 mask
+    this_data : Table — HexMaps table with the sampling coordinate columns
+    radius_as : float — disk radius in arcsec
+
+    Returns
+    -------
+    mask : np.ndarray (n_pts × n_chan) — 0/1 closed mask
+    """
+    # Coordinate columns may be RA/DEC, GLON/GLAT, etc. (as in stage_regrid)
+    _skip = {"incl_deg", "posang_deg"}
+    coord_cols = [c for c in this_data.colnames if c.endswith("_deg") and c not in _skip]
+    if len(coord_cols) < 2:
+        coord_cols = ["RA", "DEC"]
+    lon = np.asarray(this_data[coord_cols[0]], dtype=float)
+    lat = np.asarray(this_data[coord_cols[1]], dtype=float)
+    xy = np.column_stack([lon * np.cos(np.deg2rad(np.nanmedian(lat))), lat]) * 3600.0
+
+    # Disk "structuring element": every pair of points within the radius
+    # (with a small tolerance for points exactly at the radius), plus self
+    pairs = cKDTree(xy).query_pairs(radius_as * 1.001, output_type="ndarray")
+    n_pts = len(xy)
+    rows = np.concatenate([pairs[:, 0], pairs[:, 1]])
+    cols = np.concatenate([pairs[:, 1], pairs[:, 0]])
+    disk = coo_matrix(
+        (np.ones(len(rows)), (rows, cols)), shape=(n_pts, n_pts)
+    ).tocsr() + identity(n_pts, format="csr")
+    n_in_disk = np.asarray(disk.sum(axis=1))
+
+    m = np.asarray(mask).astype(bool)
+    dilated = (disk @ m.astype(float)) > 0
+    closed = (disk @ dilated.astype(float)) >= n_in_disk
+    return (closed | m).astype(int)
 
 
 # ============================================================================
@@ -330,6 +389,7 @@ def run_products(
     # ------------------------------------------------------------------
     ref_line_method = meta.get("ref_line", "first")
     SN_processing = meta.get("SN_processing", [2, 4])
+    mask_closing_beams = float(meta.get("mask_closing_beams", 0.0))
     strict_mask = meta.get("strict_mask", False)
     use_hfs_lines = meta.get("use_hfs_lines", False)
     velocity_window = meta.get("velocity_window", None)
@@ -410,7 +470,9 @@ def run_products(
 
     def _sn_mask(line):
         if line not in sn_masks:
-            m, vmean, _ = construct_mask(line, this_data, SN_processing)
+            m, vmean, _ = construct_mask(
+                line, this_data, SN_processing, closing_beams=mask_closing_beams
+            )
             sn_masks[line] = (
                 np.asarray(m.value if hasattr(m, "value") else m).astype(int),
                 vmean,
