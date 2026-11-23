@@ -69,6 +69,7 @@ import numpy as np
 import astropy.units as au
 from astropy.io import fits
 from astropy.wcs import WCS
+from astropy.wcs.utils import proj_plane_pixel_area
 from astropy.table import Table
 from astropy.stats import median_absolute_deviation
 from scipy.ndimage import label, binary_erosion
@@ -87,6 +88,7 @@ from hexmaps.utils_table import (
     build_noise_mask,
     parse_mask_expression,
     evaluate_mask_expression,
+    strict_min_size,
 )
 
 from hexmaps import __version__ as _HEXMAPS_VERSION
@@ -351,8 +353,9 @@ def apply_strict_mask_ppv(mask, min_pixels=5):
     Parameters
     ----------
     mask       : np.ndarray (n_chan, ny, nx) — 0/1 mask array
-    min_pixels : int — minimum connected-component size to keep (default 5,
-                matching the hex-grid filter's hardcoded threshold)
+    min_pixels : int — minimum connected-component size to keep (default 5;
+                run_moments_ppv passes strict_mask_beams beam areas in
+                pixels, see utils_table.strict_min_size)
 
     Returns
     -------
@@ -867,6 +870,14 @@ def run_moments_ppv(
     vaxis = vaxis.to(au.km / au.s)
     delta_v_kms = abs(dv * au.Unit(unit_v).to(au.km / au.s))
 
+    # Strict mask minimum component size: strict_mask_beams beam areas, in
+    # overlay pixels
+    strict_min_pixels = strict_min_size(
+        float(meta.get("strict_mask_beams", 1.0)),
+        target_res_as,
+        proj_plane_pixel_area(WCS(ov_hdr).celestial) * 3600.0**2,
+    )
+
     # Noise mask
     use_fixed_noise_mask = meta.get("use_fixed_noise_mask", False)
     _noise_mask_df = None
@@ -962,7 +973,9 @@ def run_moments_ppv(
                 lm = construct_mask_ppv(
                     cube_data[line.upper()].value, SN_processing
                 ).astype(int)
-                sn_ppv[key] = apply_strict_mask_ppv(lm) if strict else lm
+                sn_ppv[key] = (
+                    apply_strict_mask_ppv(lm, strict_min_pixels) if strict else lm
+                )
         return sn_ppv[key]
 
     def _ext_for_line(kind, line):
@@ -1024,8 +1037,11 @@ def run_moments_ppv(
         LOG.info(f"PPV mask built from: {spec.expression}.")
 
         if strict_mask:
-            LOG.info("Applying strict spatial mask filter (PPV).")
-            mask = apply_strict_mask_ppv(mask.astype(int))
+            LOG.info(
+                f"Applying strict spatial mask filter (PPV, minimum "
+                f"{strict_min_pixels} pixels per component)."
+            )
+            mask = apply_strict_mask_ppv(mask.astype(int), strict_min_pixels)
 
         # HFS mask extension — mirrors stage_products combined mode.
         # For each HFS-capable line, extend the master mask to its satellite

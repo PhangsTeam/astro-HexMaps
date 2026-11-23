@@ -265,6 +265,7 @@ Mask Tuning
    fov_erosion_beams = 0.5
    conseq_channels = 3
    strict_mask = false
+   strict_mask_beams = 1
 
 ``SN_processing``
    Two S/N thresholds ``low_SN, high_SN`` for the two-level mask
@@ -336,6 +337,21 @@ Mask Tuning
 
    *Default:* ``false``
 
+``strict_mask_beams``
+   Minimum area, in Gaussian beam areas (π FWHM² / 4 ln 2), that a
+   connected mask region must cover in a channel to survive the ``strict``
+   filter. It is converted into a number of hex points (hex-grid path,
+   using ``pixels_per_beam``) or overlay pixels (PPV path), rounded to the
+   nearest integer, so both paths remove regions of the same sky area.
+
+   With the default ``pixels_per_beam = 2``, one beam is about 5 hex
+   points, which matches the earlier fixed 5-point cut. On the PPV path the
+   earlier cut was also 5 pixels regardless of pixel size, which removed
+   almost nothing when a beam spans many pixels. Set ``0`` to keep every
+   region.
+
+   *Default:* ``1``
+
 .. warning::
 
    The ``strict`` and ``broad`` options are experimental and have not been
@@ -353,8 +369,8 @@ in space or in velocity.
 ``strict``
    After assembling the mask, connected components are identified in each
    channel independently using 2D spatial connectivity (hex-grid path) or
-   4-connected pixels (PPV path).  Any component smaller than approximately
-   one beam area is removed.  This is analogous to the ACES beam-area
+   4-connected pixels (PPV path).  Any component smaller than
+   ``strict_mask_beams`` beam areas (default one) is removed.  This is analogous to the ACES beam-area
    pruning step and suppresses isolated noise spikes while preserving
    spatially extended emission.
 
