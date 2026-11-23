@@ -82,6 +82,7 @@ from hexmaps.utils_fits import (
     resolve_meta_resolution,
 )
 from hexmaps.stage_regrid import _ensure_ms, _get_vaxis
+from hexmaps.stage_products import noise_scale
 from hexmaps.utils_table import (
     get_mom_maps,
     build_noise_mask,
@@ -267,7 +268,7 @@ def get_convolved_map(
     return data, hdr
 
 
-def construct_mask_ppv(ref_cube, SN_processing):
+def construct_mask_ppv(ref_cube, SN_processing, noise_estimator="mad"):
     """
     Build a two-level S/N velocity-integration mask from a PPV cube.
 
@@ -282,6 +283,9 @@ def construct_mask_ppv(ref_cube, SN_processing):
     ----------
     ref_cube      : np.ndarray (n_chan, ny, nx) — reference line PPV cube
     SN_processing : list[float] — [low_SN_thresh, high_SN_thresh]
+    noise_estimator : str       — "mad" (raw MAD) or "mad_std" (MAD scaled
+                                  by 1.4826 to a Gaussian sigma); see
+                                  stage_products.noise_scale
 
     Returns
     -------
@@ -291,8 +295,9 @@ def construct_mask_ppv(ref_cube, SN_processing):
 
     # Two-pass global MAD to estimate the noise floor (identical to the
     # hex-grid version, just over the whole cube instead of the whole table)
-    rms = median_absolute_deviation(ref_cube, axis=None, ignore_nan=True)
-    rms = median_absolute_deviation(
+    scale = noise_scale(noise_estimator)
+    rms = scale * median_absolute_deviation(ref_cube, axis=None, ignore_nan=True)
+    rms = scale * median_absolute_deviation(
         ref_cube[np.where(ref_cube < 3 * rms)], ignore_nan=True
     )
 
@@ -301,7 +306,7 @@ def construct_mask_ppv(ref_cube, SN_processing):
     mask_rough = ref_cube < 3 * rms
     masked_cube = np.where(mask_rough, ref_cube, np.nan)
     med_mask = np.nanmedian(masked_cube, axis=0)
-    mad_mask = np.nanmedian(np.abs(masked_cube - med_mask[None, :, :]), axis=0)
+    mad_mask = scale * np.nanmedian(np.abs(masked_cube - med_mask[None, :, :]), axis=0)
 
     low_thresh = SN_processing[0] * mad_mask[None, :, :]
     high_thresh = SN_processing[1] * mad_mask[None, :, :]
@@ -825,6 +830,7 @@ def run_moments_ppv(
     ref_line_method = meta.get("ref_line", "first")
     SN_processing = meta.get("SN_processing", [2, 4])
     strict_mask = meta.get("strict_mask", False)
+    noise_estimator = meta.get("noise_estimator", "mad")
     use_hfs_lines = meta.get("use_hfs_lines", False)
     fov_erosion_beams = float(meta.get("fov_erosion_beams", 0.5))
     mom_calc = [
@@ -960,7 +966,7 @@ def run_moments_ppv(
                 sn_ppv[key] = None
             else:
                 lm = construct_mask_ppv(
-                    cube_data[line.upper()].value, SN_processing
+                    cube_data[line.upper()].value, SN_processing, noise_estimator
                 ).astype(int)
                 sn_ppv[key] = apply_strict_mask_ppv(lm) if strict else lm
         return sn_ppv[key]

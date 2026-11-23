@@ -72,6 +72,24 @@ class TestKeyHandler:
         assert len(kh.maps) == 1
         assert len(kh.cubes) == 1
         assert kh.meta["target_res"] == 27.0
+        # noise_estimator is not in the minimal config: default is raw MAD
+        assert kh.meta["noise_estimator"] == "mad"
+
+    def test_noise_estimator_config(self, tmp_path):
+        from hexmaps.handler_keys import KeyHandler
+
+        conf_path = self._write_minimal_config(tmp_path)
+        text = conf_path.read_text()
+        conf_path.write_text(
+            text.replace("strict_mask = false\n", "strict_mask = false\nnoise_estimator = MAD_STD\n")
+        )
+        assert KeyHandler(str(conf_path)).meta["noise_estimator"] == "mad_std"
+
+        conf_path.write_text(
+            text.replace("strict_mask = false\n", "strict_mask = false\nnoise_estimator = std\n")
+        )
+        with pytest.raises(ValueError, match="noise_estimator"):
+            KeyHandler(str(conf_path))
 
     def test_resolve_resolution_sets_all_three_keys_angular(self, tmp_path):
         """
@@ -914,6 +932,49 @@ class TestStageFits:
 
         mask_hex_reshaped = np.moveaxis(mask_hex.value.reshape(ny, nx, n_chan), -1, 0)
         assert np.array_equal(mask_ppv, mask_hex_reshaped)
+
+    def test_construct_mask_ppv_mad_std_scales_thresholds(self):
+        """
+        noise_estimator="mad_std" raises the thresholds by 1.4826, so its
+        mask is smaller than the default (raw MAD) one but still finds the line.
+        """
+        from hexmaps.stage_fits import construct_mask_ppv
+
+        cube, _ = self._make_synthetic_ppv_cube()
+        mask_mad = construct_mask_ppv(cube, SN_processing=[2, 4])
+        mask_std = construct_mask_ppv(
+            cube, SN_processing=[2, 4], noise_estimator="mad_std"
+        )
+        assert mask_std.sum() < mask_mad.sum()
+        assert np.all(mask_std[20] == 1)
+
+    def test_construct_mask_mad_std_matches_ppv(self):
+        """The hex-grid and PPV masks still agree with noise_estimator=mad_std."""
+        import astropy.units as au
+        from astropy.table import Table, Column
+        from hexmaps.stage_fits import construct_mask_ppv
+        from hexmaps.stage_products import construct_mask
+
+        cube, _ = self._make_synthetic_ppv_cube(ny=3, nx=3)
+        n_chan, ny, nx = cube.shape
+        t = Table()
+        t["SPEC_LINE"] = Column(np.moveaxis(cube, 0, -1).reshape(ny * nx, n_chan))
+        t.meta["SPEC_VCHAN0"] = 0.0 * au.km / au.s
+        t.meta["SPEC_DELTAV"] = 1.0 * au.km / au.s
+        t.meta["SPEC_CRPIX"] = 1
+
+        mask_ppv = construct_mask_ppv(cube, [2, 4], noise_estimator="mad_std")
+        mask_hex, _, _ = construct_mask("LINE", t, [2, 4], noise_estimator="mad_std")
+        assert np.array_equal(
+            mask_ppv, np.moveaxis(mask_hex.value.reshape(ny, nx, n_chan), -1, 0)
+        )
+
+    def test_noise_scale_rejects_unknown_estimator(self):
+        from hexmaps.stage_products import noise_scale
+
+        assert noise_scale("mad") == 1.0
+        with pytest.raises(ValueError):
+            noise_scale("std")
 
     def test_apply_strict_mask_ppv_removes_small_components(self):
         from hexmaps.stage_fits import apply_strict_mask_ppv
