@@ -17,6 +17,7 @@ Repository Layout
    │   ├── utils_fits.py                FITS/WCS helpers (convolution, reprojection)
    │   ├── utils_table.py               table I/O, spectral shuffle, moments
    │   ├── hexmaps_analysis.py          HexMapsAnalysis class (importable as part of package)
+   │   ├── utils_binning.py             binned trends and ratios with uncertainties
    │   ├── logger.py                    centralised stage-labelled logger
    │   ├── init_workdir.py              --init scaffolding
    │   ├── download_example.py          --download-example and --download-notebook

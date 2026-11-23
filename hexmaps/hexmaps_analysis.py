@@ -9,6 +9,11 @@ Usage
     hm.quickplot_map("12CO21")
     hm.quickplot_spectrum("12CO21")
     hm.quickplot_shuffled_spectrum("12CO21")
+
+    # Binned trends with uncertainties (see hexmaps.utils_binning)
+    profile = hm.bin_trend("RGAL_KPC", "12CO21", nbins=8)
+    ratio = hm.bin_ratio("RGAL_KPC", "12CO21", "12CO10", nbins=8)
+    hm.quickplot_binned(ratio)
 """
 
 __author__ = "J. den Brok & L. Neumann"
@@ -429,57 +434,383 @@ class HexMapsAnalysis:
             plt.tight_layout()
             plt.show()
 
-    def quickplot_radial_profile(
-        self, line: str, quantity: str = "MOM0", nbins: int = 10, ax=None
+    # ------------------------------------------------------------------
+    # Binned trends
+    # ------------------------------------------------------------------
+
+    def _error_column(self, col: str):
+        """Name of the uncertainty column belonging to *col*, or None."""
+        candidates = [f"E{col}"]  # MOM0_X -> EMOM0_X, MAP_X -> EMAP_X, EW_X -> EEW_X
+        if col.startswith("TPEAK_"):
+            candidates.append("RMS_" + col[len("TPEAK_") :])  # peak error = channel rms
+        return next((c for c in candidates if c in self.struct.colnames), None)
+
+    def _resolve_quantity(self, quantity, errors="auto"):
+        """
+        Resolve a quantity for binning.
+
+        *quantity* is a column name (e.g. ``"RGAL_KPC"``, ``"TPEAK_12CO21"``),
+        a line name meaning its integrated intensity (``"12co21"`` ->
+        ``MOM0_12CO21``), or an array. *errors* is ``"auto"`` (look up the
+        uncertainty column of a named quantity), ``None``, a column name or
+        an array.
+
+        Returns (values, errors or None, column name or None).
+        """
+        col = None
+        if isinstance(quantity, str):
+            names = {c.upper(): c for c in self.struct.colnames}
+            key = quantity.upper()
+            if key in names:
+                col = names[key]
+            elif key in (ln.upper() for ln in self.lines) and f"MOM0_{key}" in names:
+                col = names[f"MOM0_{key}"]
+            else:
+                raise KeyError(
+                    f"{quantity!r} is neither a column nor a line name. "
+                    f"Lines: {self.lines}"
+                )
+            values = self.struct[col]
+        else:
+            values = quantity
+
+        if isinstance(errors, str) and errors == "auto":
+            err_col = self._error_column(col) if col is not None else None
+            errors = self.struct[err_col] if err_col else None
+        elif isinstance(errors, str):
+            errors = self._resolve_quantity(errors, errors=None)[0]
+        return values, errors, col
+
+    def _sampling_spacing_as(self) -> float:
+        """Median distance [arcsec] between neighbouring sampling points."""
+        from scipy.spatial import cKDTree
+
+        col1, col2 = self._coord_cols()
+        lon = np.asarray(self.struct[col1], dtype=float)
+        lat = np.asarray(self.struct[col2], dtype=float)
+        lat0 = np.nanmedian(lat)
+        dlon = (lon - np.nanmedian(lon) + 180.0) % 360.0 - 180.0  # safe across 0/360
+        xy = np.column_stack(
+            [dlon * np.cos(np.deg2rad(lat0)) * 3600.0, (lat - lat0) * 3600.0]
+        )
+        xy = xy[np.all(np.isfinite(xy), axis=1)]
+        if len(xy) < 2:
+            return np.nan
+        dist, _ = cKDTree(xy).query(xy, k=2)
+        return float(np.median(dist[:, 1]))
+
+    def oversampling_factor(self) -> float:
+        """
+        Number of sampling points per independent resolution element.
+
+        Beam area divided by the area per hexagonal sampling point,
+        ``(pi / (4 ln 2)) * beam**2 / ((sqrt(3) / 2) * spacing**2)``, with the
+        beam FWHM from the table metadata (``beam_as``) and the spacing
+        measured as the median nearest-neighbour distance of the points.
+        For the default half-beam sampling (``pixels_per_beam = 2``) this is
+        about 5.2. Neighbouring points are correlated, so a bin of *n*
+        points contains only ``n / oversampling_factor`` independent
+        measurements; the binning methods use this by default.
+
+        Returns 1.0 (with a warning) if the beam size is not in the metadata.
+        """
+        beam = self.struct.meta.get("beam_as")
+        spacing = self._sampling_spacing_as()
+        if beam is None or not np.isfinite(spacing) or spacing <= 0:
+            print(
+                "[WARNING] Cannot determine the oversampling (no beam_as in the "
+                "metadata or no sampling points); using 1."
+            )
+            return 1.0
+        beam = beam.to_value(au.arcsec) if hasattr(beam, "unit") else float(beam)
+        beam_area = np.pi / (4 * np.log(2)) * beam**2
+        point_area = np.sqrt(3) / 2 * spacing**2
+        return float(beam_area / point_area)
+
+    def _resolve_extra(self, extra):
+        """Resolve ``extra`` (names, or a dict name -> array/(array, errors))."""
+        if extra is None:
+            return None
+        if isinstance(extra, dict):
+            return extra
+        out = {}
+        for name in extra:
+            values, errors, col = self._resolve_quantity(name)
+            out[col or name] = (values, errors)
+        return out
+
+    def bin_trend(
+        self,
+        x,
+        y,
+        bins=None,
+        nbins: int = 10,
+        logbins: bool = False,
+        method: str = "median",
+        oversample="auto",
+        x_err="auto",
+        y_err="auto",
+        extra=None,
+        keep_empty: bool = False,
     ):
         """
-        Plot a radial profile (binned median) of a moment map.
+        Bin a quantity *y* in bins of *x*, with uncertainties.
+
+        For example the CO intensity as a function of galactocentric radius::
+
+            tab = hm.bin_trend("RGAL_KPC", "12co21", nbins=8)
+            hm.quickplot_binned(tab)
 
         Parameters
         ----------
-        line     : str — line name
-        quantity : str — column prefix (``"MOM0"``, ``"TPEAK"``, etc.)
-        nbins    : int — number of radial bins
-        ax       : Axes
+        x, y : str or array-like
+            Column name (``"RGAL_KPC"``, ``"TPEAK_12CO21"``, ``"MAP_SPIRE250"``,
+            ...), line name for its integrated intensity (``"12co21"`` ->
+            ``MOM0_12CO21``), or an array with one value per sampling point.
+        bins : array-like, optional
+            Explicit bin edges. Otherwise *nbins* bins span the range of *x*.
+        nbins : int
+            Number of bins if *bins* is not given (default 10).
+        logbins : bool
+            Logarithmically spaced bins (over the positive *x* values).
+        method : ``"median"`` (default) or ``"mean"``
+            Statistic used for the bin value.
+        oversample : float or ``"auto"``
+            Sampling points per independent beam, used for the bin
+            uncertainties. ``"auto"`` (default) uses
+            :meth:`oversampling_factor`; pass 1 for independent points.
+        x_err, y_err : ``"auto"``, None, str or array-like
+            Per-point uncertainties. ``"auto"`` uses the matching error
+            column (``EMOM0_*`` for ``MOM0_*``, ``EMAP_*`` for ``MAP_*``,
+            ``RMS_*`` for ``TPEAK_*``) if there is one.
+        extra : list of str, or dict, optional
+            More quantities to average in the same bins, e.g.
+            ``["MAP_SPIRE250", "MOM2_12CO21"]`` (errors looked up
+            automatically) or ``{name: values}`` / ``{name: (values, errors)}``.
+        keep_empty : bool
+            Keep rows (filled with NaN) for bins without data points.
+
+        Returns
+        -------
+        astropy.table.Table
+            One row per bin: ``bin_lo``, ``bin_hi``, ``n``, ``x``, ``x_err``,
+            ``y``, ``y_err``, ``snr``, ``y_p16``, ``y_p84`` (16th/84th
+            percentile of the values in the bin), ``n_pos``, ``n_neg``, and
+            ``<name>``, ``<name>_err`` for *extra* quantities. See
+            :mod:`hexmaps.utils_binning` for the definitions.
         """
-        col = f"{quantity}_{line.upper()}"
-        if col not in self.struct.colnames:
-            raise KeyError(f"Column '{col}' not found.")
+        from hexmaps.utils_binning import bin_trend
 
-        if self.rgal is None:
-            raise RuntimeError(
-                "quickplot_radial_profile requires galaxy geometry "
-                "(RGAL_KPC), which is not available for this target. "
-                "Add incl_deg, posang_deg, and r25 to target_definitions.txt."
-            )
-
-        values = np.array(self.struct[col])
-        unit = str(self.struct[col].unit) if hasattr(self.struct[col], "unit") else ""
-
-        r_max = np.nanmax(self.rgal)
-        edges = np.linspace(0, r_max, nbins + 1)
-        r_cen = 0.5 * (edges[:-1] + edges[1:])
-        medians = np.array(
-            [
-                np.nanmedian(
-                    values[(self.rgal >= edges[i]) & (self.rgal < edges[i + 1])]
-                )
-                for i in range(nbins)
-            ]
+        xv, xe, xcol = self._resolve_quantity(x, x_err)
+        yv, ye, ycol = self._resolve_quantity(y, y_err)
+        if isinstance(oversample, str) and oversample == "auto":
+            oversample = self.oversampling_factor()
+        tab = bin_trend(
+            xv, yv, y_err=ye, x_err=xe, bins=bins, nbins=nbins, logbins=logbins,
+            method=method, oversample=oversample, extra=self._resolve_extra(extra),
+            keep_empty=keep_empty,
         )
+        tab.meta.update(x_name=xcol or "x", y_name=ycol or "y")
+        return tab
 
+    def bin_ratio(
+        self,
+        x,
+        numerator,
+        denominator,
+        bins=None,
+        nbins: int = 10,
+        logbins: bool = False,
+        method: str = "median",
+        oversample="auto",
+        snr_limit: float = 3.0,
+        x_err="auto",
+        numerator_err="auto",
+        denominator_err="auto",
+        extra=None,
+        keep_empty: bool = False,
+    ):
+        """
+        Bin the ratio ``numerator / denominator`` in bins of *x*.
+
+        Numerator and denominator are binned separately and divided
+        ("stacked" ratio), so the ratio stays defined in bins where
+        individual sightlines are not detected. Where the numerator
+        (denominator) is not detected in a bin, an upper (lower) limit is
+        given instead. For example a line ratio versus radius::
+
+            tab = hm.bin_ratio("RGAL_KPC", "12co21", "12co10", nbins=8)
+            hm.quickplot_binned(tab)
+
+        Parameters
+        ----------
+        x, numerator, denominator : str or array-like
+            As *x* / *y* in :meth:`bin_trend`; line names select ``MOM0``.
+        snr_limit : float
+            S/N threshold for the limits (default 3).
+        numerator_err, denominator_err : ``"auto"``, str or array-like
+            Per-point uncertainties (required; ``"auto"`` uses ``EMOM0_*``
+            etc.).
+        bins, nbins, logbins, method, oversample, x_err, extra, keep_empty
+            As in :meth:`bin_trend`.
+
+        Returns
+        -------
+        astropy.table.Table
+            The columns of :meth:`bin_trend` (``y`` is the binned ratio,
+            ``y_p16``/``y_p84`` are percentiles of the per-point ratios),
+            plus ``y1``, ``y1_err``, ``y2``, ``y2_err`` (binned numerator and
+            denominator), ``upper_limit`` and ``lower_limit`` (NaN where the
+            ratio is significant). See :mod:`hexmaps.utils_binning`.
+        """
+        from hexmaps.utils_binning import bin_ratio_trend
+
+        xv, xe, xcol = self._resolve_quantity(x, x_err)
+        y1, e1, c1 = self._resolve_quantity(numerator, numerator_err)
+        y2, e2, c2 = self._resolve_quantity(denominator, denominator_err)
+        for name, err in (("numerator", e1), ("denominator", e2)):
+            if err is None:
+                raise ValueError(
+                    f"No uncertainties found for the {name}; pass {name}_err."
+                )
+        if isinstance(oversample, str) and oversample == "auto":
+            oversample = self.oversampling_factor()
+        tab = bin_ratio_trend(
+            xv, y1, y2, e1, e2, x_err=xe, bins=bins, nbins=nbins, logbins=logbins,
+            method=method, oversample=oversample, snr_limit=snr_limit,
+            extra=self._resolve_extra(extra), keep_empty=keep_empty,
+        )
+        tab.meta.update(
+            x_name=xcol or "x",
+            y_name=f"{c1 or 'y1'} / {c2 or 'y2'}",
+            y1_name=c1,
+            y2_name=c2,
+        )
+        return tab
+
+    def quickplot_binned(
+        self,
+        binned,
+        ax=None,
+        show_points: bool = True,
+        show_scatter: bool = True,
+        logx: bool = False,
+        logy: bool = False,
+        color: str = "C0",
+        label: str = None,
+    ):
+        """
+        Plot a binned trend from :meth:`bin_trend` or :meth:`bin_ratio`.
+
+        Draws the bin values with their uncertainties, the 16th-84th
+        percentile range of the individual values as a shaded band, and,
+        for ratios, upper (``v``) and lower (``^``) limits in place of
+        non-significant bins.
+
+        Parameters
+        ----------
+        binned       : astropy.table.Table — result of a binning method
+        ax           : Axes — existing axes to draw into (new figure if None)
+        show_points  : bool — show the individual sampling points in grey
+                       (when *x* and *y* were given as column/line names; for
+                       ratios only points where both lines exceed
+                       ``snr_limit``)
+        show_scatter : bool — shade the 16th-84th percentile range
+        logx, logy   : bool — logarithmic axes
+        color, label : matplotlib colour and legend label for the bins
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+        """
+        meta = binned.meta
         own_fig = ax is None
         if own_fig:
-            fig, ax = plt.subplots(figsize=(6, 4))
+            fig, ax = plt.subplots(figsize=(6, 4.5))
 
-        ax.plot(r_cen, medians, marker="o", color="steelblue", linewidth=1.5)
-        ax.set_xlabel("Galactocentric radius [kpc]")
-        ax.set_ylabel(f"Median {quantity} [{unit}]" if unit else f"Median {quantity}")
-        ax.set_title(f"{line}  —  radial profile")
+        cols = self.struct.colnames
+        if show_points and meta.get("x_name") in cols:
+            px = np.asarray(self.struct[meta["x_name"]], dtype=float)
+            py = None
+            if meta.get("y_name") in cols:
+                py = np.asarray(self.struct[meta["y_name"]], dtype=float)
+            elif meta.get("y1_name") in cols and meta.get("y2_name") in cols:
+                y1, e1, _ = self._resolve_quantity(meta["y1_name"])
+                y2, e2, _ = self._resolve_quantity(meta["y2_name"])
+                y1, y2 = np.asarray(y1, dtype=float), np.asarray(y2, dtype=float)
+                lim = meta.get("snr_limit", 3.0)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    det = (y1 / np.asarray(e1, dtype=float) > lim) & (
+                        y2 / np.asarray(e2, dtype=float) > lim
+                    )
+                    py = np.where(det, y1 / y2, np.nan)
+            if py is not None:
+                ax.scatter(px, py, s=6, color="0.7", alpha=0.6, lw=0, zorder=1,
+                           label="sampling points")
+
+        def _col(name):
+            if name not in binned.colnames:
+                return np.full(len(binned), np.nan)
+            return np.asarray(binned[name], dtype=float)
+
+        x, y = _col("x"), _col("y")
+        p16, p84 = _col("y_p16"), _col("y_p84")
+        upper, lower = _col("upper_limit"), _col("lower_limit")
+        # Values that cannot be drawn on a logarithmic axis are left out
+        # (e.g. bins whose median is 0 because the sightlines are undetected).
+        drawable = np.isfinite(x) & np.isfinite(y)
+        if logx:
+            drawable &= x > 0
+        if logy:
+            drawable &= y > 0
+            p16 = np.where(p16 > 0, p16, np.nan)
+
+        if show_scatter:
+            band = np.isfinite(x) & np.isfinite(p16) & np.isfinite(p84)
+            ax.fill_between(x[band], p16[band], p84[band], color=color,
+                            alpha=0.2, lw=0, zorder=2,
+                            label="16-84th percentile" if label is None else None)
+
+        det = drawable & ~(np.isfinite(upper) | np.isfinite(lower))
+        ax.errorbar(
+            x[det], y[det], xerr=_col("x_err")[det], yerr=_col("y_err")[det],
+            fmt="o", color=color, mec="k", mew=0.6, ms=6, capsize=2, zorder=3,
+            label=label or f"binned {meta.get('method', '')}".strip(),
+        )
+        if np.isfinite(upper).any():
+            ax.scatter(x, upper, marker="v", color=color, edgecolor="k", lw=0.6,
+                       s=45, zorder=3, label="upper limit")
+        if np.isfinite(lower).any():
+            ax.scatter(x, lower, marker="^", color=color, edgecolor="k", lw=0.6,
+                       s=45, zorder=3, label="lower limit")
+
+        def _label(name, unit):
+            return f"{name} [{unit}]" if unit is not None else name
+
+        ax.set_xlabel(_label(meta.get("x_name", "x"), binned["x"].unit))
+        ax.set_ylabel(_label(meta.get("y_name", "y"), binned["y"].unit))
+        from matplotlib.ticker import FuncFormatter, LogLocator
+
+        for axis, use_log, get_lim in (
+            (ax.xaxis, logx, ax.get_xlim), (ax.yaxis, logy, ax.get_ylim)
+        ):
+            if not use_log:
+                continue
+            (ax.set_xscale if axis is ax.xaxis else ax.set_yscale)("log")
+            lo, hi = get_lim()
+            # Short log ranges: label 1, 2, 5 x 10^n as plain numbers instead of
+            # matplotlib's crowded minor-tick labels.
+            if lo > 0 and np.log10(hi / lo) <= 2.5:
+                plain = FuncFormatter(lambda v, _: f"{v:g}")
+                axis.set_major_formatter(plain)
+                axis.set_minor_locator(LogLocator(subs=(2, 5)))
+                axis.set_minor_formatter(plain)
+        ax.legend(fontsize=8)
 
         if own_fig:
             plt.tight_layout()
             plt.show()
+        return ax
 
     # ------------------------------------------------------------------
     # Data access helpers

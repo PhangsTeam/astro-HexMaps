@@ -124,11 +124,20 @@ Quick Examples
    ratio = db.get_ratio("12CO21", "12CO10", sn=5.0)
    print(ratio["ratio"])   # CO(2-1)/CO(1-0) ratio array
 
-**Radial profile:**
+**Radial profiles and other binned trends, with uncertainties:**
 
 .. code-block:: python
 
-   db.quickplot_radial_profile("12CO21")
+   # Median CO(2-1) intensity in radial bins (needs galaxy geometry, RGAL_KPC)
+   profile = db.bin_trend("RGAL_KPC", "12CO21", nbins=8)
+   db.quickplot_binned(profile, logy=True)
+
+   # Stacked CO(2-1)/CO(1-0) ratio versus radius, with upper/lower limits
+   ratio = db.bin_ratio("RGAL_KPC", "12CO21", "12CO10", nbins=8)
+   db.quickplot_binned(ratio)
+
+See :doc:`HexMapsFunctions` for how bins, uncertainties and limits are
+computed.
 
 
 Provenance Recovery
