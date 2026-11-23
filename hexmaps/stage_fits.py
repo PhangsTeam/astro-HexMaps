@@ -69,9 +69,10 @@ import numpy as np
 import astropy.units as au
 from astropy.io import fits
 from astropy.wcs import WCS
+from astropy.wcs.utils import proj_plane_pixel_area
 from astropy.table import Table
 from astropy.stats import median_absolute_deviation
-from scipy.ndimage import label, binary_erosion
+from scipy.ndimage import label, binary_erosion, binary_closing
 from skimage.morphology import disk
 from datetime import date
 
@@ -267,7 +268,7 @@ def get_convolved_map(
     return data, hdr
 
 
-def construct_mask_ppv(ref_cube, SN_processing):
+def construct_mask_ppv(ref_cube, SN_processing, closing_beams=0.0, beam_pix=None):
     """
     Build a two-level S/N velocity-integration mask from a PPV cube.
 
@@ -278,10 +279,16 @@ def construct_mask_ppv(ref_cube, SN_processing):
     requiring 3-of-3 consecutive channels, dilation into the low-S/N mask
     (5 passes), then a 2-channel edge grow.
 
+    With closing_beams > 0, each channel of the grown mask is morphologically
+    closed with a disk of radius closing_beams × beam FWHM before the edge
+    grow (see close_mask_ppv).
+
     Parameters
     ----------
     ref_cube      : np.ndarray (n_chan, ny, nx) — reference line PPV cube
     SN_processing : list[float] — [low_SN_thresh, high_SN_thresh]
+    closing_beams : float — closing radius in units of the beam FWHM (0 = off)
+    beam_pix      : float — beam FWHM in pixels (needed if closing_beams > 0)
 
     Returns
     -------
@@ -324,11 +331,41 @@ def construct_mask_ppv(ref_cube, SN_processing):
             int
         ) * low_mask
 
+    # Optional beam-sized spatial closing
+    if closing_beams > 0:
+        mask = close_mask_ppv(mask, closing_beams * beam_pix)
+
     # Grow mask edge by 2 channels to ensure full line coverage
     for _ in range(2):
         mask = ((mask + np.roll(mask, 1, 0) + np.roll(mask, -1, 0)) >= 1).astype(int)
 
     return mask
+
+
+def close_mask_ppv(mask, radius_pix):
+    """
+    Morphologically close each channel of a PPV mask with a disk.
+
+    Closing (dilation then erosion) fills holes and gaps narrower than the
+    disk and joins nearby mask regions, without growing the outer edges.
+    The input mask is always kept (the result is OR-ed with it), so mask at
+    the map edges is not eroded away.
+
+    Parameters
+    ----------
+    mask       : np.ndarray (n_chan, ny, nx) — 0/1 mask
+    radius_pix : float — disk radius in pixels (rounded; < 1 returns the mask)
+
+    Returns
+    -------
+    mask : np.ndarray (n_chan, ny, nx) — 0/1 closed mask
+    """
+    radius = int(round(radius_pix))
+    if radius < 1:
+        return mask
+    structure = disk(radius).astype(bool)[None, :, :]
+    closed = binary_closing(mask.astype(bool), structure=structure)
+    return (closed | mask.astype(bool)).astype(int)
 
 
 def apply_strict_mask_ppv(mask, min_pixels=5):
@@ -824,6 +861,7 @@ def run_moments_ppv(
     # ------------------------------------------------------------------
     ref_line_method = meta.get("ref_line", "first")
     SN_processing = meta.get("SN_processing", [2, 4])
+    mask_closing_beams = float(meta.get("mask_closing_beams", 0.0))
     strict_mask = meta.get("strict_mask", False)
     use_hfs_lines = meta.get("use_hfs_lines", False)
     fov_erosion_beams = float(meta.get("fov_erosion_beams", 0.5))
@@ -866,6 +904,11 @@ def run_moments_ppv(
     vaxis = (v0 + (np.arange(n_chan) - (crpix - 1)) * dv) * au.Unit(unit_v)
     vaxis = vaxis.to(au.km / au.s)
     delta_v_kms = abs(dv * au.Unit(unit_v).to(au.km / au.s))
+
+    # Beam FWHM in overlay pixels, for the optional mask closing
+    beam_pix = target_res_as / np.sqrt(
+        proj_plane_pixel_area(WCS(ov_hdr).celestial) * 3600.0**2
+    )
 
     # Noise mask
     use_fixed_noise_mask = meta.get("use_fixed_noise_mask", False)
@@ -960,7 +1003,10 @@ def run_moments_ppv(
                 sn_ppv[key] = None
             else:
                 lm = construct_mask_ppv(
-                    cube_data[line.upper()].value, SN_processing
+                    cube_data[line.upper()].value,
+                    SN_processing,
+                    closing_beams=mask_closing_beams,
+                    beam_pix=beam_pix,
                 ).astype(int)
                 sn_ppv[key] = apply_strict_mask_ppv(lm) if strict else lm
         return sn_ppv[key]

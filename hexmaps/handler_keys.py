@@ -416,6 +416,8 @@ class KeyHandler:
         ref_line          : str   — mask expression, e.g. "(12co21 | 12co10) & window",
                                     or legacy comma list "first, window, AND". MANDATORY.
         SN_processing     : list  — [low_SN, high_SN] thresholds
+        mask_closing_beams: float — radius of the per-channel mask closing,
+                                    in beam FWHM (default 0 = off)
         strict_mask       : bool  — apply spatial connectivity filter
         use_fixed_noise_mask: bool — use explicit velocity windows for noise estimation
         use_hfs_lines     : bool  — apply HFS correction (requires hfs_file)
@@ -485,6 +487,11 @@ class KeyHandler:
         self.meta["SN_processing"] = [
             float(x) for x in _get("masking", "SN_processing", "2,4").split(",")
         ]
+        self.meta["mask_closing_beams"] = float(
+            _get("masking", "mask_closing_beams", 0.0)
+        )
+        if self.meta["mask_closing_beams"] < 0:
+            raise ValueError("[masking] mask_closing_beams must be nonnegative.")
         self.meta["strict_mask"] = (
             _get("masking", "strict_mask", "false").lower() == "true"
         )
